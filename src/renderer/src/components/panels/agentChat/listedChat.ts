@@ -33,38 +33,30 @@ import {
   publishRemoteConversationList,
   useRemoteConversationFactsOf,
 } from '../../workspace/remoteBand/remoteConversationFacts'
-import { ConversationChatBody } from '../AgentChatView'
 import { remoteFileCountsOf } from '../../workspace/terminalLines'
 import { environmentChatSourceFor, type EnvironmentChatSource } from '../../../studio/environmentChats'
-import { pairedTarget, type EnvironmentRefusal } from '../../../studio/environmentStudio'
-import { listPairedChats } from '../../../studio/pairedChats'
-import { ChatViewErrorBoundary } from './ChatViewErrorBoundary'
+import type { EnvironmentRefusal } from '../../../studio/environmentStudio'
+import { listEnvironmentChats } from '../../../studio/environmentChatRecords'
 import { useStudioChatHeld } from './chatServerHeld'
 import { publishRemoteChat } from './remoteChatRegistry'
-import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
-import { studioSubagentsOf, SubagentStatusWords } from './chatSubagents'
-import {
-  SubagentChatHost,
-  SubagentEndNotice,
-  subagentFacts,
-  SubagentGone,
-  SubagentViewHeader,
-} from './SubagentChatHost'
 import type { ChatBinding, ChatAgentFields } from './chatBinding'
 import type { ChatReadiness } from './chatStates'
-import { ConversationTransportProvider, type ConversationTransport } from './conversationTransport'
+import type { ConversationTransport } from './conversationTransport'
+import { pairedForkOpener } from './forkFromHere'
+import type { PaneChat } from './paneChat'
 import { createPairedChatTransport, pairedCommandsKey } from './pairedChat'
 import { copy as appCopy } from '../../../../../shared/copy'
 
-// A conversation on a paired machine, in the regular chat view.
+// A chat this window keeps no record of (a paired desktop's), as the one chat
+// pane reads it (`AgentChatView`): what its environment lists of it.
 //
 // The transcript, pending requests and composer are the chat view's own; what
-// this pane adds is the transport (this window's own client of that
-// machine's Studio, `pairedChat.ts`, which follows the conversation by its
-// cursor, so a reconnect resumes rather than replays) and the agent fields a
-// local chat keeps in its record. The machine is named on the tab and on the
-// strip under the composer, so a keystroke here is never mistaken for one on
-// this machine.
+// this adds is the transport (this window's own client of that machine's
+// Studio, `pairedChat.ts`, which follows the conversation by its cursor, so a
+// reconnect resumes rather than replays) and the agent fields a chat this
+// window keeps a record of reads off that record. The machine is named on the
+// tab and on the strip under the composer, so a keystroke here is never
+// mistaken for one on this machine.
 //
 // Readiness is the connection's and the grant's: connected and allowed to
 // operate is ready; connected and read-only shows the conversation with the
@@ -75,16 +67,13 @@ const NO_PULL_REQUESTS: readonly BranchPullRequest[] = []
 const NO_LOCAL_SERVERS: readonly StudioLocalServer[] = []
 const NO_SUBAGENTS: MeshSubagent[] = []
 
-type Props = {
+export type ListedChatInput = {
   /** The workspace here that holds this pane. */
   workspaceId: string
-  connectionId: string
-  machineName: string
-  /** The conversation's ids on that machine. */
-  remoteWorkspaceId: string
-  remoteAgentId: string
-  /** What the row it was opened from called it, until the machine is read. */
-  title?: string
+  /** The chat's agent on its machine. */
+  agentId: string
+  /** The chat, by where it lives (`paneChatOfPairedTab`). */
+  chat: PaneChat & { environment: NonNullable<PaneChat['environment']>; listed: NonNullable<PaneChat['listed']> }
   /**
    * Set for a sub-agent drawn in its parent's place: no list names one, so its
    * parent's `subagents` row stands in for its listed thread, and it is a layer
@@ -126,20 +115,20 @@ function remoteConversationReadiness(
       kind: 'error',
       message:
         refusal.kind === 'outdated'
-          ? appCopy.panels.agentChat.remoteConversationPanel.updateStudioOnToDrive(machineName)
+          ? appCopy.panels.agentChat.listedChat.updateStudioOnToDrive(machineName)
           : refusal.message,
     }
   if (link === 'connecting')
-    return { kind: 'error', message: appCopy.panels.agentChat.remoteConversationPanel.connectingTo(machineName) }
+    return { kind: 'error', message: appCopy.panels.agentChat.listedChat.connectingTo(machineName) }
   if (link === 'away')
     return {
       kind: 'error',
-      message: appCopy.panels.agentChat.remoteConversationPanel.isnTAnsweringShowingWhat(machineName),
+      message: appCopy.panels.agentChat.listedChat.isnTAnsweringShowingWhat(machineName),
     }
   if (access !== 'operate')
     return {
       kind: 'error',
-      message: appCopy.panels.agentChat.remoteConversationPanel.viewOnlyThisPairingCan(machineName),
+      message: appCopy.panels.agentChat.listedChat.viewOnlyThisPairingCan(machineName),
     }
   return { kind: 'ready' }
 }
@@ -338,24 +327,28 @@ function remoteConversationSession(
   }
 }
 
-export default function RemoteConversationPanel({
-  workspaceId,
-  connectionId,
-  machineName,
-  remoteWorkspaceId,
-  remoteAgentId,
-  title,
-  subagent,
-}: Props) {
+/** What the pane draws a listed chat with: its transport and binding, and its sub-agents as its machine names them. */
+export type ListedChat = {
+  transport: ConversationTransport
+  binding: ChatBinding
+  displayTitle: string
+  machineName: string
+  subagents: readonly MeshSubagent[]
+}
+
+/** A chat this window keeps no record of, read off its environment's list and driven over its transport. */
+export function useListedChat({ workspaceId, agentId: remoteAgentId, chat, subagent }: ListedChatInput): ListedChat {
+  // Held by its route and name: a tab's chat is read afresh on every render.
+  const { route, name: machineName } = chat.environment
+  const target = useMemo(() => ({ route, name: machineName }), [route, machineName])
+  const { connectionId, title } = chat.listed
+  const remoteWorkspaceId = chat.chatId
   const key = useMemo<MeshConversationKey>(
     () => ({ connectionId, workspaceId: remoteWorkspaceId, agentId: remoteAgentId }),
     [connectionId, remoteWorkspaceId, remoteAgentId],
   )
   // This window's client of that machine, shared with the list of its chats.
-  const source = useMemo(
-    () => environmentChatSourceFor(pairedTarget({ id: connectionId, machineName })),
-    [connectionId, machineName],
-  )
+  const source = useMemo(() => environmentChatSourceFor(target), [target])
   const { welcome, link, refusal } = usePairedSource(source)
   const seedThread = useMemo(() => (subagent ? threadOfSubagent(subagent.row) : null), [subagent])
   const [listedThread, setThread] = useState<MeshConversation | null>(null)
@@ -461,7 +454,7 @@ export default function RemoteConversationPanel({
   useEffect(() => {
     if (link !== 'live') return
     let cancelled = false
-    void listPairedChats({ id: connectionId, machineName }).then((result) => {
+    void listEnvironmentChats(target).then((result) => {
       if (cancelled || !result.ok) return
       // The pane's tab reads its mark, model and clock off this list too.
       publishRemoteConversationList(connectionId, result.conversations)
@@ -474,7 +467,7 @@ export default function RemoteConversationPanel({
     return () => {
       cancelled = true
     }
-  }, [connectionId, machineName, remoteWorkspaceId, remoteAgentId, link, listVersion, listedAt])
+  }, [connectionId, target, remoteWorkspaceId, remoteAgentId, link, listVersion, listedAt])
 
   // The chat's live session there, as that machine's sessions list it: what it
   // can do now, from its own Studio. A chat at rest has none listed.
@@ -572,6 +565,8 @@ export default function RemoteConversationPanel({
       // wears the machine's mark, and the strip under the composer marks the
       // machine again; a third line saying both was the same fact once more.
       ...(engine ? { engine } : {}),
+      // A fork is made over there and opens as a pane onto that machine.
+      openFork: pairedForkOpener({ connectionId, machineName }),
       hostQueue: held.hostQueue,
       ...(capabilities.hostSchedule ? { hostSchedule: held.hostSchedule } : {}),
       ...(capabilities.hostUsageLimits && held.hostUsageLimits ? { hostUsageLimits: held.hostUsageLimits } : {}),
@@ -601,6 +596,7 @@ export default function RemoteConversationPanel({
       session,
       engine,
       machineName,
+      connectionId,
       held,
       capabilities.hostSchedule,
       capabilities.hostUsageLimits,
@@ -638,55 +634,8 @@ export default function RemoteConversationPanel({
     ],
   )
 
-  const chat = (
-    <ConversationTransportProvider value={transport}>
-      <ChatViewErrorBoundary chatKey={`${connectionId}:${remoteWorkspaceId}:${remoteAgentId}`}>
-        <ConversationChatBody
-          key={`${connectionId}:${remoteWorkspaceId}:${remoteAgentId}`}
-          workspaceId={workspaceId}
-          agentId={remoteAgentId}
-          binding={binding}
-        />
-      </ChatViewErrorBoundary>
-    </ConversationTransportProvider>
-  )
-  if (subagent) return chat
-  return (
-    <SubagentChatHost
-      workspaceId={workspaceId}
-      rootAgentId={remoteAgentId}
-      rootName={displayTitle}
-      chatName={(id) => hostSubagents.find((row) => row.agentId === id)?.title}
-      renderChat={({ agentId, parentAgentId, parentName, crumbs, onCrumb, onBack }) => {
-        const row = hostSubagents.find((candidate) => candidate.agentId === agentId)
-        if (!row) return <SubagentGone words={`${machineName} no longer lists this subagent.`} onBack={onBack} />
-        const [shown] = studioSubagentsOf([row])
-        return (
-          <>
-            <SubagentViewHeader
-              crumbs={crumbs}
-              name={row.title}
-              facts={subagentFacts(cliForConversationProvider(row.providerId), row.modelId)}
-              status={shown ? <SubagentStatusWords subagent={shown} /> : undefined}
-              onCrumb={onCrumb}
-            />
-            <SubagentEndNotice error={row.error ?? null} />
-            <div className="min-h-0 flex-1">
-              <RemoteConversationPanel
-                workspaceId={workspaceId}
-                connectionId={connectionId}
-                machineName={machineName}
-                remoteWorkspaceId={remoteWorkspaceId}
-                remoteAgentId={agentId}
-                title={row.title}
-                subagent={{ row, parentAgentId, parentName, onGoToParent: onBack }}
-              />
-            </div>
-          </>
-        )
-      }}
-    >
-      {chat}
-    </SubagentChatHost>
+  return useMemo(
+    () => ({ transport, binding, displayTitle, machineName, subagents: hostSubagents }),
+    [transport, binding, displayTitle, machineName, hostSubagents],
   )
 }

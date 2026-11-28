@@ -1,460 +1,316 @@
 import assert from 'node:assert/strict'
-
-import {
-  meshConversationPresence,
-  meshConversationSessionId,
-  type MeshBrowse,
-  type MeshConnection,
-  type MeshConversation,
-  type MeshMachineReachability,
-} from '../../../../../shared/tailnet-mesh'
-import type { Workspace } from '../../../../../shared/workspace'
-import type { EnvironmentConnectionState, EnvironmentEntry } from '../../../../../shared/environments'
-import {
-  chatManageOf,
-  attachedConversations,
-  attachedWorkspaceFor,
-  buildRemoteBand,
-  conversationsOf,
-  openSpecOfConversation,
-  remoteConversationTitle,
-  remoteOriginChatWorkspaceId,
-  remoteLinkStateOf,
-  branchPullRequestsOfWire,
-  remoteFinishUnseen,
-  remoteRowActivity,
-  remoteRowFinishUnseen,
-  remotePaneTabLabel,
-  remoteWorkspaceName,
-  shouldBrowse,
-  unattachedConversations,
-  interleaveChats,
-  chatRecencyOf,
-  canMarkRemoteConversationUnread,
-  pendingRemoteMarksRead,
-  remoteChatKey,
-  remoteConversationAsleep,
-  remoteHighlightAfter,
-  withPendingRemoteMarks,
-  withRemoteChatMarks,
-  sameRemoteChatMarks,
-  type RemoteBrowseEntry,
-  type RemoteConversation,
-} from './remoteSessionsModel'
 import { test } from 'vitest'
 
-test('remoteSessionsModel', async () => {
-  // The rules behind the sidebar's remote rows, DOM-free.
+import type { MeshBrowse, MeshConversation, MeshWorkspace } from '../../../../../shared/tailnet-mesh'
+import type { EnvironmentEntry } from '../../../../../shared/environments'
+import type { Workspace } from '../../../../../shared/workspace'
+import {
+  canMarkRemoteConversationUnread,
+  chatManageOf,
+  chatRecordsByAddress,
+  environmentChatRows,
+  interleaveChats,
+  isEnvironmentRecord,
+  openSpecOfConversation,
+  remoteConversationTitle,
+  remoteHighlightAfter,
+  remoteLinkStateOf,
+  remoteOriginChatWorkspaceId,
+  remotePaneTabLabel,
+  remoteRowActivity,
+  remoteRowFinishUnseen,
+  remoteWorkspaceName,
+  type EnvironmentChatSourceView,
+  type RemoteBrowseEntry,
+} from './remoteSessionsModel'
 
-  const air: MeshConnection = {
-    id: 'c1',
-    machineName: 'sam-macbook-air',
-    endpoint: '100.64.0.5:8471',
-    deviceId: 'tnd_1',
-    deviceName: 'mini',
-    scopes: ['workspace:read', 'conversation:read'],
-    pairedAt: '2026-09-05T00:00:00.000Z',
-    lastConnectedAt: null,
-    pairedVia: 'request',
-  }
-  const studio: MeshConnection = { ...air, id: 'c2', machineName: 'studio', endpoint: '100.64.0.9:8471' }
+// Every other environment's chats as the sidebar's rows (design-environments
+// PR 3): by address, from each environment's own lists, whatever kind of
+// machine it is.
 
-  const chat = (agentId: string, over: Partial<MeshConversation> = {}): MeshConversation => ({
-    workspaceId: 'rw1',
-    agentId,
-    title: agentId,
-    phase: 'running',
-    updatedAt: 1_000,
-    createdAt: 500,
-    providerId: 'claude-agent',
-    modelId: 'opus',
-    turnCount: 1,
-    lastSeq: 4,
-    ...over,
-  })
-  const adaSession = meshConversationSessionId('rw1', 'ada')
-  const beaSession = meshConversationSessionId('rw1', 'bea')
+const MINI_ID = '3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a'
+const BOX_ID = '6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b'
 
-  const browse = (over: Partial<MeshBrowse>): MeshBrowse => ({
-    connectionId: 'c1',
-    reachable: true,
-    unreachableReason: null,
-    unauthorized: false,
-    scopes: air.scopes,
-    workspaces: [
-      {
-        id: 'rw1',
-        name: 'relay',
-        mode: 'standard',
-        folderPath: '/Users/air/relay',
-        repository: {
-          canonicalKey: 'github.com/acme/relay',
-          remoteUrl: 'git@github.com:acme/relay.git',
-          name: 'relay',
-        },
-      },
+const chat = (workspaceId: string, over: Partial<MeshConversation> = {}): MeshConversation => ({
+  workspaceId,
+  agentId: 'agent-1',
+  title: 'Gael Corry',
+  phase: 'completed',
+  updatedAt: 1_000,
+  createdAt: 500,
+  providerId: 'claude-agent',
+  modelId: 'opus',
+  turnCount: 1,
+  lastSeq: 4,
+  ...over,
+})
+
+const held = (id: string, name: string, over: Partial<MeshWorkspace> = {}): MeshWorkspace => ({
+  id,
+  name,
+  mode: 'standard',
+  folderPath: '/Users/dev/app',
+  repository: null,
+  settledAt: null,
+  ...over,
+})
+
+const browse = (workspaces: MeshWorkspace[] = []): MeshBrowse => ({
+  connectionId: 'c1',
+  reachable: true,
+  unreachableReason: null,
+  unauthorized: false,
+  scopes: ['workspace:read', 'conversation:operate'],
+  workspaces,
+  gaps: [],
+})
+
+const source = (
+  route: string,
+  machineName: string,
+  entry: Partial<RemoteBrowseEntry> = {},
+  over: Partial<EnvironmentChatSourceView> = {},
+): EnvironmentChatSourceView => ({
+  route,
+  machineName,
+  environmentId: route.startsWith('tailnet:') ? MINI_ID : BOX_ID,
+  connectionId: route.startsWith('tailnet:') ? route.slice('tailnet:'.length) : null,
+  live: true,
+  entry: { browse: browse(), loading: false, error: null, at: 1, lifecycle: true, access: 'operate', ...entry },
+  ...over,
+})
+
+const rows = (sources: EnvironmentChatSourceView[], extra: Partial<Parameters<typeof environmentChatRows>[0]> = {}) =>
+  environmentChatRows({ sources, environments: [], records: new Map(), ...extra })
+
+test('a paired desktop’s and an SSH machine’s chats are rows alike, keyed by their address', () => {
+  const listed = rows([
+    source('tailnet:c1', 'mac-mini', { conversations: [chat('rw1', { lastUserMessageAt: 3_000 })] }),
+    source('ssh:build-box', 'build-box', {
+      browse: browse([held('sw1', 'Port the parser', { row: { recencyAt: 2_000 } })]),
+      conversations: [chat('sw1', { updatedAt: 2_000 })],
+    }),
+  ])
+  assert.deepEqual(
+    listed.map((row) => [row.key, row.route, row.connectionId, row.title]),
+    [
+      [`${MINI_ID}:rw1`, 'tailnet:c1', 'c1', 'Gael Corry'],
+      [`${BOX_ID}:sw1`, 'ssh:build-box', null, 'Port the parser'],
     ],
-    gaps: [],
-    ...over,
-  })
-
-  const workspace = (id: string, extra: Record<string, unknown>): Workspace =>
-    ({ id, name: id, mode: 'standard', folderPath: null, ...extra }) as unknown as Workspace
-
-  const meshLayout = (connectionId: string, remoteAgentId: string) => ({
-    layout: {
-      type: 'tabset',
-      children: [
-        {
-          type: 'tab',
-          component: 'mesh-conversation',
-          config: {
-            connectionId,
-            machineName: 'x',
-            remoteWorkspaceId: 'rw1',
-            remoteAgentId,
-            remoteSessionId: meshConversationSessionId('rw1', remoteAgentId),
-            title: remoteAgentId,
-          },
-        },
-      ],
-    },
-  })
-
-  // ── shouldBrowse ─────────────────────────────────────────────────────────
-  const reach = (over: Partial<MeshMachineReachability>): MeshMachineReachability => ({
-    connectionId: 'c1',
-    machineName: 'air',
-    checking: false,
-    reachable: false,
-    unauthorized: false,
-    checkedAt: 1,
-    lastReachedAt: null,
-    detail: null,
-    ...over,
-  })
-  assert.equal(shouldBrowse(undefined), true, 'a machine main has not reported on gets its one read')
-  assert.equal(shouldBrowse(reach({ checkedAt: null, checking: true })), true, 'never checked: read rather than wait')
-  assert.equal(shouldBrowse(reach({ reachable: true })), true)
-  assert.equal(shouldBrowse(reach({ reachable: false })), false, 'asleep is never dialled')
-  assert.equal(shouldBrowse(reach({ reachable: true, unauthorized: true })), false, 'revoked is never dialled')
-
-  // ── attachedWorkspaceFor ─────────────────────────────────────────────────
-  const stamped = workspace('w1', {
-    remoteOrigin: {
-      connectionId: 'c1',
-      machineName: 'air',
-      workspaceId: 'rw1',
-      workspaceName: 'relay',
-      workspaceRoot: null,
-      sessionId: adaSession,
-    },
-  })
-  const legacy = workspace('w2', {
-    remoteOrigin: {
-      connectionId: 'c1',
-      machineName: 'air',
-      workspaceId: 'rw1',
-      workspaceName: 'relay',
-      workspaceRoot: null,
-    },
-    layoutModel: meshLayout('c1', 'bea'),
-  })
-  const local = workspace('w3', { folderPath: '/proj' })
-  assert.equal(
-    attachedWorkspaceFor([local, legacy, stamped], 'c1', adaSession)?.id,
-    'w1',
-    'matched by the stamped session id',
   )
-  assert.equal(
-    attachedWorkspaceFor([local, legacy, stamped], 'c1', beaSession)?.id,
-    'w2',
-    'a row born before the stamp is matched by its pane',
-  )
-  assert.equal(
-    attachedWorkspaceFor([local, legacy, stamped], 'c2', adaSession),
-    null,
-    'the same session id on another machine is not a match',
-  )
-  // A persisted remote terminal tab is a stale tab, not a remote pane: nothing
-  // matches a session through it.
-  const staleTab = workspace('w4', {
-    layoutModel: {
-      layout: {
-        type: 'tabset',
-        children: [
-          {
-            type: 'tab',
-            component: 'mesh-terminal',
-            config: { connectionId: 'c1', machineName: 'x', remoteSessionId: 's-old' },
-          },
-        ],
-      },
-    },
-  })
-  assert.equal(attachedWorkspaceFor([staleTab], 'c1', 's-old'), null, 'a stale mesh-terminal tab is ignored')
+  assert.equal(listed[1]!.address, `${BOX_ID}:sw1`)
+})
 
-  // ── buildRemoteBand ──────────────────────────────────────────────────────
-  // How each paired machine stands, as the environment list says.
-  const environments = [pairedEnvironment('c1', 'up'), pairedEnvironment('c2', 'unknown')]
-
-  const answered = {
-    browse: browse({}),
-    loading: false,
-    error: null,
-    at: 1,
-    conversations: [
-      // A chat of its own over there, so a workspace of its own.
-      chat('bea', {
-        workspaceId: 'rw2',
-        title: 'Bea',
-        chatTitle: 'Ship the docs',
-        phase: 'completed',
-        updatedAt: 2_000,
-      }),
-      chat('ada', {
-        title: 'Ada',
-        chatTitle: 'Fix the relay',
-        phase: 'running',
-        updatedAt: 1_000,
-        lastUserMessageAt: 3_000,
-      }),
-    ],
-  }
-  const band = buildRemoteBand({
-    connections: [studio, air],
-    browses: new Map([['c1', answered]]),
-    environments,
-    workspaces: [local, stamped],
-  })
-  assert.deepEqual(
-    band.map((group) => group.machineName),
-    ['sam-macbook-air', 'studio'],
-    'machines in name order',
-  )
-  const airGroup = band[0]!
-  assert.deepEqual(
-    airGroup.rows.map((row) => row.sessionId),
-    [adaSession, meshConversationSessionId('rw2', 'bea')],
-    'chats, the one last written to first',
-  )
-  const ada = airGroup.rows[0]!
-  assert.equal(ada.title, 'Ada')
-  assert.equal(ada.remoteAgentId, 'ada')
-  assert.equal(ada.workspaceId, 'rw1')
-  assert.equal(ada.activity, 'working')
-  assert.equal(ada.since, 1_000, 'how long it has been working rides the row')
-  assert.equal(airGroup.rows[1]!.activity, 'idle')
-  assert.equal(ada.chatTitle, 'Fix the relay', "the chat's own title, as its machine's sidebar shows it")
-  assert.equal(ada.workspaceName, 'Fix the relay', "which is its workspace's name over there")
-  assert.equal(ada.workspaceRoot, '/Users/air/relay', "the folder comes from the browse's workspace list")
-  assert.equal(ada.repository?.name, 'relay')
-  assert.equal(ada.attachedWorkspaceId, 'w1', 'the stamped workspace is this row')
-  assert.deepEqual(airGroup.parked, [], 'a remote-born row whose session is listed is not parked as well')
-  assert.equal(airGroup.stale, false)
-  assert.equal(airGroup.status, 'ready')
-
-  const studioGroup = band[1]!
-  assert.deepEqual(studioGroup.rows, [], 'a machine not yet read has no rows')
-  assert.equal(studioGroup.status, 'not-set-up', 'and no check yet: paired is all that is known')
-
-  // A machine that went quiet keeps its rows, dimmed, and a remote-born row
-  // whose session it no longer lists is parked under it.
-  const quiet = buildRemoteBand({
-    connections: [air],
-    browses: new Map([
-      [
-        'c1',
-        {
-          browse: browse({}),
-          loading: false,
-          error: 'Not answering.',
-          at: 2,
-          conversations: [chat('zed', { title: 'Zed' })],
-        },
-      ],
-    ]),
-    environments: [pairedEnvironment('c1', 'offline')],
-    workspaces: [stamped],
-  })
-  assert.equal(quiet[0]!.stale, true, 'rows from an earlier read on a machine that is not answering are stale')
-  assert.deepEqual(
-    quiet[0]!.rows.map((row) => row.title),
-    ['Zed'],
-  )
-  assert.deepEqual(
-    quiet[0]!.parked.map((entry) => entry.id),
-    ['w1'],
-    'the row born there stays, parked',
-  )
-  assert.equal(quiet[0]!.status, 'offline')
-  // No notices (owner ruling 2026-09-05): a scope gap or a revocation is not a
-  // sidebar sentence. The band lists conversations and nothing else.
-  const gapped = buildRemoteBand({
-    connections: [air],
-    browses: new Map([
-      [
-        'c1',
-        {
-          browse: browse({
-            gaps: [
-              {
-                part: 'workspaces',
-                code: 'scope_required',
-                message: "This pairing may not see that machine's workspaces.",
-              },
-            ],
-          }),
-          loading: false,
-          error: null,
-          at: 3,
-        },
-      ],
-    ]),
-    environments,
-    workspaces: [],
-  })
-  assert.deepEqual(gapped[0]!.rows, [])
-  assert.equal(gapped[0]!.stale, false)
-  assert.ok(!('notice' in gapped[0]!), 'the band carries no sentence for a machine with nothing to open')
-
-  // Rows born on a machine no longer paired keep a home, with nothing to ask.
-  const orphaned = buildRemoteBand({
-    connections: [],
-    browses: new Map(),
-    environments: [],
-    workspaces: [stamped, local],
-  })
-  assert.equal(orphaned.length, 1)
-  assert.equal(orphaned[0]!.connectionId, null)
-  assert.equal(orphaned[0]!.machineName, 'air')
-  assert.equal(orphaned[0]!.status, null)
-  assert.deepEqual(
-    orphaned[0]!.parked.map((entry) => entry.id),
-    ['w1'],
-  )
-
-  // ── conversationsOf ──────────────────────────────────────────────────────
-  // A row is a CONVERSATION (owner, 2026-09-11): each chat is one row titled
-  // with its own name, carrying a line per agent in it. A chat over there is
-  // its workspace, so two workspaces are two rows.
-  const chats = conversationsOf(airGroup)
-  assert.deepEqual(
-    chats.map((entry) => entry.title),
-    ['Fix the relay', 'Ship the docs'],
-    'one row per chat, titled with the chat, the one last written to first',
-  )
-  const relay = chats[0]!
-  assert.deepEqual(
-    relay.agents.map((row) => row.sessionId),
-    [adaSession],
-    'a conversation carries its own agent',
-  )
-  assert.equal(relay.activity, 'working')
-  assert.equal(relay.workspaceId, 'rw1')
-  assert.equal(relay.workspaceRoot, '/Users/air/relay', 'and carries the folder it files under')
-  assert.equal(relay.repository?.canonicalKey, 'github.com/acme/relay')
-  assert.equal(relay.attachedWorkspaceId, 'w1')
-  assert.notEqual(chats[0]!.key, chats[1]!.key, 'each chat is keyed on its own workspace')
-
-  // Two agents in one chat are one row with two lines, as that machine's own
-  // sidebar draws them. A window here following one of them is the chat's
-  // window: the other agent is not a second copy of the chat beside it.
-  {
-    const twoAgents = buildRemoteBand({
-      connections: [air],
-      browses: new Map([
-        [
-          'c1',
-          {
-            ...answered,
-            conversations: [
-              chat('cal', { title: 'Cal', chatTitle: 'Fix the relay', phase: 'running', lastUserMessageAt: 5_000 }),
-              chat('ada', { title: 'Ada', chatTitle: 'Fix the relay', phase: 'completed', lastUserMessageAt: 3_000 }),
-            ],
-          },
-        ],
+test('a chat its environment holds is a row whether or not an agent of it is listed', () => {
+  const [row, ...rest] = rows([
+    source('ssh:build-box', 'build-box', {
+      browse: browse([
+        held('sw1', 'Terminals only', {
+          row: { recencyAt: 4_000, lastTurnEndedAt: 3_500, lastVisitedAt: 1_000, highlight: { starred: true } },
+        }),
+        held('sw2', 'Resting', { settledAt: 2_000, row: { recencyAt: 5_000 } }),
       ]),
-      environments,
-      workspaces: [local, stamped],
-    })
-    const [one, ...more] = conversationsOf(twoAgents[0]!)
-    assert.equal(more.length, 0, 'one chat, one row')
-    assert.equal(one!.title, 'Fix the relay')
-    assert.deepEqual(
-      one!.agents.map((agent) => agent.title),
-      ['Ada', 'Cal'],
-      'a line per agent, the one w1 follows first',
-    )
-    assert.equal(one!.attachedWorkspaceId, 'w1', 'the chat is the window one of its agents is open in')
-    assert.equal(openSpecOfConversation(one!).attachedWorkspaceId, 'w1', 'so opening it focuses that window')
-    assert.equal(one!.activity, 'working', 'its marks say what any agent in it is doing')
-    assert.equal(one!.recencyAt, 5_000, 'and it sits by the agent last written to')
-    assert.deepEqual(unattachedConversations(twoAgents, true, [local, stamped]), [], 'no second row beside w1')
-    assert.deepEqual(
-      attachedConversations(twoAgents, [local, stamped])
-        .get('w1')!
-        .agents.map((agent) => agent.title),
-      ['Ada', 'Cal'],
-      'w1 draws both agents’ lines instead',
-    )
-    assert.equal(
-      chatRecencyOf(attachedConversations(twoAgents, [local, stamped]))({ ...stamped, createdAt: 0 }),
-      5_000,
-      'the window here sorts by it too',
-    )
+      conversations: [],
+    }),
+  ])
+  assert.equal(rest.length, 0, 'a settled chat has no row')
+  assert.equal(row!.title, 'Terminals only')
+  assert.deepEqual(row!.agents, [])
+  assert.equal(row!.recencyAt, 4_000)
+  assert.deepEqual(row!.highlight, { starred: true, color: null })
+  // Its clocks are its workspace's: it finished a turn nobody has seen.
+  assert.equal(remoteRowFinishUnseen(row!, 10_000), true)
+  assert.equal(canMarkRemoteConversationUnread({ ...row!, lastVisitedAt: 4_000 }, 10_000), true)
+})
+
+test('a Studio from before `chat-rows` lists only its chats that have an agent', () => {
+  const listed = rows([
+    source('tailnet:c1', 'mac-mini', {
+      browse: browse([held('rw1', 'Listed'), held('rw2', 'Idle seat')]),
+      conversations: [chat('rw1', { chatTitle: 'Nightly triage', highlight: { starred: false, color: 'blue' } })],
+    }),
+  ])
+  assert.deepEqual(
+    listed.map((row) => row.title),
+    ['Nightly triage'],
+  )
+  assert.deepEqual(listed[0]!.highlight, { starred: false, color: 'blue' }, 'its marks ride its agents')
+})
+
+test('rows sit by their environment’s recency key, interleaved across environments', () => {
+  const listed = rows([
+    source('tailnet:c1', 'mac-mini', {
+      conversations: [chat('a', { recencyAt: 1_000 }), chat('b', { recencyAt: 5_000 })],
+    }),
+    source('ssh:build-box', 'build-box', { conversations: [chat('c', { recencyAt: 3_000 })] }),
+  ])
+  assert.deepEqual(
+    listed.map((row) => row.workspaceId),
+    ['b', 'c', 'a'],
+  )
+  const local = [{ id: 'l1', lastUserMessageAt: 4_000 } as Workspace]
+  assert.deepEqual(
+    interleaveChats(local, listed, (workspace) => workspace.lastUserMessageAt ?? 0).map((entry) =>
+      entry.kind === 'local' ? entry.workspace.id : entry.conversation.workspaceId,
+    ),
+    ['b', 'l1', 'c', 'a'],
+  )
+})
+
+test('a chat whose agent waits on a person, or failed, says so; a last-known list claims no live work', () => {
+  const [waiting, failed] = rows([
+    source('ssh:build-box', 'build-box', {
+      conversations: [
+        chat('w', { phase: 'waiting_for_approval', recencyAt: 2 }),
+        chat('f', { phase: 'failed', recencyAt: 1 }),
+      ],
+    }),
+  ])
+  assert.equal(waiting!.activity, 'needs-input')
+  assert.equal(remoteRowActivity(failed!), 'failed')
+  const [away] = rows([
+    source('ssh:build-box', 'build-box', {
+      conversations: [chat('w', { phase: 'running' })],
+      listFailure: { kind: 'unavailable', message: 'gone' } as never,
+      listedAt: 7,
+    }),
+  ])
+  assert.equal(away!.activity, 'idle')
+  assert.deepEqual(away!.lastKnown, { reason: 'not-answering', since: 7 })
+})
+
+test('a resting WSL distribution draws its last-known rows as not connected', () => {
+  const [row] = rows([
+    source(
+      'wsl:Ubuntu',
+      'Ubuntu',
+      { conversations: [chat('u1', { phase: 'running' })], listedAt: 40 },
+      { live: false, environmentId: null },
+    ),
+  ])
+  assert.deepEqual(row!.lastKnown, { reason: 'not-connected', since: 40 })
+  assert.equal(row!.activity, 'idle')
+  assert.equal(row!.key, 'wsl:Ubuntu:u1', 'keyed by its route until its id is known')
+  assert.equal(row!.address, null)
+})
+
+test('off the tailnet a paired desktop’s rows go, and an SSH machine’s stay', () => {
+  const listed = rows(
+    [
+      source('tailnet:c1', 'mac-mini', { conversations: [chat('rw1')] }),
+      source('ssh:build-box', 'build-box', { conversations: [chat('sw1')] }),
+    ],
+    { onTailnet: false, reachedOverTailnet: (route) => route.startsWith('tailnet:') },
+  )
+  assert.deepEqual(
+    listed.map((row) => row.workspaceId),
+    ['sw1'],
+  )
+})
+
+test('a kind of workspace kept off the sidebar is not a row', () => {
+  const listed = rows(
+    [source('ssh:build-box', 'build-box', { browse: browse([held('b1', 'Board', { mode: 'board', row: {} })]) })],
+    { hiddenMode: (mode) => mode === 'board' },
+  )
+  assert.deepEqual(listed, [])
+})
+
+test('a pairing that may only follow a machine’s chats offers no Settle and no marks', () => {
+  const [row] = rows([source('tailnet:c1', 'mac-mini', { conversations: [chat('rw1')], access: 'read' as never })])
+  assert.equal(row!.lifecycle, false)
+  assert.equal(row!.rowMenu, false)
+  assert.equal(row!.markUnread, false)
+})
+
+test('a record here of another environment’s chat is not a row; opening the chat’s row focuses it', () => {
+  const copy = { id: 'sw1', environment: { kind: 'ssh', id: 'build-box', label: 'build-box' } } as Workspace
+  const attached = {
+    id: 'local-9',
+    remoteOrigin: { connectionId: 'c1', workspaceId: 'seat', sessionId: 'conversation:rw1:agent-1' },
+  } as Workspace
+  const local = { id: 'mine' } as Workspace
+  assert.deepEqual([copy, attached, local].map(isEnvironmentRecord), [true, true, false])
+  const ids: Record<string, string> = { 'ssh:build-box': BOX_ID, 'tailnet:c1': MINI_ID }
+  const records = chatRecordsByAddress([copy, attached, local], (route) => ids[route] ?? null)
+  assert.deepEqual(
+    [...records],
+    [
+      [`${BOX_ID}:sw1`, 'sw1'],
+      [`${MINI_ID}:rw1`, 'local-9'],
+    ],
+  )
+  const listed = rows(
+    [
+      source('tailnet:c1', 'mac-mini', { conversations: [chat('rw1')] }),
+      source('ssh:build-box', 'build-box', { conversations: [chat('sw1'), chat('sw2', { agentId: 'agent-2' })] }),
+    ],
+    { records },
+  )
+  const byChat = new Map(listed.map((row) => [row.workspaceId, row]))
+  assert.equal(byChat.get('rw1')!.attachedWorkspaceId, 'local-9')
+  assert.equal(byChat.get('sw1')!.attachedWorkspaceId, 'sw1')
+  assert.equal(byChat.get('sw2')!.attachedWorkspaceId, null)
+  const spec = openSpecOfConversation(byChat.get('sw2')!)
+  assert.deepEqual(
+    { route: spec.route, connectionId: spec.connectionId, chatId: spec.chatId, agent: spec.agent?.agentId },
+    { route: 'ssh:build-box', connectionId: null, chatId: 'sw2', agent: 'agent-2' },
+  )
+})
+
+test('an environment followed by two routes is drawn once, from its best route', () => {
+  // The Mini is paired and saved over SSH; a copy here names the SSH route, so
+  // the window follows both, and both list the same chats.
+  const mini: EnvironmentEntry = {
+    environmentId: MINI_ID as EnvironmentEntry['environmentId'],
+    displayName: 'mac-mini',
+    routes: [
+      { kind: 'tailnet', connection: 'c1' },
+      { kind: 'ssh', machine: 'mac-mini' },
+    ],
+    machine: { kind: 'paired', name: 'mac-mini' },
+    descriptor: null,
+    connection: { state: 'up', detail: null, lastReachedAt: null },
+    compatibility: 'compatible',
   }
+  const listed = { conversations: [chat('rw1'), chat('rw2', { agentId: 'agent-2' })] }
+  const both = [
+    // The copy's route first, as the window may have followed it first.
+    source('ssh:mac-mini', 'mac-mini', listed, { environmentId: MINI_ID }),
+    source('tailnet:c1', 'mac-mini', listed),
+  ]
+  const drawn = rows(both, { environments: [mini] })
+  assert.deepEqual(
+    drawn.map((row) => [row.key, row.route]),
+    [
+      [`${MINI_ID}:rw1`, 'tailnet:c1'],
+      [`${MINI_ID}:rw2`, 'tailnet:c1'],
+    ],
+  )
+  // Off the tailnet its pairing is gone, and its SSH route draws them.
+  assert.deepEqual(
+    rows(both, {
+      environments: [mini],
+      onTailnet: false,
+      reachedOverTailnet: (route) => route.startsWith('tailnet:'),
+    }).map((row) => [row.key, row.route]),
+    [
+      [`${MINI_ID}:rw1`, 'ssh:mac-mini'],
+      [`${MINI_ID}:rw2`, 'ssh:mac-mini'],
+    ],
+  )
+})
 
-  // ── unattachedConversations ──────────────────────────────────────────────
-  // A chat a window here is already showing is NOT a row of its own: that window
-  // is already a row of its project, and listing both is the same chat twice.
-  assert.deepEqual(
-    unattachedConversations(band, true, [local, stamped]).map((entry) => entry.title),
-    ['Ship the docs'],
-    'Ada is attached to w1, so it gets no second row',
-  )
-  assert.deepEqual(
-    unattachedConversations(band, true, [local]).map((entry) => entry.title),
-    ['Fix the relay', 'Ship the docs'],
-    'with no window holding it, the conversation is a row',
-  )
-  assert.deepEqual(
-    unattachedConversations(band, false, [local]),
-    [],
-    'off the tailnet, nothing read from over there is drawn',
-  )
-
-  // ── attachedConversations ────────────────────────────────────────────────
-  // The complement: the conversation each OPEN remote row is, so that row can
-  // draw its agent's line from what the browse read.
-  const openHere = attachedConversations(band, [local, stamped])
-  assert.deepEqual([...openHere.keys()], ['w1'], 'the conversation w1 holds is keyed by w1')
-  assert.deepEqual(
-    openHere.get('w1')!.agents.map((agent) => agent.title),
-    ['Ada'],
-  )
-  assert.equal(attachedConversations([], [local, stamped]).size, 0)
-  // A LOCAL chat that happens to hold a pane onto the other machine is not a
-  // remote conversation: it is a local chat with a visitor in it, and its own
-  // agents' lines are not the other machine's to replace.
-  const visiting = workspace('w9', { folderPath: '/proj', layoutModel: meshLayout('c1', 'ada') })
-  const visitedBand = buildRemoteBand({
-    connections: [air],
-    browses: new Map([['c1', answered]]),
-    environments,
-    workspaces: [visiting],
+test('a star or colour change keeps the other half, and leaves no highlight when neither is left', () => {
+  assert.deepEqual(remoteHighlightAfter(null, { starred: true }), { starred: true, color: null })
+  assert.deepEqual(remoteHighlightAfter({ starred: true, color: 'blue' }, { starred: false }), {
+    starred: false,
+    color: 'blue',
   })
-  assert.equal(
-    visitedBand.flatMap((group) => conversationsOf(group)).some((entry) => entry.attachedWorkspaceId === 'w9'),
-    true,
-    'the band still recognises the window showing that session',
-  )
-  assert.equal(
-    attachedConversations(visitedBand, [visiting]).size,
-    0,
-    '…but it is not handed the lines, because it is not a remote-born row',
-  )
+  assert.equal(remoteHighlightAfter({ starred: true, color: null }, { starred: false }), null)
+})
 
+test('the helpers a record of another environment’s chat still reads', () => {
   // ── remoteLinkStateOf ────────────────────────────────────────────────────
   // Three answers, not two: "we have not been told" must never read as
   // "disconnected", or a host without the tailnet bridge empties the sidebar.
@@ -522,292 +378,6 @@ test('remoteSessionsModel', async () => {
   console.log('remote sessions model tests passed')
 })
 
-test('chats on a paired machine are rows of their own, with the presence their phase says, and open in the chat view', () => {
-  const mini: MeshConnection = {
-    id: 'c-mini',
-    machineName: 'mac-mini',
-    endpoint: 'mac-mini.tail1234.ts.net:8471',
-    deviceId: 'tnd_mini',
-    deviceName: 'dev-macbook-air',
-    scopes: ['conversation:read', 'conversation:operate'],
-    pairedAt: '2026-09-05T00:00:00.000Z',
-    lastConnectedAt: null,
-    pairedVia: 'request',
-  }
-  const chat = (
-    agentId: string,
-    phase: MeshConversation['phase'],
-    title: string,
-    workspaceId = 'rw1',
-  ): MeshConversation => ({
-    workspaceId,
-    agentId,
-    title,
-    phase,
-    updatedAt: 2_000,
-    createdAt: 1_000,
-    providerId: 'claude-agent',
-    modelId: 'opus',
-    turnCount: 3,
-    lastSeq: 40,
-  })
-  const entry = {
-    browse: null,
-    loading: false,
-    error: null,
-    at: 1,
-    conversations: [
-      chat('a-running', 'running', 'Profile the importer'),
-      chat('a-waiting', 'waiting_for_approval', 'Rename the store', 'rw2'),
-      chat('a-done', 'completed', 'Write the changelog', 'rw3'),
-    ],
-  }
-  const opened = {
-    id: 'local-1',
-    remoteOrigin: {
-      connectionId: 'c-other',
-      machineName: 'build-box',
-      workspaceId: 'rw1',
-      workspaceName: '',
-      sessionId: 'unrelated',
-    },
-    layoutModel: {
-      layout: {
-        type: 'row',
-        children: [
-          {
-            type: 'tab',
-            component: 'mesh-conversation',
-            config: { connectionId: 'c-mini', remoteSessionId: meshConversationSessionId('rw3', 'a-done') },
-          },
-        ],
-      },
-    },
-  } as unknown as Workspace
-  const [group] = buildRemoteBand({
-    connections: [mini],
-    browses: new Map([[mini.id, entry]]),
-    environments: [],
-    workspaces: [opened],
-  })
-  assert.deepEqual(
-    group.rows.map((row) => [row.title, row.activity, row.status.label]),
-    [
-      ['Profile the importer', 'working', 'Running'],
-      ['Rename the store', 'needs-input', 'Needs approval'],
-      ['Write the changelog', 'idle', 'Done'],
-    ],
-  )
-  // A pane already following a chat here is the window a click focuses.
-  assert.equal(group.rows[2].attachedWorkspaceId, 'local-1')
-  // Each chat is a conversation of its own, titled with its own name.
-  const conversations = conversationsOf(group)
-  assert.deepEqual(
-    conversations.map((conversation) => conversation.title),
-    ['Profile the importer', 'Rename the store', 'Write the changelog'],
-  )
-  assert.deepEqual(openSpecOfConversation(conversations[1]).conversation, { workspaceId: 'rw2', agentId: 'a-waiting' })
-  assert.equal(meshConversationPresence('waiting_for_input'), 'needs-input')
-  assert.equal(meshConversationPresence('starting'), 'running')
-  assert.equal(meshConversationPresence('failed'), 'idle')
-
-  // A listed chat's phase and reply preview ride its row, which words its line.
-  {
-    const [row] = buildRemoteBand({
-      connections: [mini],
-      browses: new Map([
-        [
-          'c-mini',
-          {
-            ...entry,
-            conversations: [
-              {
-                ...chat('a-asked', 'waiting_for_input', 'Pick a branch'),
-                lastAssistantText: 'Which branch?',
-                branch: 'agent/pick',
-                pullRequests: [
-                  { number: 7, state: 'merged', url: 'https://github.com/acme/app/pull/7', title: 'Pick it' },
-                ],
-              },
-            ],
-          },
-        ],
-      ]),
-      environments: [],
-      workspaces: [],
-    })[0]!.rows
-    assert.equal(row!.phase, 'waiting_for_input')
-    assert.equal(row!.replyPreview, 'Which branch?')
-    assert.equal(row!.branch, 'agent/pick')
-    assert.deepEqual(
-      row!.pullRequests.map((pr) => [pr.number, pr.state, pr.repoKey, pr.repoName]),
-      [[7, 'merged', 'github.com/acme/app', 'app']],
-    )
-  }
-
-  // A listed pull request is read for its repository off its address, as the
-  // local record reads it; an address that names none is left out, and one on
-  // another forge says which.
-  {
-    const read = branchPullRequestsOfWire([
-      { number: 1, state: 'open', url: 'https://github.com/acme/app/pull/1', title: 'GitHub' },
-      { number: 2, state: 'open', url: 'https://gitlab.com/acme/app/-/merge_requests/2', title: 'GitLab' },
-      { number: 3, state: 'open', url: 'https://example.com/not-a-pull-request', title: 'Nothing' },
-    ])
-    assert.deepEqual(
-      read.map((pr) => [pr.number, pr.forge ?? 'github']),
-      [
-        [1, 'github'],
-        [2, 'gitlab'],
-      ],
-    )
-  }
-
-  // The green "finished while you were away" row: a finish after the last
-  // visit on any device. A chat with no visit recorded reads as seen, and one
-  // still working or waiting has not finished.
-  const finish = { activity: 'idle' as const, lastTurnEndedAt: 2_000, lastVisitedAt: 1_000 }
-  assert.equal(remoteFinishUnseen(finish), true)
-  assert.equal(remoteFinishUnseen({ ...finish, lastVisitedAt: 2_500 }), false, 'seen since')
-  assert.equal(remoteFinishUnseen({ ...finish, lastVisitedAt: null }), false, 'no visit recorded reads as seen')
-  assert.equal(remoteFinishUnseen({ ...finish, lastTurnEndedAt: null }), false, 'never finished a turn')
-  assert.equal(remoteFinishUnseen({ ...finish, activity: 'working' }), false)
-  assert.equal(remoteFinishUnseen({ ...finish, activity: 'needs-input' }), false)
-})
-
-// One chat on the Mac mini, as its list carries it, read into the row this
-// machine's sidebar draws for it.
-const miniConnection: MeshConnection = {
-  id: 'c-mini',
-  machineName: 'mac-mini',
-  endpoint: 'mac-mini.tail1234.ts.net:8471',
-  deviceId: 'tnd_mini',
-  deviceName: 'dev-macbook-air',
-  scopes: ['conversation:read', 'conversation:operate'],
-  pairedAt: '2026-09-05T00:00:00.000Z',
-  lastConnectedAt: null,
-  pairedVia: 'request',
-}
-function rowOfListed(over: Partial<MeshConversation>) {
-  const listed: MeshConversation = {
-    workspaceId: 'rw1',
-    agentId: 'agent-1',
-    title: 'Nightly triage',
-    phase: 'completed',
-    updatedAt: 9_000,
-    createdAt: 1_000,
-    providerId: 'claude-agent',
-    modelId: 'opus',
-    turnCount: 3,
-    lastSeq: 40,
-    ...over,
-  }
-  const [group] = buildRemoteBand({
-    connections: [miniConnection],
-    browses: new Map([
-      [miniConnection.id, { browse: null, loading: false, error: null, at: 1, conversations: [listed] }],
-    ]),
-    environments: [],
-    workspaces: [],
-  })
-  return group!.rows[0]!
-}
-
-test('a chat whose turn is over while its background agent works reads as working, counted from when its work began', () => {
-  const t0 = 1_000_000
-  const row = rowOfListed({
-    phase: 'completed',
-    backgroundWork: { agents: 1, monitors: 0 },
-    workingSince: t0,
-    updatedAt: t0 + 14 * 60_000,
-  })
-  assert.equal(row.activity, 'working')
-  assert.equal(row.status.label, 'Running')
-  assert.equal(row.since, t0, 'the stretch of work, not the last thing that moved')
-
-  // A turn the chat opened by itself is counted from the same start, not its own.
-  const woken = rowOfListed({
-    phase: 'running',
-    backgroundWork: { agents: 1, monitors: 0 },
-    turnStartedAt: t0 + 14 * 60_000,
-    workingSince: t0,
-  })
-  assert.equal(woken.activity, 'working')
-  assert.equal(woken.since, t0)
-
-  // A monitor that will wake the agent keeps it working too, from an idle phase as from a finished one.
-  assert.equal(rowOfListed({ phase: 'idle', backgroundWork: { agents: 0, monitors: 1 } }).activity, 'working')
-  // A turn waiting on the person still waits, whatever works behind it.
-  assert.equal(
-    rowOfListed({ phase: 'waiting_for_approval', backgroundWork: { agents: 1, monitors: 0 } }).activity,
-    'needs-input',
-  )
-  assert.equal(meshConversationPresence('completed', { agents: 2, monitors: 0 }), 'running')
-  assert.equal(
-    meshConversationPresence('failed', { agents: 2, monitors: 0 }),
-    'idle',
-    'a failure is the turn’s own word',
-  )
-})
-
-test('a machine from before it said when the work began reads as it did', () => {
-  // Neither member: the turn's phase alone, and the turn's own start.
-  const running = rowOfListed({ phase: 'running', turnStartedAt: 7_000, updatedAt: 9_000 })
-  assert.equal(running.activity, 'working')
-  assert.equal(running.since, 7_000)
-  const done = rowOfListed({ phase: 'completed', updatedAt: 9_000 })
-  assert.equal(done.activity, 'idle')
-  assert.equal(done.since, 9_000)
-  assert.equal(rowOfListed({ phase: 'running', updatedAt: 9_000 }).since, 9_000, 'with no turn start, the last move')
-  // A machine that lists background work but no stretch: working, from what it does say.
-  const background = rowOfListed({ phase: 'completed', backgroundWork: { agents: 1, monitors: 0 }, updatedAt: 9_000 })
-  assert.equal(background.activity, 'working')
-  assert.equal(background.since, 9_000)
-})
-
-test('a remote row carries the schedule that started its chat and its snooze, and a sleeping chat is not marked finished', () => {
-  const t0 = 1_000_000
-  const run = rowOfListed({ scheduledAgentId: 'sa-1', lastTurnEndedAt: t0 + 60_000, lastVisitedAt: t0 })
-  assert.equal(run.scheduledAgentId, 'sa-1')
-  assert.equal(remoteFinishUnseen(run, t0 + 120_000), true, 'a run nobody opened finished unseen')
-  assert.equal(rowOfListed({}).scheduledAgentId, null)
-
-  const sleeping = rowOfListed({ lastTurnEndedAt: t0 + 60_000, lastVisitedAt: t0, snoozedUntil: t0 + 3_600_000 })
-  assert.equal(sleeping.snoozedUntil, t0 + 3_600_000)
-  assert.equal(remoteFinishUnseen(sleeping, t0 + 120_000), false, 'asleep over there, so not news here')
-  assert.equal(remoteFinishUnseen(sleeping, t0 + 3_600_001), true, 'news again once it wakes')
-})
-
-test('interleaveChats: a paired machine’s chats sit among the local ones by when each was last written to', () => {
-  const local = (id: string, lastUserMessageAt: number) =>
-    ({ id, createdAt: 0, lastUserMessageAt }) as unknown as Workspace
-  const remote = (key: string, recencyAt: number) => ({ key, recencyAt }) as unknown as RemoteConversation
-  const order = (entries: ReturnType<typeof interleaveChats>) =>
-    entries.map((entry) => (entry.kind === 'local' ? entry.workspace.id : entry.conversation.key))
-
-  assert.deepEqual(
-    order(interleaveChats([local('hour', 9_000), local('days', 1_000)], [remote('now', 10_000), remote('mid', 5_000)])),
-    ['now', 'hour', 'mid', 'days'],
-    'a remote chat written to just now leads a local one two days quiet',
-  )
-  assert.deepEqual(
-    order(interleaveChats([local('a', 5_000)], [remote('b', 9_000), remote('c', 10_000)])),
-    ['b', 'c', 'a'],
-    'the machine’s own order is kept, not re-sorted here',
-  )
-  assert.deepEqual(order(interleaveChats([local('a', 5_000)], [remote('b', 5_000)])), ['a', 'b'], 'a tie goes local')
-
-  // A chat opened here from a paired machine, then written to on that machine:
-  // its own clock here never heard, but the machine's did.
-  const opened = local('opened', 1_000)
-  const attached = new Map([['opened', { agents: [{ lastUserMessageAt: 20_000 }] } as unknown as RemoteConversation]])
-  assert.deepEqual(
-    order(interleaveChats([local('hour', 9_000), opened], [remote('now', 10_000)], chatRecencyOf(attached))),
-    ['opened', 'now', 'hour'],
-    'an opened remote chat is as recent as its machine says it was written to',
-  )
-})
-
 test('a remote-born row names its chat by the session it was stamped with', () => {
   assert.equal(
     remoteOriginChatWorkspaceId({ workspaceId: 'seat', sessionId: 'conversation:new-chat:agent-9' }),
@@ -816,207 +386,6 @@ test('a remote-born row names its chat by the session it was stamped with', () =
   assert.equal(remoteOriginChatWorkspaceId({ workspaceId: 'ws:1', sessionId: 'conversation:ws:1:agent-9' }), 'ws:1')
   assert.equal(remoteOriginChatWorkspaceId({ workspaceId: 'seat' }), 'seat', 'a row born before the stamp')
 })
-
-// The row menu's marks on a paired machine's chat (`chat-lifecycle`): read off
-// its list, drawn at once when asked for here, and worn by a row opened here.
-function bandOfListed(over: Partial<MeshConversation>, entry: Partial<RemoteBrowseEntry> = {}) {
-  const listed: MeshConversation = {
-    workspaceId: 'rw1',
-    agentId: 'agent-1',
-    title: 'Nightly triage',
-    phase: 'completed',
-    updatedAt: 9_000,
-    createdAt: 1_000,
-    providerId: 'claude-agent',
-    modelId: 'opus',
-    turnCount: 3,
-    lastSeq: 40,
-    ...over,
-  }
-  return buildRemoteBand({
-    connections: [miniConnection],
-    browses: new Map([
-      [miniConnection.id, { browse: null, loading: false, error: null, at: 1, conversations: [listed], ...entry }],
-    ]),
-    environments: [],
-    workspaces: [],
-  })
-}
-const operate: Partial<RemoteBrowseEntry> = {
-  lifecycle: true,
-  access: 'operate',
-}
-
-test('a remote row carries its machine’s star, colour and Auto-settle, and whether that machine takes them from here', () => {
-  const [group] = bandOfListed({ highlight: { starred: true, color: 'green' }, autoSettle: true }, operate)
-  const [conversation] = conversationsOf(group!)
-  assert.deepEqual(conversation!.highlight, { starred: true, color: 'green' })
-  assert.equal(conversation!.autoSettle, true)
-  assert.equal(conversation!.rowMenu, true)
-  assert.equal(conversation!.markUnread, true)
-
-  // A machine whose Studio keeps no records of its chats: none listed, and none offered.
-  const [older] = conversationsOf(bandOfListed({}, { lifecycle: false, access: 'operate' })[0]!)
-  assert.equal(older!.highlight, null)
-  assert.equal(older!.autoSettle, false)
-  assert.equal(older!.rowMenu, false)
-  assert.equal(older!.markUnread, false)
-  // A pairing that may only follow the machine's chats may not mark them.
-  const [follower] = conversationsOf(bandOfListed({}, { ...operate, access: 'read' })[0]!)
-  assert.equal(follower!.rowMenu, false)
-  assert.equal(follower!.markUnread, false)
-})
-
-test('a mark asked for here is worn at once, and the list stands in for it once a read after the machine took it lands', () => {
-  const band = bandOfListed({ highlight: { starred: false, color: 'blue' } }, operate)
-  const key = remoteChatKey(miniConnection.id, 'rw1')
-  const pending = new Map([
-    [
-      key,
-      {
-        connectionId: miniConnection.id,
-        workspaceId: 'rw1',
-        marks: { highlight: { starred: true, color: 'blue' as const }, snoozedUntil: 50_000 },
-        takenAt: null,
-      },
-    ],
-  ])
-  const [conversation] = conversationsOf(withPendingRemoteMarks(band, pending)[0]!)
-  assert.deepEqual(conversation!.highlight, { starred: true, color: 'blue' })
-  assert.equal(conversation!.snoozedUntil, 50_000)
-  assert.equal(withPendingRemoteMarks(band, new Map()), band, 'nothing pending, nothing copied')
-
-  const browses = (at: number) =>
-    new Map<string, RemoteBrowseEntry>([[miniConnection.id, { browse: null, loading: false, error: null, at }]])
-  const asked = pending.get(key)!
-  assert.equal(pendingRemoteMarksRead(asked, browses(10_000)), false, 'not answered yet')
-  assert.equal(pendingRemoteMarksRead({ ...asked, takenAt: 5_000 }, browses(4_000)), false, 'a read from before')
-  assert.equal(pendingRemoteMarksRead({ ...asked, takenAt: 5_000 }, browses(6_000)), true)
-})
-
-test('a star or colour change keeps the other half, and leaves no highlight when neither is left', () => {
-  assert.deepEqual(remoteHighlightAfter(null, { starred: true }), { starred: true, color: null })
-  assert.deepEqual(remoteHighlightAfter({ starred: true, color: null }, { color: 'pink' }), {
-    starred: true,
-    color: 'pink',
-  })
-  assert.equal(remoteHighlightAfter({ starred: true, color: null }, { starred: false }), null)
-  assert.equal(remoteHighlightAfter({ starred: false, color: 'pink' }, { color: null }), null)
-})
-
-test('a row opened here wears its machine’s marks where that machine keeps them, and its own where it does not', () => {
-  const workspace = {
-    id: 'ws-here',
-    name: 'Nightly triage',
-    highlight: { starred: false, color: 'red' },
-    createdAt: 0,
-  } as unknown as Workspace
-  const conversation = {
-    rowMenu: true,
-    highlight: { starred: true, color: null },
-    snoozedUntil: 70_000,
-    autoSettle: true,
-  } as unknown as RemoteConversation
-  const marked = withRemoteChatMarks(workspace, conversation)
-  assert.deepEqual(marked.highlight, { starred: true, color: null })
-  assert.equal(marked.snoozedUntil, 70_000)
-  assert.equal(marked.autoSettleEnabled, true)
-  assert.equal(withRemoteChatMarks(workspace, { ...conversation, rowMenu: false }), workspace)
-  assert.equal(withRemoteChatMarks(marked, conversation), marked, 'the same marks, the same row')
-})
-
-test('a sleeping remote chat is asleep until its wake, and Mark unread is offered where there is something to mark', () => {
-  assert.equal(remoteConversationAsleep({ snoozedUntil: 10 }, 5), true)
-  assert.equal(remoteConversationAsleep({ snoozedUntil: 10 }, 10), false)
-  assert.equal(remoteConversationAsleep({ snoozedUntil: null }, 5), false)
-
-  const [finished] = conversationsOf(bandOfListed({ lastTurnEndedAt: 5_000, lastVisitedAt: 6_000 }, operate)[0]!)
-  assert.equal(canMarkRemoteConversationUnread(finished!, 7_000), true)
-  const [unseen] = conversationsOf(bandOfListed({ lastTurnEndedAt: 5_000, lastVisitedAt: 4_000 }, operate)[0]!)
-  assert.equal(canMarkRemoteConversationUnread(unseen!, 7_000), false, 'already marked finished-unseen')
-  const [fresh] = conversationsOf(bandOfListed({}, operate)[0]!)
-  assert.equal(canMarkRemoteConversationUnread(fresh!, 7_000), false, 'nothing finished yet')
-  const [older] = conversationsOf(
-    bandOfListed({ lastTurnEndedAt: 5_000, lastVisitedAt: 6_000 }, { ...operate, lifecycle: false })[0]!,
-  )
-  assert.equal(canMarkRemoteConversationUnread(older!, 7_000), false, 'a machine that does not take it')
-})
-
-test('a chat opened from a paired machine says the louder of what this desktop and its machine know', () => {
-  const chat = (activity: string) => ({ activity, agents: [] }) as unknown as RemoteConversation
-  assert.equal(remoteRowActivity('idle', chat('working')), 'working', 'its turn runs over there')
-  assert.equal(remoteRowActivity('idle', chat('needs-input')), 'needs-input', 'and waits on the person over there')
-  assert.equal(remoteRowActivity('working', chat('needs-input')), 'needs-input', 'a wait is louder than work')
-  assert.equal(remoteRowActivity('failed', chat('idle')), 'failed', 'what this desktop saw fail stays failed')
-  assert.equal(remoteRowActivity('failed', chat('working')), 'working', 'until its machine works again')
-  assert.equal(remoteRowActivity(undefined, chat('idle')), 'idle')
-})
-
-test('a chat on a paired machine finished unseen when any of its agents did', () => {
-  const now = 100_000
-  const agent = (lastTurnEndedAt: number, lastVisitedAt: number | null) => ({
-    activity: 'idle',
-    lastTurnEndedAt,
-    lastVisitedAt,
-    snoozedUntil: null,
-  })
-  const chat = (...agents: unknown[]) => ({ activity: 'idle', agents }) as unknown as RemoteConversation
-  assert.equal(remoteRowFinishUnseen(chat(agent(50_000, 40_000)), now), true)
-  assert.equal(remoteRowFinishUnseen(chat(agent(50_000, 60_000)), now), false, 'seen since')
-  assert.equal(remoteRowFinishUnseen(chat(agent(50_000, 60_000), agent(70_000, 60_000)), now), true)
-})
-
-test('a row opened from a paired machine files by what that machine says of it now', () => {
-  const stale = { canonicalKey: 'github.com/old-org/demo-app', remoteUrl: '', name: 'demo-app' }
-  const current = { canonicalKey: 'github.com/acme/demo-app', remoteUrl: '', name: 'demo-app' }
-  const workspace = {
-    id: 'w1',
-    name: 'Chat',
-    remoteOrigin: { connectionId: 'c1', workspaceId: 'rw1', workspaceRoot: '/Users/dev/demo-app', repository: stale },
-  } as unknown as Workspace
-  const conversation = {
-    rowMenu: false,
-    manage: null,
-    title: 'Chat',
-    workspaceRoot: '/Users/dev/demo-app',
-    repository: current,
-  } as unknown as RemoteConversation
-  const refreshed = withRemoteChatMarks(workspace, conversation)
-  assert.equal(refreshed.remoteOrigin?.repository, current)
-  assert.equal(withRemoteChatMarks(refreshed, conversation), refreshed, 'the same answer, the same row')
-  assert.equal(
-    withRemoteChatMarks(workspace, { ...conversation, repository: null }),
-    workspace,
-    'a machine that says nothing leaves the stamp',
-  )
-  assert.equal(
-    sameRemoteChatMarks(conversation, { ...conversation, repository: stale }),
-    false,
-    'a new answer is not served from the cache of the old one',
-  )
-})
-
-test('a chat a failed turn stopped on its machine reads as failed here', () => {
-  const chat = (activity: string, phase: string, rowActivity = activity) =>
-    ({ activity, agents: [{ activity: rowActivity, phase }] }) as unknown as RemoteConversation
-  assert.equal(remoteRowActivity(undefined, chat('idle', 'failed')), 'failed')
-  assert.equal(remoteRowActivity('idle', chat('idle', 'failed')), 'failed')
-  assert.equal(remoteRowActivity(undefined, chat('working', 'failed')), 'working', 'background work is still work')
-  assert.equal(remoteRowActivity(undefined, chat('idle', 'completed')), 'idle')
-})
-
-/** A paired desktop as the environment list holds it, standing as `state` says. */
-function pairedEnvironment(connection: string, state: EnvironmentConnectionState): EnvironmentEntry {
-  return {
-    environmentId: null,
-    displayName: connection,
-    routes: [{ kind: 'tailnet', connection }],
-    machine: { kind: 'paired', name: connection },
-    descriptor: null,
-    connection: { state, detail: null, lastReachedAt: null },
-    compatibility: 'unknown',
-  }
-}
 
 test('what of its chats a machine takes from here is read off its Studio’s welcome', () => {
   assert.deepEqual(chatManageOf({ lifecycle: true, unwatchPullRequest: false }), {

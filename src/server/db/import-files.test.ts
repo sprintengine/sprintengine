@@ -24,10 +24,28 @@ import { createClientToolsetStore } from '../tools/client-toolset-store'
 import { createEmbedStore } from '../web/embeds'
 import { ConversationApprovalRuleStore } from '../../main/conversation-approval-rules'
 import { createPendingFirstMessages } from '../../main/conversation-first-messages'
-import { DATA_FORMAT_FILENAME, prepareDataFormat, StudioDataMigrationError } from '../environment/data-format'
+import {
+  DATA_FORMAT_FILENAME,
+  prepareDataFormat,
+  STUDIO_DATA_FORMAT,
+  StudioDataMigrationError,
+} from '../environment/data-format'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME, studioDatabaseFiles } from './database'
 import { DATABASE_COPIES_DIRNAME } from './copies'
-import { CHAT_RECORDS_STEP, CHAT_SIDE_RECORDS_STEP, importChatRecords, importChatSideRecords } from './import-files'
+import {
+  ADOPTIONS_STEP,
+  CHAT_RECORDS_STEP,
+  CHAT_SIDE_RECORDS_STEP,
+  importChatRecords,
+  importChatSideRecords,
+  importAdoptions,
+  importPullRequestRecords,
+  importWorktreeRecords,
+  PULL_REQUEST_RECORD_STEP,
+  WORKTREE_RECORDS_STEP,
+} from './import-files'
+import { createPoolStore, POOL_RECORD_VERSION } from '../../main/worktree-pool/pool-store'
+import { PULL_REQUEST_RECORD_FILE } from '../pull-requests/pull-request-record'
 import { createSnapshotStorage } from './snapshot-storage'
 import { createWorkspaceRegistryStore } from '../../main/workspace-registry-store'
 import { createScheduledAgentsStore } from '../../main/scheduled-agents/store'
@@ -153,10 +171,18 @@ const imported = (dir: string) => {
   }
 }
 
+/** The formats a folder in format `from - 1` is brought through to this build's. */
+const formatsFrom = (from: number): number[] =>
+  Array.from({ length: STUDIO_DATA_FORMAT - from + 1 }, (_, index) => from + index)
+
 test('format 2 brings the four stores into the database, reads them as their stores did, and leaves every file as it was', async () => {
   const dir = legacyFolder()
   const before = snapshot(dir)
-  assert.deepEqual(prepareDataFormat(dir, { version: '2.0.0' }), { format: 5, migrated: [2, 3, 4, 5], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, { version: '2.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(2),
+    restored: false,
+  })
   assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
   assert.deepEqual(imported(dir), [
     { source: 'agent-prompts/a.json', records: 1, skipped: 0 },
@@ -226,8 +252,8 @@ test('an import a crash cut short is put back and runs again whole at the next s
   )
   assert.ok(existsSync(join(crashed, 'migration-backup', 'marker.json')))
   assert.deepEqual(prepareDataFormat(crashed, { version: '2.0.0' }), {
-    format: 5,
-    migrated: [2, 3, 4, 5],
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(2),
     restored: true,
   })
   assert.equal(imported(crashed).length, 6)
@@ -264,7 +290,7 @@ test('rollback: with the database moved aside and the format set back, an older 
 
   // Upgrading again with the moved database put back loses nothing done since.
   renameSync(join(aside, STUDIO_DATABASE_FILENAME), join(dir, STUDIO_DATABASE_FILENAME))
-  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 5, writtenBy: '5.0.0' }))
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: STUDIO_DATA_FORMAT, writtenBy: '5.0.0' }))
   const back = openTestDatabase(dir)
   assert.deepEqual(await new ConversationApprovalRuleStore(back).list(), since)
   assert.deepEqual(
@@ -372,7 +398,11 @@ test('format 3 brings the device and session records in as their stores read the
   writeFileSync(join(dir, 'extension-approvals.json'), JSON.stringify({ 'local.one': { fingerprint: 'nope' } }))
   const before = snapshot(dir)
 
-  assert.deepEqual(prepareDataFormat(dir, { version: '3.0.0' }), { format: 5, migrated: [3, 4, 5], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, { version: '3.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(3),
+    restored: false,
+  })
   assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
   assert.deepEqual(imported(dir), [
     { source: 'client-toolsets.json', records: 1, skipped: 0 },
@@ -427,7 +457,11 @@ test('format 4 brings in the open-turn list; transcripts wait to be taken up', (
   writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 3, writtenBy: '3.0.0' }))
   const chat = { workspaceRoot: '/Users/dev/app', workspaceId: 'ws-1', agentId: 'agent-1' }
   writeFileSync(join(dir, 'conversation-outbox.json'), JSON.stringify({ version: 1, chats: [chat, { agentId: 'x' }] }))
-  assert.deepEqual(prepareDataFormat(dir, { version: '4.0.0' }), { format: 5, migrated: [4, 5], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, { version: '4.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(4),
+    restored: false,
+  })
   const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
   try {
     assert.deepEqual(
@@ -513,7 +547,11 @@ function chatRecordsFolder(): string {
 test('format 5 brings the chat records and the whole stores in, read by their own parsers, and leaves every file as it was', async () => {
   const dir = chatRecordsFolder()
   const before = snapshot(dir)
-  assert.deepEqual(prepareDataFormat(dir, { version: '5.0.0' }), { format: 5, migrated: [5], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, { version: '5.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(5),
+    restored: false,
+  })
   assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
   assert.deepEqual(imported(dir), [
     { source: 'scheduled-agents.json', records: 1, skipped: 0 },
@@ -589,7 +627,11 @@ test('a chat records import a crash cut short is put back and runs again whole a
     }),
   )
   assert.ok(existsSync(join(crashed, 'migration-backup', 'marker.json')))
-  assert.deepEqual(prepareDataFormat(crashed, { version: '5.0.0' }), { format: 5, migrated: [5], restored: true })
+  assert.deepEqual(prepareDataFormat(crashed, { version: '5.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(5),
+    restored: true,
+  })
   const after = prepareStudioDatabase(join(crashed, STUDIO_DATABASE_FILENAME))
   try {
     assert.deepEqual(
@@ -617,3 +659,234 @@ test(
     }
   },
 )
+
+// ── Format 6: the pull request record ─────────────────────────────────────────
+
+const pullRequest = (number: number, extra: Record<string, unknown> = {}) => ({
+  url: `https://github.com/acme/app/pull/${number}`,
+  repoKey: 'github.com/acme/app',
+  repoName: 'app',
+  number,
+  title: `#${number}`,
+  state: 'open',
+  isDraft: false,
+  openedAt: 1_000 + number,
+  stateAt: 1_000 + number,
+  openedByWorkspaceId: 'ws-1',
+  openedByAgentId: 'agent-1',
+  ...extra,
+})
+
+/** A folder in format 5 with a pull request record file, as a build before the database wrote it. */
+function pullRequestFolder(file: string): string {
+  const dir = join(mkdtempSync(join(tmpdir(), 'se-import-prs-')), 'data')
+  mkdirSync(join(dir, 'pull-requests'), { recursive: true })
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 5, writtenBy: '5.0.0' }))
+  writeFileSync(join(dir, PULL_REQUEST_RECORD_FILE), file)
+  return dir
+}
+
+const pullRequestRows = (dir: string) => {
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  try {
+    return connection
+      .all<{ id: string; body: string }>('SELECT id, body FROM pull_requests ORDER BY position')
+      .map((row) => ({ id: row.id, body: JSON.parse(row.body) as Record<string, unknown> }))
+  } finally {
+    connection.close()
+  }
+}
+
+test('format 6 brings the pull request record in, a row each with its watch, and leaves the file as it was', () => {
+  const watched = { ...pullRequest(2), watch: { startedAt: 5 }, untold: [{ commandId: null }] }
+  const dir = pullRequestFolder(
+    JSON.stringify({ version: 2, pullRequests: [pullRequest(1), watched, { url: 'not a pull request' }] }),
+  )
+  const before = snapshot(dir)
+  assert.deepEqual(prepareDataFormat(dir, { version: '6.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(PULL_REQUEST_RECORD_STEP.to),
+    restored: false,
+  })
+  assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
+  assert.deepEqual(imported(dir), [{ source: PULL_REQUEST_RECORD_FILE, records: 2, skipped: 1 }])
+  assert.deepEqual(pullRequestRows(dir), [
+    { id: pullRequest(1).url, body: pullRequest(1) },
+    { id: watched.url, body: watched },
+  ])
+
+  // A second run brings nothing in twice.
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  try {
+    assert.deepEqual(importPullRequestRecords(connection, dir), [])
+  } finally {
+    connection.close()
+  }
+  assert.equal(pullRequestRows(dir).length, 2)
+})
+
+test('a pull request record this build cannot read is skipped and left as it was', () => {
+  const dir = pullRequestFolder('{"version": 2, "pullRequests": [')
+  const before = snapshot(dir)
+  prepareDataFormat(dir, { version: '6.0.0' })
+  assert.deepEqual(snapshot(dir), before)
+  assert.deepEqual(imported(dir), [{ source: PULL_REQUEST_RECORD_FILE, records: 0, skipped: 1 }])
+  assert.deepEqual(pullRequestRows(dir), [])
+})
+
+test('a pull request import a crash cut short is put back and runs again whole at the next start', () => {
+  const dir = pullRequestFolder(JSON.stringify({ version: 2, pullRequests: [pullRequest(1), pullRequest(2)] }))
+  const crashed = join(mkdtempSync(join(tmpdir(), 'se-import-prs-crash-')), 'data')
+  // Format 5's database first, as the folder had it before this step.
+  prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME)).close()
+  assert.throws(() =>
+    prepareDataFormat(dir, {
+      version: '6.0.0',
+      format: PULL_REQUEST_RECORD_STEP.to,
+      steps: [
+        {
+          ...PULL_REQUEST_RECORD_STEP,
+          run: (at) => {
+            const half = prepareStudioDatabase(join(at, STUDIO_DATABASE_FILENAME))
+            half.run("INSERT INTO pull_requests (id, position, body) VALUES ('half', 0, '{}')")
+            cpSync(at, crashed, { recursive: true })
+            half.close()
+            throw new Error('the snapshot is taken')
+          },
+        },
+      ],
+    }),
+  )
+  assert.deepEqual(prepareDataFormat(crashed, { version: '6.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(PULL_REQUEST_RECORD_STEP.to),
+    restored: true,
+  })
+  assert.deepEqual(
+    pullRequestRows(crashed).map((row) => row.id),
+    [pullRequest(1).url, pullRequest(2).url],
+    'the half-done import is gone; the whole one is in',
+  )
+})
+
+// ── Format 7: the worktree records ────────────────────────────────────────────
+
+const poolRecord = (poolId: string) => ({
+  version: POOL_RECORD_VERSION,
+  poolId,
+  repoRoot: '/Users/dev/app',
+  commonDir: '/Users/dev/app/.git',
+  hostId: 'local',
+  slots: [],
+})
+
+/** A folder in format 6 with a branch ledger and pool records, as a build before the database wrote them. */
+function worktreeFolder(): string {
+  const dir = join(mkdtempSync(join(tmpdir(), 'se-import-worktrees-')), 'data')
+  mkdirSync(join(dir, 'worktree-pool'), { recursive: true })
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 6, writtenBy: '6.0.0' }))
+  writeFileSync(
+    join(dir, 'worktree-branches.json'),
+    JSON.stringify({
+      version: 1,
+      repos: {
+        '/Users/dev/new/.git': { updatedAt: 20, branches: ['feat/b', 'feat/a'] },
+        '/Users/dev/old/.git': { updatedAt: 10, branches: ['feat/c'] },
+      },
+    }),
+  )
+  writeFileSync(
+    join(dir, 'worktree-pool', 'pool-0123456789abcdef.json'),
+    JSON.stringify(poolRecord('0123456789abcdef')),
+  )
+  writeFileSync(join(dir, 'worktree-pool', 'pool-fedcba9876543210.json'), '{ torn')
+  writeFileSync(join(dir, 'worktree-pool', 'settings.json'), JSON.stringify({ maxSlots: 4 }))
+  return dir
+}
+
+test('format 7 brings the branch ledger and each pool record in, and leaves every file as it was', async () => {
+  const dir = worktreeFolder()
+  const before = snapshot(dir)
+  assert.deepEqual(prepareDataFormat(dir, { version: '7.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(WORKTREE_RECORDS_STEP.to),
+    restored: false,
+  })
+  assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
+  assert.deepEqual(imported(dir), [
+    { source: 'worktree-branches.json', records: 3, skipped: 0 },
+    { source: 'worktree-pool/pool-0123456789abcdef.json', records: 1, skipped: 0 },
+    { source: 'worktree-pool/pool-fedcba9876543210.json', records: 0, skipped: 1 },
+  ])
+
+  const database = openTestDatabase(dir)
+  assert.deepEqual(
+    await database.all('SELECT repo, branch FROM worktree_branches ORDER BY seq'),
+    [
+      { repo: '/Users/dev/old/.git', branch: 'feat/c' },
+      { repo: '/Users/dev/new/.git', branch: 'feat/b' },
+      { repo: '/Users/dev/new/.git', branch: 'feat/a' },
+    ],
+    'the oldest repository first, each in the order its branches were recorded',
+  )
+  const pools = await createPoolStore({ dataDir: dir, database }).readAll()
+  assert.deepEqual(
+    pools.map((pool) => [pool.poolId, pool.record?.repoRoot]),
+    [['0123456789abcdef', '/Users/dev/app']],
+  )
+
+  // A second run brings nothing in twice.
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  try {
+    assert.deepEqual(importWorktreeRecords(connection, dir), [])
+  } finally {
+    connection.close()
+  }
+})
+
+// ── Format 8: the hand-over's adoption ledger ─────────────────────────────────
+
+test('format 8 brings the adoption ledger in, pending marks and all, once, and leaves the file as it was', async () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'se-import-adoptions-')), 'data')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 7, writtenBy: '7.0.0' }))
+  writeFileSync(
+    join(dir, 'environment-adoptions.json'),
+    JSON.stringify({
+      v: 1,
+      records: {
+        'workspace:ws-1': { digest: 'd1', migrationId: 'm-1', at: 5 },
+        'schedule:sa-1': { digest: 'd2', migrationId: 'm-1', at: 6, pending: true },
+        'schedule:broken': { migrationId: 'm-1' },
+      },
+    }),
+  )
+  const before = snapshot(dir)
+  assert.deepEqual(prepareDataFormat(dir, { version: '8.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(ADOPTIONS_STEP.to),
+    restored: false,
+  })
+  assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
+  const database = openTestDatabase(dir)
+  assert.deepEqual(await database.all('SELECT key, digest, migration_id, at, pending FROM adoptions ORDER BY key'), [
+    { key: 'schedule:sa-1', digest: 'd2', migration_id: 'm-1', at: 6, pending: 1 },
+    { key: 'workspace:ws-1', digest: 'd1', migration_id: 'm-1', at: 5, pending: 0 },
+  ])
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  try {
+    assert.deepEqual(importAdoptions(connection, dir), [], 'a second run brings nothing in twice')
+  } finally {
+    connection.close()
+  }
+})
+
+test('an adoption ledger this build cannot read is skipped and left as it was', () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'se-import-adoptions-')), 'data')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 7, writtenBy: '7.0.0' }))
+  writeFileSync(join(dir, 'environment-adoptions.json'), '{"v":1,"records":')
+  prepareDataFormat(dir, { version: '8.0.0' })
+  assert.deepEqual(imported(dir), [{ source: 'environment-adoptions.json', records: 0, skipped: 1 }])
+  assert.equal(readFileSync(join(dir, 'environment-adoptions.json'), 'utf8'), '{"v":1,"records":')
+})

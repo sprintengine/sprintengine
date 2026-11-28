@@ -1,3 +1,4 @@
+import type { StudioDatabase } from '../db/database'
 import type {
   StudioPullRequest,
   StudioPullRequestOwner,
@@ -100,7 +101,8 @@ export type PullRequestDomain = StudioPullRequests & {
 }
 
 export type PullRequestDomainOptions = {
-  dataDir: string
+  /** The server's database, which keeps the record. */
+  database: StudioDatabase
   /** The chats: their events, the folder each session works in, and a tool's whole output. */
   conversations: {
     onEvent(listener: (event: ConversationEvent) => void): () => void
@@ -112,7 +114,7 @@ export type PullRequestDomainOptions = {
   /** The record, built here unless given (tests). */
   record?: PullRequestRecord
   /** Passed to the record this builds. */
-  recordOptions?: Omit<PullRequestRecordOptions, 'userDataDir' | 'onRecordChanged'>
+  recordOptions?: Omit<PullRequestRecordOptions, 'database' | 'onRecordChanged'>
   /** The checkout a folder is in and the branch it is on; null when it is not a checkout on a branch. */
   resolveCheckout?(path: string): Promise<PullRequestCheckout | null>
   /**
@@ -120,14 +122,7 @@ export type PullRequestDomainOptions = {
    * watches are read and shown but wake nobody: a test, or a server with no
    * chats to send into.
    */
-  wakes?: Omit<PullRequestWakesDeps, 'onChatGone' | 'onConversationEvent' | 'untold'> & {
-    /** A watch was asked for: keep where the chat works, where its record does not say. */
-    remember?(key: PullRequestConversationKey): void
-    /** Let go of what was kept for every chat but these: the ones a watch or waiting news names. */
-    retain?(keys: readonly PullRequestConversationKey[]): void
-    /** Settles once what was kept is on disk. */
-    flushFolders?(): Promise<void>
-  }
+  wakes?: Omit<PullRequestWakesDeps, 'onChatGone' | 'onConversationEvent' | 'untold'>
   log?(message: string, error?: unknown): void
 }
 
@@ -166,7 +161,7 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
     createPullRequestRecord({
       loadStoredOnStart: true,
       ...options.recordOptions,
-      userDataDir: options.dataDir,
+      database: options.database,
       onRecordChanged: (change) => publish(change),
       // With nobody to wake, news is not kept for anyone.
       ...(wakes ? { onWatchNews: (news: PullRequestWatchNewsEvent) => wakes.deliver(news) } : {}),
@@ -174,15 +169,6 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
     })
   // News the last run found and did not get to tell its chat goes now.
   void wakes?.resume().catch((error: unknown) => log('could not resume pull request wakes', error))
-  // What was kept for chats no watch and no waiting news names any more goes.
-  const retainWatchedChats = async (): Promise<void> => {
-    if (!options.wakes?.retain) return
-    await record.whenLoaded()
-    if (disposed) return
-    const keys = [...record.watches().map((watched) => watched.conversation), ...(await record.untoldWakes.chats())]
-    options.wakes.retain(keys)
-  }
-  void retainWatchedChats().catch((error: unknown) => log('could not let go of unwatched chats', error))
 
   function publish(change: PullRequestsChanged): void {
     if (disposed || (change.workspaceIds.length === 0 && change.conversations.length === 0)) return
@@ -326,7 +312,6 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
       return record.noteOpened(key, input)
     },
     watchForAgent(key, input) {
-      options.wakes?.remember?.(key)
       return record.watch(key, input)
     },
     unwatchForAgent(key, input) {
@@ -341,16 +326,18 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
       if (!chat || disposed) return
       for (const watched of record.watches()) {
         const found = chat(watched.conversation)
-        if (!found || found.settled) record.unwatch(watched.conversation, watched.url)
+        if (!found || (found !== 'pending' && found.settled)) record.unwatch(watched.conversation, watched.url)
       }
       // News for a chat put away goes with it, watched or not; a chat the
       // records name now (they may have been loading at the start) is looked
-      // at; one they do not name keeps its news, as the start left it.
+      // at; one they do not name, or that runs here before its record came,
+      // keeps its news, as the start left it.
       void record.untoldWakes.chats().then((chats) => {
         for (const key of chats) {
           const found = chat(key)
-          if (found?.settled) record.untoldWakes.forget(key)
-          else if (found) wakes?.lookAt(key)
+          if (!found || found === 'pending') continue
+          if (found.settled) record.untoldWakes.forget(key)
+          else wakes?.lookAt(key)
         }
       })
     },
@@ -373,7 +360,6 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
     },
     async flush() {
       await record.flush()
-      await options.wakes?.flushFolders?.()
     },
     dispose() {
       disposed = true

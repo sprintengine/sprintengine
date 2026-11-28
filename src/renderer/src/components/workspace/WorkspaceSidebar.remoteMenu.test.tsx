@@ -139,6 +139,9 @@ test('WorkspaceSidebar.remoteMenu', async () => {
     'conversation.snooze': (params) => ({ snoozedUntil: params.until }),
     'conversation.setAutoSettle': (params) => ({ enabled: params.enabled }),
   })
+  // The window follows the machine it is paired with (`useFollowWindowEnvironments`).
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
   const changes = () => studio.writes()
 
   async function main(): Promise<void> {
@@ -146,6 +149,8 @@ test('WorkspaceSidebar.remoteMenu', async () => {
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     const { useWorkspaceStore } = await import('../../store/workspaceStore')
     useWorkspaceStore.setState({ chatListView: 'projects' })
 
@@ -244,6 +249,7 @@ test('WorkspaceSidebar.remoteMenu', async () => {
     }
     try {
       act(() => {
+        serveWindowChats(window.api, props.workspaces)
         root.render(React.createElement(WorkspaceSidebar, props))
       })
       await settle()
@@ -314,22 +320,17 @@ test('WorkspaceSidebar.remoteMenu', async () => {
       const moveMenu = await openMenuOf('Review the parser')
       await click(moveMenu, 'Move to New Window')
       assert.equal((opened.at(-1) as { place: unknown }).place, 'new-window')
-      assert.equal(
-        (opened.at(-1) as { spec: { conversation: { workspaceId: string } } }).spec.conversation.workspaceId,
-        'rw1',
-      )
+      assert.equal((opened.at(-1) as { spec: { chatId: string } }).spec.chatId, 'rw1')
 
-      // The row opened here from that machine's chat: its menu's marks are
-      // the chat's there too, and asked of that machine.
-      const followed = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')].find(
-        (row) => !row.hasAttribute('data-remote-conversation') && (row.textContent ?? '').includes('Another chat'),
+      // The chat opened here from that machine: its record here is not a row,
+      // the chat's own row is, once, and its menu's marks are the chat's
+      // there, asked of that machine.
+      const anotherRows = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')].filter((row) =>
+        (row.textContent ?? '').includes('Another chat'),
       )
-      assert.ok(followed, 'the opened chat is a row of this desktop')
-      await act(async () => {
-        followed.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }))
-      })
-      const followedMenu = menu()
-      assert.ok(followedMenu)
+      assert.equal(anotherRows.length, 1, 'the opened chat is one row')
+      assert.ok(anotherRows[0]!.hasAttribute('data-remote-conversation'), 'its address row, not the record here')
+      const followedMenu = await openMenuOf('Another chat')
       const followedItems = itemsOf(followedMenu)
       for (const label of ['Star', 'Snooze', 'Auto-settle', 'Settle'])
         assert.ok(
@@ -348,13 +349,13 @@ test('WorkspaceSidebar.remoteMenu', async () => {
 
       // A machine from before the row menu's tools takes none of them: its
       // chat's menu offers what that machine can still be asked for.
-      const { RemoteConversationContextMenu } = await import('./sidebar/contextMenus')
+      const { EnvironmentChatContextMenu } = await import('./sidebar/contextMenus')
       const olderHost = dom.window.document.createElement('div')
       dom.window.document.body.appendChild(olderHost)
       const olderRoot = createRoot(olderHost)
       act(() => {
         olderRoot.render(
-          React.createElement(RemoteConversationContextMenu, {
+          React.createElement(EnvironmentChatContextMenu, {
             x: 0,
             y: 0,
             title: 'Older chat',
@@ -393,6 +394,7 @@ test('WorkspaceSidebar.remoteMenu', async () => {
       act(() => {
         root.unmount()
       })
+      followEnvironmentChats([])
     }
   }
 

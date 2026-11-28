@@ -2,6 +2,7 @@ import type { StudioClient } from '../../../../packages/client-runtime/src/publi
 import {
   STUDIO_AGENT_SETTINGS_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+  STUDIO_CHAT_ROWS_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   STUDIO_NEW_CHAT_FOLDER_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
@@ -12,6 +13,7 @@ import type { AgentCliAvailabilityMap } from '../../../shared/workspace'
 import type { ConversationImageAttachment } from '../../../shared/conversation-runtime'
 import type { WorkspaceSkill } from '../../../shared/ipc/skills'
 import { asRecord } from '../../../shared/records'
+import { parseConversationWireHighlight } from '../../../../packages/conversation-protocol/src/public'
 import { TAILNET_SCOPE_STUDIO_SCOPES, TAILNET_SCOPES, type TailnetScope } from '../../../shared/tailnet'
 import type {
   MeshCreateConversationResult,
@@ -19,6 +21,7 @@ import type {
   MeshNewChatWorktree,
   MeshWorkspace,
   MeshWorkspaceCheckoutResult,
+  MeshWorkspaceRow,
   MeshWorkspaceExtensionsResult,
 } from '../../../shared/tailnet-mesh'
 import type { WorkspaceExtensions } from '../../../shared/workspace-extensions'
@@ -29,6 +32,7 @@ import {
   environmentRefusal,
   environmentStudioOutdated,
   withEnvironmentStudio,
+  type EnvironmentAsk,
   type EnvironmentTarget,
 } from './environmentStudio'
 import { copy } from '../../../shared/copy'
@@ -60,7 +64,41 @@ export function tailnetScopesOfGrant(scopes: readonly StudioScope[]): TailnetSco
 }
 
 /** One workspace as that machine's `workspaces.list` serves it, read member by member. */
-function meshWorkspaceOf(entry: unknown): MeshWorkspace[] {
+const EPOCH_FACTS = [
+  'createdAt',
+  'recencyAt',
+  'lastUserMessageAt',
+  'activityAt',
+  'lastTurnEndedAt',
+  'lastVisitedAt',
+  'visitRewoundAt',
+  'snoozedUntil',
+] as const
+
+/** A listed workspace's row facts (`chat-rows`), each kept only when it reads as what it says. */
+export function meshWorkspaceRowOf(record: Record<string, unknown>): MeshWorkspaceRow {
+  const row: MeshWorkspaceRow = {}
+  for (const fact of EPOCH_FACTS) {
+    const value = record[fact]
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) row[fact] = Math.trunc(value)
+  }
+  if (typeof record.scheduledAgentId === 'string' && record.scheduledAgentId.trim())
+    row.scheduledAgentId = record.scheduledAgentId.trim()
+  const highlight = parseConversationWireHighlight(record.highlight)
+  if (highlight) row.highlight = highlight
+  if (record.autoSettle === true) row.autoSettle = true
+  const worktree = asRecord(record.worktree)
+  if (worktree)
+    row.worktree = {
+      branch: typeof worktree.branch === 'string' && worktree.branch ? worktree.branch : null,
+      ...(typeof worktree.projectFolder === 'string' && worktree.projectFolder
+        ? { projectFolder: worktree.projectFolder }
+        : {}),
+    }
+  return row
+}
+
+function meshWorkspaceOf(entry: unknown, rows: boolean): MeshWorkspace[] {
   const record = asRecord(entry)
   if (!record || typeof record.id !== 'string') return []
   const repository = asRecord(record.repository)
@@ -79,6 +117,7 @@ function meshWorkspaceOf(entry: unknown): MeshWorkspace[] {
             }
           : null,
       settledAt: typeof record.settledAt === 'number' && Number.isFinite(record.settledAt) ? record.settledAt : null,
+      ...(rows ? { row: meshWorkspaceRowOf(record) } : {}),
     },
   ]
 }
@@ -114,9 +153,17 @@ export type EnvironmentBrowse = {
  * not answer keeps nothing here; one that refuses this desktop says so.
  */
 export async function browseEnvironment(target: EnvironmentTarget): Promise<EnvironmentBrowse> {
+  return browseEnvironmentThrough(target, (work) => withEnvironmentStudio(target, work))
+}
+
+/** `browseEnvironment`, asked through the given connection (`environmentChats.ts` asks on the client it holds). */
+export async function browseEnvironmentThrough(
+  target: EnvironmentTarget,
+  ask: EnvironmentAsk,
+): Promise<EnvironmentBrowse> {
   const unanswered = { workspaces: [], takesFolder: false, grantScopes: [] }
   try {
-    return await withEnvironmentStudio(target, async (client) => {
+    return await ask(async (client) => {
       const gaps: MeshGap[] = []
       let workspaces: MeshWorkspace[] = []
       // Asked for only when the grant allows it. A refusal is a real answer and is
@@ -132,7 +179,11 @@ export async function browseEnvironment(target: EnvironmentTarget): Promise<Envi
       else
         try {
           const listed = await client.rpc['workspaces.list']({})
-          workspaces = (Array.isArray(listed.workspaces) ? listed.workspaces : []).flatMap(meshWorkspaceOf)
+          // A Studio that serves the rows' facts gives every row its own, empty or not.
+          const rows = client.supports(STUDIO_CHAT_ROWS_CAPABILITY)
+          workspaces = (Array.isArray(listed.workspaces) ? listed.workspaces : []).flatMap((entry) =>
+            meshWorkspaceOf(entry, rows),
+          )
         } catch (error) {
           const refused = environmentRefusal(target, error)
           gaps.push({ part: 'workspaces', code: refused.code, message: refused.message })

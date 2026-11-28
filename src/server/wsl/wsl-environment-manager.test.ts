@@ -408,12 +408,12 @@ test("a WSL agent lists the editor, tours, terminals and agent launches, which i
     call: async () => ({ result: { content: [{ type: 'text', text: 'done' }] } }),
   } as unknown as ClientToolRegistry
   const parts = desktopToolParts()
-  const workspaceList = {
-    name: 'workspace.list',
-    description: 'The workspaces.',
+  const scheduleList = {
+    name: 'schedule.list',
+    description: 'The scheduled agents.',
     inputSchema: { type: 'object' },
     handler: async (_args: Record<string, unknown>, context?: { metadata: { kind: string } }) => ({
-      content: [{ type: 'text' as const, text: `the workspaces, for ${context?.metadata.kind}` }],
+      content: [{ type: 'text' as const, text: `the schedules, for ${context?.metadata.kind}` }],
     }),
   }
   const relay = relayShellToolsets({
@@ -423,7 +423,7 @@ test("a WSL agent lists the editor, tours, terminals and agent launches, which i
       ...parts.editor,
       ...parts.tour,
       ...parts.core,
-      ...parts.automation.map((tool) => (tool.name === 'workspace.list' ? workspaceList : tool)),
+      ...parts.automation.map((tool) => (tool.name === 'schedule.list' ? scheduleList : tool)),
       ...parts.tailnet,
     ],
   })
@@ -439,7 +439,7 @@ test("a WSL agent lists the editor, tours, terminals and agent launches, which i
 
   // The offers land one toolset after another; a new connection lists what is offered by then.
   const wanted = ['browser', 'canvas', 'editor', 'tour', 'terminal', 'agent']
-  wanted.push('backlog', 'workspace', 'schedule', 'cli', 'extension', 'marketplace')
+  wanted.push('backlog', 'schedule', 'extension', 'marketplace')
   let names: string[] = []
   await waitFor(
     () => wanted.every((toolset) => names.some((name) => name.startsWith(`${toolset}.`))),
@@ -454,8 +454,12 @@ test("a WSL agent lists the editor, tours, terminals and agent launches, which i
   )
   for (const name of ['editor.open', 'tour.create', 'terminal.create', 'agent.launch', 'agent.status'])
     assert.ok(names.includes(name), `${name} is listed; listed: ${names.join(', ')}`)
-  for (const name of ['backlog.work', 'workspace.list', 'schedule.list', 'cli.runtime_list', 'extension.list'])
+  for (const name of ['backlog.work', 'schedule.list', 'extension.list'])
     assert.ok(names.includes(name), `${name} is listed`)
+  // Its workspaces and CLIs are the distribution's own Studio's, not relayed from Windows.
+  for (const name of ['workspace.list', 'workspace.checkout', 'cli.runtime.list'])
+    assert.ok(names.includes(name), `${name} is the WSL server's own`)
+  assert.ok(!names.includes('cli.runtime_list'), 'the CLI list is not relayed from Windows')
   assert.ok(names.includes('marketplace.list'))
   assert.ok(names.includes('conversation.create'), 'the WSL server’s own')
   assert.ok(!names.some((name) => name.startsWith('tailnet.')), 'remote control stays on the Windows socket')
@@ -463,9 +467,11 @@ test("a WSL agent lists the editor, tours, terminals and agent launches, which i
   const agent = await agentSession(socketPath)
   await agent.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} })
   await agent.call('tools/list')
-  const called = await agent.call('tools/call', { name: 'workspace.list', arguments: {} })
+  const called = await agent.call('tools/call', { name: 'schedule.list', arguments: {} })
+  const own = await agent.call('tools/call', { name: 'workspace.list', arguments: {} })
   agent.close()
-  assert.equal(called.result?.content?.[0]?.text, 'the workspaces, for external-local', JSON.stringify(called))
+  assert.equal(called.result?.content?.[0]?.text, 'the schedules, for external-local', JSON.stringify(called))
+  assert.ok(Array.isArray(own.result?.structuredContent?.workspaces), JSON.stringify(own))
 }, 60_000)
 
 test('a server that is not the build this app ships is refused before it is handed anything', async () => {

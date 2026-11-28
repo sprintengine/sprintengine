@@ -16,8 +16,11 @@ import { STUDIO_WORKSPACES_CAPABILITY } from './handshake.js'
 // Each answers what the Studio's gateway tools of the same purpose answer
 // (`workspace.list`, `cli.runtime.list`, `workspace.checkout`,
 // `workspace.extensions`), from the same services, so a client on the protocol
-// and an agent on MCP read one thing. A row carries the members named here and
-// may carry more; a client reads what it knows and passes over the rest.
+// and an agent on MCP read one thing. Every Studio answers them from its own
+// records and its own machine, with or without a desktop around it:
+// `workspaces.list` is the chats it holds, the rest its CLIs and its projects'
+// folders. A row carries the members named here and may carry more; a client
+// reads what it knows and passes over the rest.
 //
 // Reads, on `workspaces:read`, behind the `workspaces` capability. A workspace
 // or CLI the Studio does not hold is refused `not_found`.
@@ -43,6 +46,31 @@ export type StudioWorkspace = {
   projectFrecency?: number
   /** The latest new chat in the folder, ISO time; null for never. */
   projectLastUsedAt?: string | null
+  // ── What its row draws (`chat-rows`); each absent when there is nothing true to say ──
+  /** When the chat was made, ms epoch. */
+  createdAt?: number
+  /** Where its row sits in a list of chats: when a person last wrote to it, else when it last worked. */
+  recencyAt?: number
+  /** When a person last wrote to it, from any device. */
+  lastUserMessageAt?: number
+  /** When anything last happened in it, which a settle or snooze sends back as `seen` (`chat-rest-seen`). */
+  activityAt?: number
+  /** When its agent last finished a turn. */
+  lastTurnEndedAt?: number
+  /** When a person last had it on screen, on any device. */
+  lastVisitedAt?: number
+  /** When Mark unread last moved `lastVisitedAt` back. */
+  visitRewoundAt?: number
+  /** The schedule whose run started it. */
+  scheduledAgentId?: string
+  /** When it wakes, while it is snoozed. */
+  snoozedUntil?: number
+  /** The row menu's star and highlight colour (`ConversationWireHighlight`): a colour the client does not offer is passed over. */
+  highlight?: { starred: boolean; color?: string }
+  /** Auto-settle is on for it. */
+  autoSettle?: true
+  /** It works in a worktree: its branch, and the project folder it was cut from. */
+  worktree?: { branch: string | null; projectFolder?: string }
   [member: string]: unknown
 }
 
@@ -78,7 +106,8 @@ export type StudioWorkspaceCheckout = {
   git: boolean
   branch?: string | null
   defaultBranch?: string | null
-  branches?: string[]
+  /** Every local branch; `current` marks the one checked out. */
+  branches?: Array<{ name: string; current?: boolean; [member: string]: unknown }>
   worktrees?: StudioWorktree[]
   [member: string]: unknown
 }
@@ -87,7 +116,8 @@ export type StudioWorkspaceCheckout = {
 export type StudioWorkspaceExtensions = {
   workspaceId: string
   skills: Array<{ id: string; name?: string; description?: string; [member: string]: unknown }>
-  servers?: Array<{ id?: string; name: string; status?: string; [member: string]: unknown }>
+  /** Each by the id its CLI's config names it by. */
+  servers?: Array<{ id: string; name?: string; status?: string; [member: string]: unknown }>
   [member: string]: unknown
 }
 

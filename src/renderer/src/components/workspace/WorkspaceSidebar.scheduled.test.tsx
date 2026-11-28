@@ -94,6 +94,8 @@ test('WorkspaceSidebar.scheduled', async () => {
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     const { useWorkspaceStore } = await import('../../store/workspaceStore')
     useWorkspaceStore.setState({ chatListView: 'projects' })
     type SidebarProps = Parameters<typeof WorkspaceSidebar>[0]
@@ -108,7 +110,7 @@ test('WorkspaceSidebar.scheduled', async () => {
       workspace('w2', 'Nightly triage', { scheduledAgentId: 'sa-1' }),
     ]
 
-    const opened: string[] = []
+    const opened: Array<{ route: string | null; id: string }> = []
     const noop = () => {}
     const props = {
       workspaces,
@@ -127,7 +129,7 @@ test('WorkspaceSidebar.scheduled', async () => {
       onNewChat: noop,
       onNewChatInFolder: noop,
       onRevealFolder: noop,
-      onOpenScheduledAgent: (id: string) => opened.push(id),
+      onOpenScheduledAgent: (agent: { route: string | null; id: string }) => opened.push(agent),
       onSetSidebarCollapsed: noop,
       sidebarWidth: 260,
       onSetSidebarWidth: noop,
@@ -155,6 +157,7 @@ test('WorkspaceSidebar.scheduled', async () => {
     }
     const render = async (next: SidebarProps): Promise<void> => {
       act(() => {
+        serveWindowChats(window.api, next.workspaces)
         root.render(React.createElement(WorkspaceSidebar, next))
       })
       await settle()
@@ -206,7 +209,7 @@ test('WorkspaceSidebar.scheduled', async () => {
       act(() => {
         triage!.click()
       })
-      assert.deepEqual(opened, ['sa-1'])
+      assert.deepEqual(opened, [{ route: null, id: 'sa-1' }])
 
       // The run's chat is an ordinary chat row with the schedule's clock; a
       // chat a person started carries none.

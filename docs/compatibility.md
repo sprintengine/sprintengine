@@ -169,7 +169,13 @@ the names it carried for New chat on another machine (`new-chat-worktree`,
 answers each CLI's catalog. A Studio that also serves `new-chat-folder`
 (2026-11-25) takes `folder` in place of `workspaceId`: New chat's folder on
 another machine, browsed or typed, that no workspace there names yet; a client
-offers a typed folder only to a Studio that says it. Every `conversation-`
+offers a typed folder only to a Studio that says it. A Studio that serves
+`new-chat-mode` (2026-11-28) takes `mode` (`plan` or `ask`; `default` is the
+same as none) on `conversation.create` and holds it on the chat for every
+turn. A Studio before it reads the create without the member and would start
+the chat writable, so the client runtime refuses a create with a mode to it
+(`unsupported_mode`) before anything is sent, judged on each connection's
+welcome. Every `conversation-`
 capability a Studio advertises
 is one `@sprintengine/conversation-protocol` names, since its welcome lists
 them from the package (`studioRpcConversationCapabilities`).
@@ -238,6 +244,17 @@ owner's reads each address without its query, fragment or userinfo, and each
 title as its other reads are redacted); offered only by a desktop
 whose shell has the browser pane. A Studio before it does not list it, and a
 client shows no tabs for it.
+
+A Settle or Snooze from a chat's row carries the chat as the row drew it
+(capability `chat-rest-seen`, 2026-11-28): `conversation.settle` and
+`conversation.snooze` take `seen` (`settledAt`, `snoozedUntil`, and
+`activityAt`, which `workspaces.list` rows and `conversation.list` threads now
+list), and a settle may take `lastInputAt`, the asking window's last keystroke
+in the chat (never moved past the Studio's own clock). The chat's Studio
+refuses the change `conflict` when the chat reads otherwise now or has had
+activity since. It is additive: a Studio before it does not list the
+capability, and a client sends neither member to it, so the change is decided
+on the chat as it stands there, as before.
 
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is
@@ -774,14 +791,30 @@ its chat surface (`STUDIO_CHAT_CAPABILITIES`), and a client asks for none its
 Studio leaves out.
 `workspaces` is what a client reads before it starts a chat:
 `workspaces.list`, `cliRuntimes.list`, `workspaces.checkout` and
-`workspaces.extensions`, answered by the gateway tools of the same purpose
-(`workspace.list`, `cli.runtime.list`, `workspace.checkout`,
-`workspace.extensions`), so the two read one thing; it is served beside the
-conversation contract, not only with the chat surface. `conversation.create`
+`workspaces.extensions`, which read the same core methods as the gateway
+tools of the same purpose (`workspace.list`, `cli.runtime.list`,
+`workspace.checkout`, `workspace.extensions`), so the two read one thing,
+and every Studio's agents get those tools from its own gateway; it is served
+beside the conversation contract, not only with the chat surface. Every Studio answers
+all four from its own records and its own machine, an SSH machine's and a WSL
+distribution's included: `workspaces.list` is the chats it holds,
+`cliRuntimes.list` the CLIs it runs, and `workspaces.checkout` and
+`workspaces.extensions` read the project's folder where it is. None reaches a
+desktop's copies of another environment's chats: the list leaves them out and
+the two project reads refuse them as `not_found`. `conversation.create`
 takes New chat's own options beside the contract's request (`newChat`,
 `worktree`, `worktreeName`, `inWorktree`, `effort`, and `noProject` in place of
 `workspaceId`), held to the same rules the gateway's tool holds them to; a
 Studio from before them refuses them as `invalid_params`.
+`chat-rows` (2026-11-28) widens `workspaces.list`'s rows with what a chat's
+row draws: `createdAt`, `recencyAt`, `lastUserMessageAt`, `lastTurnEndedAt`,
+`lastVisitedAt`, `visitRewoundAt`, `scheduledAgentId`, `snoozedUntil` (only a
+snooze still ahead), `highlight`, `autoSettle` and `worktree` (`branch`,
+`projectFolder`), each left out when there is nothing true to say. A client
+lists a machine's chats from these rows alone, a chat no session holds
+included. Additive: a Studio from before it does not list the capability, and
+a client takes those facts from its listed chats (`conversation.list`) as
+before.
 `conversation-handoff` (2026-10-21) adds the owner-only
 `conversation.handoff`, a chat handed off to a fresh session instead of
 compacted, answered with the path of the file its messages were saved to.
@@ -1037,8 +1070,8 @@ records: [{ kind, id, digest, body }] }` → `{ held, conflicts }`, the shell's)
 desktop kept for a machine's chats, kept by that machine's Studio from then on. The kinds are
 `workspace`, `schedule`, `scheduled-message`, `usage-limit-resume` and `pull-request`, each
 going into its own store through that store's own way in. `digest` is the sha-256 of the body
-as canonical JSON (keys sorted, no spaces). It is safe to repeat: a ledger,
-`environment-adoptions.json` (0600), says what was kept under which digest. A record kept
+as canonical JSON (keys sorted, no spaces). It is safe to repeat: a ledger in the
+machine's database (`adoptions`, a row per record) says what was kept under which digest. A record kept
 under the same digest is held again and nothing is written; one already here under another,
 or by another way in, is left as it is and reported in `conflicts`. The answer comes once the
 stores and the ledger are written. What a hand-over is about to keep goes in the ledger first,
@@ -1180,7 +1213,7 @@ chat before its create is answered), `.lifecycle` (Settle, Un-settle, Snooze or
 Wake on the reading the window made it on), `.setSettledChatsSettings` and
 `.setModuleRunStates` (what only a desktop window knows; a browser's is
 answered and not applied), the one-time hydration (`workspaceRegistry.*`),
-the window's backup of its own copy (`workspaceBackup.*`) and the folders of
+the window's backup of its own settings (`workspaceBackup.*`) and the folders of
 chats without a project (`projectlessChats.*`). Each is an owner's, with the
 reason in the table; a browser on the tailnet makes a workspace only inside
 the folders Studio knows. The registry's records cross as the desktop defines
@@ -1414,7 +1447,12 @@ rows, search, the open-turn list and tools' details); a chat's old transcript
 is imported when the chat is first taken up, keeping its numbers and
 generation, so a client's cursor carries over. Format 5 moves the chat records
 (the workspace registry, a row per chat), the schedules and their runs, the
-scheduled messages and the usage-limit resumes. `docs/data-folder.md` says what is in it and how to go back to an older build.
+scheduled messages and the usage-limit resumes. Format 6 moves the pull
+request record (a row per pull request, with its watch and the news its chat
+was not told yet). Format 7 moves the worktree records (the branches Studio
+made for worktrees, and each worktree pool's record). Format 8 moves the
+hand-over's adoption ledger (what a machine kept from a desktop, under which digest).
+`docs/data-folder.md` says what is in it and how to go back to an older build.
 
 **The `incompatible` frame, `update.status`, `update.start`, their params,
 results and codes never change shape**, since they are what two ends that

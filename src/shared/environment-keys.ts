@@ -10,7 +10,6 @@
 // Pure and shared: no fs, no electron.
 
 import {
-  formatChatAddress,
   isChatAddress,
   isEnvironmentId,
   type ChatAddress,
@@ -142,30 +141,6 @@ export function chatLinkOfWorkspace(
   const ids = environmentIdsOf(environments)
   const address = ids ? chatAddressOfWorkspace(workspace, ids) : null
   return address ? chatLinkFor(address, agentId) : null
-}
-
-/** The link to a chat a paired machine lists, by its id there; null while that machine's id is not known. */
-export function chatLinkOfRemoteChat(
-  connectionId: string,
-  workspaceId: string,
-  environments: readonly EnvironmentEntry[],
-): string | null {
-  const environmentId = environmentOfRoute(environments, environmentRouteOfMeshConnection(connectionId))?.environmentId
-  return environmentId ? chatLinkFor({ environmentId, chatId: workspaceId }) : null
-}
-
-/**
- * The address key of a paired machine's chat, the environment-scoped successor
- * of `remoteChatKey` (`<pairing id>:<chat id>`): the same chat keys the same
- * whichever pairing reaches it. Null while that machine's id is not known.
- */
-export function chatAddressKeyOfRemoteChat(
-  connectionId: string,
-  workspaceId: string,
-  ofRoute: (route: EnvironmentRoute) => EnvironmentId | null,
-): string | null {
-  const address = { environmentId: ofRoute(environmentRouteOfMeshConnection(connectionId)), chatId: workspaceId }
-  return isChatAddress(address) ? formatChatAddress(address) : null
 }
 
 // ── Today's records as environment sources ──────────────────────────────────

@@ -43,6 +43,15 @@ export const STUDIO_FILES_CAPABILITY = 'files-mention' as const
  */
 export const STUDIO_WORKSPACES_CAPABILITY = 'workspaces' as const
 /**
+ * `workspaces.list` rows carry what a chat's row draws beyond its name and
+ * folder (`StudioWorkspace`'s chat-row members): its clocks, the row menu's
+ * marks, how it began and the worktree it works in. A client lists a machine's
+ * chats from these rows alone, a chat with no session there included; a
+ * Studio from before them gives those facts only on its listed chats
+ * (`conversation.list`).
+ */
+export const STUDIO_CHAT_ROWS_CAPABILITY = 'chat-rows' as const
+/**
  * A client may offer toolsets for Studio's agents (`tools.*`), and is sent a
  * `call` when an agent uses one. A client sends `reply` and `progress` frames
  * only to a Studio that advertises this.
@@ -440,6 +449,30 @@ export const STUDIO_BROWSER_TABS_CAPABILITY = 'browser-tabs' as const
 export const STUDIO_NEW_CHAT_FOLDER_CAPABILITY = 'new-chat-folder' as const
 
 /**
+ * `conversation.create` takes `mode` (`plan` or `ask`): the mode every turn of
+ * the new chat runs in, its first included, kept on the chat, as a create on
+ * that machine's own window or gateway applies it. A Studio before it reads
+ * the create without the member and would start the chat writable, so a
+ * client sends a mode only to a Studio that says this, and refuses it
+ * (`unsupported_mode`) otherwise. Served with `conversation-create`.
+ */
+export const STUDIO_NEW_CHAT_MODE_CAPABILITY = 'new-chat-mode' as const
+
+/**
+ * `conversation.settle` and `conversation.snooze` take `seen`: the chat's rest,
+ * sleep and activity clock as the asking row drew them (`StudioChatSeen`, which
+ * `workspaces.list` rows and `conversation.list` threads carry as `activityAt`
+ * beside their `settledAt` and `snoozedUntil`). The Studio refuses the change
+ * `conflict` when the chat has moved on since: someone else settled, woke or
+ * snoozed it, or something happened in it the person did not see. A settle may
+ * also carry `lastInputAt`, the person's last keystroke in the chat's
+ * terminals as the asking window knows it. Served with `chat-lifecycle`; a
+ * Studio before it does not list it, and a client sends neither to it, so the
+ * change is decided on the chat as it stands there.
+ */
+export const STUDIO_CHAT_REST_SEEN_CAPABILITY = 'chat-rest-seen' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -496,6 +529,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_GIT_CAPABILITY,
   STUDIO_WORKTREES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+  STUDIO_CHAT_ROWS_CAPABILITY,
   STUDIO_CANVAS_BOARDS_CAPABILITY,
   STUDIO_CHAT_EXPORT_CAPABILITY,
   STUDIO_EXTENSIONS_CAPABILITY,
@@ -512,6 +546,8 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_BROWSER_TABS_CAPABILITY,
   STUDIO_NEW_CHAT_FOLDER_CAPABILITY,
   STUDIO_WEB_TAB_CAPABILITY,
+  STUDIO_NEW_CHAT_MODE_CAPABILITY,
+  STUDIO_CHAT_REST_SEEN_CAPABILITY,
 ] as const
 
 /**

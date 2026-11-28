@@ -19,7 +19,30 @@ import { createWorkspaceRegistryService } from '../workspace-registry-service'
 import { createInMemoryWorkspaceRegistryStore } from '../workspace-registry-store'
 import { createWorkspaceSyncService } from '../workspace-sync-service'
 import { loadMainModules, type CapabilityModule } from '../module-host/load-modules'
-import { createAutomationTools, type AutomationBackends } from './automation-tools'
+import { createStudioWorkspaceList } from '../../server/workspaces/studio-workspace-list'
+import {
+  createStudioWorkspaceReads,
+  type FolderCheckout,
+  type StudioWorkspaceReads,
+} from '../../server/workspaces/studio-workspace-reads'
+import { createStudioCliRuntimes } from '../../server/core/studio-cli-runtimes'
+import { createAutomationTools as createDesktopAutomationTools, type AutomationBackends } from './automation-tools'
+import { createWorkspaceTools, type WorkspaceToolsDeps } from '../../server/workspaces/workspace-tools'
+import { createCliRuntimeTools, type CliRuntimeToolsDeps } from '../../server/core/cli-runtime-tools'
+import { isThisMachinesChat } from '../../server/workspaces/studio-workspace-list'
+import { confineToRoots } from '../studio-rpc/studio-file-confinement'
+
+/** What the suites here compose: the desktop's automation tools, and every Studio's `workspace.*` and `cli.*`. */
+type TestBackends = AutomationBackends & WorkspaceToolsDeps & CliRuntimeToolsDeps
+
+/** The tools the desktop's gateway lists of these families, over one set of backends. */
+function createAutomationTools(backends: TestBackends) {
+  return [
+    ...createDesktopAutomationTools(backends),
+    ...createWorkspaceTools(backends),
+    ...createCliRuntimeTools(backends),
+  ]
+}
 import { createAgentLaunchService } from '../agent-launch-service'
 import { resolvePermissionArgs } from '../plugin-render'
 import type { TerminalSpawnPayload } from '../terminal-spawn-payload'
@@ -100,7 +123,7 @@ test('automation', async () => {
   type BackendsOverrides = {
     workspaces?: Workspace[]
     sessions?: TerminalSessionSnapshot[]
-    createWorkspace?: AutomationBackends['createWorkspace']
+    createWorkspace?: WorkspaceToolsDeps['createWorkspace']
     launchAgent?: AutomationBackends['launchAgent']
     linkLaunchedAgent?: AutomationBackends['linkLaunchedAgent']
     /** The CLI this machine would spawn under; the harness's stub session reports it. */
@@ -110,7 +133,7 @@ test('automation', async () => {
     backlogWrite?: Partial<AutomationBackends['backlogWrite']>
     getScheduledAgents?: AutomationBackends['getScheduledAgents']
     createAgentWorktree?: AutomationBackends['createAgentWorktree']
-    readWorkspaceCheckout?: AutomationBackends['readWorkspaceCheckout']
+    readWorkspaceCheckout?: (folder: string) => Promise<FolderCheckout>
     readRepositoryIdentity?: AutomationBackends['readRepositoryIdentity']
     listPlugins?: AutomationBackends['listPlugins']
     resolveAgentPermissionPreset?: AutomationBackends['resolveAgentPermissionPreset']
@@ -127,7 +150,13 @@ test('automation', async () => {
     }
   }
 
-  function backendsOf(overrides: BackendsOverrides = {}): AutomationBackends {
+  function workspaceReadsOf(
+    reads: StudioWorkspaceReads,
+  ): Pick<WorkspaceToolsDeps, 'workspaceCheckout' | 'workspaceExtensions'> {
+    return { workspaceCheckout: reads.checkout, workspaceExtensions: reads.extensions }
+  }
+
+  function backendsOf(overrides: BackendsOverrides = {}): TestBackends {
     // `workspace.create` mints in main now, so the backend is a real
     // registry rather than a delegated renderer call the test has to stub answering.
     let createdIds = 0
@@ -137,9 +166,25 @@ test('automation', async () => {
       newWorkspaceId: () => `ws-created-${++createdIds}`,
     })
     const workspaceSync = createWorkspaceSyncService({ registry, now: () => 1_000 })
+    const getWorkspaceSyncSnapshot = () => snapshotOf(overrides.workspaces ?? [])
+    const readRepositoryIdentity = overrides.readRepositoryIdentity ?? (async () => null)
+    const listPlugins = overrides.listPlugins ?? (() => [])
     return {
-      getWorkspaceSyncSnapshot: () => snapshotOf(overrides.workspaces ?? []),
+      getWorkspaceSyncSnapshot,
+      // The core's own list, over the same records and readers.
+      listWorkspaces: createStudioWorkspaceList({ snapshot: getWorkspaceSyncSnapshot, readRepositoryIdentity }).list,
       createWorkspace: overrides.createWorkspace ?? ((input, actor) => workspaceSync.createWorkspace(input, actor)),
+      // A paired device names only folders inside this machine's own projects.
+      deviceMayName: async (folder) =>
+        (
+          await confineToRoots(
+            folder,
+            getWorkspaceSyncSnapshot().state.workspaces.flatMap((workspace) =>
+              isThisMachinesChat(workspace) && workspace.folderPath ? [workspace.folderPath] : [],
+            ),
+          )
+        ).ok,
+      studioDataDirs: () => [],
       listTerminalSessions: () => overrides.sessions ?? [],
       // Default: no launch port wired. A test that reaches a launch without
       // stubbing one gets an explicit failure, not a silent success.
@@ -173,11 +218,20 @@ test('automation', async () => {
           worktreePath: `${workspaceRoot}/.sprintengine-worktrees/${name}`,
           branch: `agent/${name}`,
         })),
-      readWorkspaceCheckout:
-        overrides.readWorkspaceCheckout ??
-        (async () => ({ git: false, branch: null, defaultBranch: null, branches: [], worktrees: [] })),
-      readRepositoryIdentity: overrides.readRepositoryIdentity ?? (async () => null),
-      listPlugins: overrides.listPlugins ?? (() => []),
+      // The core's own reads of a project, over the same records.
+      ...workspaceReadsOf(
+        createStudioWorkspaceReads({
+          snapshot: getWorkspaceSyncSnapshot,
+          readCheckout:
+            overrides.readWorkspaceCheckout ??
+            (async () => ({ git: false, branch: null, defaultBranch: null, branches: [], worktrees: [] })),
+          readExtensions: async () => ({ skills: [], servers: [] }),
+        }),
+      ),
+      readRepositoryIdentity,
+      listPlugins,
+      // The core's own list of CLIs, over the same plugins.
+      listCliRuntimes: createStudioCliRuntimes({ listPlugins }).list,
       ensureBuiltinSkillInstalled: overrides.ensureBuiltinSkillInstalled ?? (async () => true),
       // module.*/marketplace.*: no registry mirrored and nothing installed unless
       // a case says otherwise, so the default backends prove the "not reported
@@ -694,7 +748,7 @@ test('automation', async () => {
     const sessions: TerminalSessionSnapshot[] = []
     const requests: AgentLaunchRequest[] = []
     const worktreeCalls: Array<{ workspaceRoot: string; name: string; baseRef?: string }> = []
-    const backends: AutomationBackends = {
+    const backends: TestBackends = {
       ...backendsOf({ workspaces: [workspace], sessions, ...overrides }),
       getWorkspaceSyncSnapshot: () => snapshotOf([workspace]),
       listTerminalSessions: () => sessions,
@@ -1028,7 +1082,7 @@ test('automation', async () => {
       const workspace = testWorkspace('ws-1', { folderPath: '/tmp/project-a' })
       const sessions: TerminalSessionSnapshot[] = []
       const requests: AgentLaunchRequest[] = []
-      const backends: AutomationBackends = {
+      const backends: TestBackends = {
         ...backendsOf({ workspaces: [workspace], sessions }),
         getWorkspaceSyncSnapshot: () => snapshotOf([workspace]),
         listTerminalSessions: () => sessions,
@@ -2756,35 +2810,36 @@ test('automation', async () => {
       manifestPath: `/plugins/${id}/manifest.json`,
       pluginRoot: `/plugins/${id}`,
     })
-    const tools = createAutomationTools({
-      ...backendsOf(),
-      listPlugins: () => [
-        plugin('claude-code', {
-          modelSelection: {
-            args: ['--model', '{{model}}'],
-            allowCustomId: true,
-          },
-          reasoningSelection: {
-            args: ['--effort', '{{reasoning}}'],
-            levels: [{ id: 'medium' }, { id: 'high', label: 'High' }],
-            default: 'medium',
-          },
-        } as never),
-        // A CLI that declares neither: it must still be listed, with the honest
-        // answer that no model may be passed.
-        // It also names only a manual setting, so it honours that and `none`.
-        plugin('plain-cli', { permissionPresets: { manual: { label: 'Manual', args: ['--ask'] } } }),
-        // Hooks-only selectability: a spec-less CLI stays LISTED (marked, not
-        // omitted, so a remote caller holding a stale id learns why it is
-        // refused) but flagged agentSelectable: false.
-        plugin('hook-cli', {
-          agentStateSpec: {
-            registration: { kind: 'settings-json', path: '.claude/settings.local.json' },
-            events: [{ event: 'Stop', phase: 'idle', turnEnd: true }],
-          },
-        } as never),
-      ],
-    })
+    const tools = createAutomationTools(
+      backendsOf({
+        listPlugins: () => [
+          plugin('claude-code', {
+            modelSelection: {
+              args: ['--model', '{{model}}'],
+              allowCustomId: true,
+            },
+            reasoningSelection: {
+              args: ['--effort', '{{reasoning}}'],
+              levels: [{ id: 'medium' }, { id: 'high', label: 'High' }],
+              default: 'medium',
+            },
+          } as never),
+          // A CLI that declares neither: it must still be listed, with the honest
+          // answer that no model may be passed.
+          // It also names only a manual setting, so it honours that and `none`.
+          plugin('plain-cli', { permissionPresets: { manual: { label: 'Manual', args: ['--ask'] } } }),
+          // Hooks-only selectability: a spec-less CLI stays LISTED (marked, not
+          // omitted, so a remote caller holding a stale id learns why it is
+          // refused) but flagged agentSelectable: false.
+          plugin('hook-cli', {
+            agentStateSpec: {
+              registration: { kind: 'settings-json', path: '.claude/settings.local.json' },
+              events: [{ event: 'Stop', phase: 'idle', turnEnd: true }],
+            },
+          } as never),
+        ],
+      }),
+    )
 
     const listed = await tool(tools, 'cli.runtime.list').handler({})
     const clis = (listed.structuredContent as { clis: Array<Record<string, unknown>> }).clis

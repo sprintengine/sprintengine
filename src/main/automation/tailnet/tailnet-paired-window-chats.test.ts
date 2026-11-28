@@ -8,14 +8,14 @@ import { createFakeBackend } from '../../../server/rpc/studio-rpc.test-helper'
 import type { TailnetScope } from '../../../shared/tailnet'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
 import {
-  changePairedChat,
-  pairedApprovalRules,
-  pairedChatDeletePlan,
-  revokePairedApprovalRule,
-  searchPairedChats,
-  settlePairedChat,
-  visitPairedChat,
-} from '../../../renderer/src/studio/pairedChats'
+  changeEnvironmentChat,
+  environmentApprovalRules,
+  environmentChatDeletePlan,
+  revokeEnvironmentApprovalRule,
+  searchEnvironmentChats,
+  settleEnvironmentChat,
+  visitEnvironmentChat,
+} from '../../../renderer/src/studio/environmentChatRecords'
 import { browseEnvironment } from '../../../renderer/src/studio/environmentDiscovery'
 import {
   closeEnvironmentStudio,
@@ -163,18 +163,18 @@ async function pairedMachine(options: { serves?: boolean; scopes?: TailnetScope[
 test('settle and visit are that machine’s own, by the chat’s workspace there', async () => {
   const machine = await pairedMachine()
   try {
-    const there = machine.machine
-    assert.deepEqual(await settlePairedChat(there, 'ws-1'), {
+    const there = pairedTarget(machine.machine)
+    assert.deepEqual(await settleEnvironmentChat(there, 'ws-1'), {
       ok: true,
       workspaceId: 'ws-1',
       settledAt: 1_000,
     })
-    assert.deepEqual(await settlePairedChat(there, 'ws-1', false), {
+    assert.deepEqual(await settleEnvironmentChat(there, 'ws-1', false), {
       ok: true,
       workspaceId: 'ws-1',
       settledAt: null,
     })
-    assert.deepEqual(await visitPairedChat(there, 'ws-1'), {
+    assert.deepEqual(await visitEnvironmentChat(there, 'ws-1'), {
       ok: true,
       workspaceId: 'ws-1',
       lastVisitedAt: 2_000,
@@ -195,7 +195,8 @@ test('settle and visit are that machine’s own, by the chat’s workspace there
 test('each row menu and management change is that machine’s own method, written as a paired device’s', async () => {
   const machine = await pairedMachine()
   try {
-    const change = (change: unknown) => changePairedChat(machine.machine, 'ws-1', change as MeshConversationChange)
+    const change = (change: unknown) =>
+      changeEnvironmentChat(pairedTarget(machine.machine), 'ws-1', change as MeshConversationChange)
     for (const asked of [
       { kind: 'snooze', until: 5_000.7 },
       { kind: 'highlight', starred: true, color: 'blue' },
@@ -234,28 +235,28 @@ test('each row menu and management change is that machine’s own method, writte
 test('Delete’s plan, the search and the always-allow rules are read there, a project by its folder’s name', async () => {
   const machine = await pairedMachine()
   try {
-    const there = machine.machine
-    assert.deepEqual(await pairedChatDeletePlan(there, 'ws-1'), {
+    const there = pairedTarget(machine.machine)
+    assert.deepEqual(await environmentChatDeletePlan(there, 'ws-1'), {
       ok: true,
       workspaceId: 'ws-1',
       worktrees: [
         { name: 'chat-k', branch: 'agent/chat-k', pooled: false, changedPaths: 0, unpushedCommits: 1, fate: 'remove' },
       ],
     })
-    const found = await searchPairedChats(there, ' parser ')
+    const found = await searchEnvironmentChats(there, ' parser ')
     assert.ok(found.ok)
     assert.deepEqual(found.chats, [
       { workspaceId: 'ws-1', chatTitle: 'Parser', hits: [{ agentId: 'agent-1', seq: 3, snippet: 'parser' }], count: 4 },
     ])
-    assert.equal((await searchPairedChats(there, 'p')).ok, false)
-    assert.deepEqual(await pairedApprovalRules(there), {
+    assert.equal((await searchEnvironmentChats(there, 'p')).ok, false)
+    assert.deepEqual(await environmentApprovalRules(there), {
       ok: true,
       rules: [
         { id: 'r1', label: 'Run npm test', toolName: 'Bash', toolKind: 'command', project: 'parser', createdAt: 5 },
       ],
     })
-    assert.deepEqual(await revokePairedApprovalRule(there, 'r1'), { ok: true, ruleId: 'r1' })
-    assert.deepEqual((await pairedApprovalRules(there)).ok && [], [])
+    assert.deepEqual(await revokeEnvironmentApprovalRule(there, 'r1'), { ok: true, ruleId: 'r1' })
+    assert.deepEqual((await environmentApprovalRules(there)).ok && [], [])
   } finally {
     await machine.close()
   }
@@ -264,12 +265,12 @@ test('Delete’s plan, the search and the always-allow rules are read there, a p
 test('a pairing that may only read is refused every change there, in that machine’s words', async () => {
   const machine = await pairedMachine({ scopes: ['conversation:read'] })
   try {
-    const there = machine.machine
-    const settled = await settlePairedChat(there, 'ws-1')
+    const there = pairedTarget(machine.machine)
+    const settled = await settleEnvironmentChat(there, 'ws-1')
     assert.equal(!settled.ok && settled.code, 'scope_required')
-    const renamed = await changePairedChat(there, 'ws-1', { kind: 'rename', name: 'A' })
+    const renamed = await changeEnvironmentChat(there, 'ws-1', { kind: 'rename', name: 'A' })
     assert.equal(!renamed.ok && renamed.code, 'scope_required')
-    assert.ok((await searchPairedChats(there, 'parser')).ok, 'a search is a read')
+    assert.ok((await searchEnvironmentChats(there, 'parser')).ok, 'a search is a read')
     assert.deepEqual(
       machine.calls.map((call) => call.method),
       ['searchChats'],
@@ -282,15 +283,15 @@ test('a pairing that may only read is refused every change there, in that machin
 test('a machine whose Studio does not keep its chats’ records is told to update', async () => {
   const machine = await pairedMachine({ serves: false })
   try {
-    const there = machine.machine
-    const renamed = await changePairedChat(there, 'ws-1', { kind: 'rename', name: 'A' })
+    const there = pairedTarget(machine.machine)
+    const renamed = await changeEnvironmentChat(there, 'ws-1', { kind: 'rename', name: 'A' })
     assert.equal(!renamed.ok && renamed.code, 'row_menu_unsupported')
     assert.match(!renamed.ok ? renamed.message : '', /Update Studio there/u)
-    const settled = await settlePairedChat(there, 'ws-1')
+    const settled = await settleEnvironmentChat(there, 'ws-1')
     assert.equal(!settled.ok && settled.code, 'lifecycle_unsupported')
-    const found = await searchPairedChats(there, 'parser')
+    const found = await searchEnvironmentChats(there, 'parser')
     assert.equal(!found.ok && found.code, 'search_unsupported')
-    const rules = await pairedApprovalRules(there)
+    const rules = await environmentApprovalRules(there)
     assert.equal(!rules.ok && rules.code, 'approval_rules_unsupported')
     assert.deepEqual(machine.calls, [])
   } finally {
@@ -303,7 +304,11 @@ test('Stop watching is the pull request’s own method there, by the chat’s ag
   try {
     const url = 'https://github.com/acme/app/pull/7'
     assert.deepEqual(
-      await changePairedChat(machine.machine, 'ws-1', { kind: 'unwatch-pull-request', agentId: 'agent-1', url }),
+      await changeEnvironmentChat(pairedTarget(machine.machine), 'ws-1', {
+        kind: 'unwatch-pull-request',
+        agentId: 'agent-1',
+        url,
+      }),
       { ok: true, workspaceId: 'ws-1' },
     )
     assert.deepEqual(
@@ -332,14 +337,14 @@ async function closesSoon(client: StudioClient): Promise<boolean> {
 test('each connection is opened with a ticket of its own, from the window’s origin, and the window keeps none', async () => {
   const machine = await pairedMachine()
   try {
-    await settlePairedChat(machine.machine, 'ws-1')
+    await settleEnvironmentChat(pairedTarget(machine.machine), 'ws-1')
     assert.equal(machine.window.tickets(), 1)
     // Asked again on the same connection: no new ticket.
-    await visitPairedChat(machine.machine, 'ws-1')
+    await visitEnvironmentChat(pairedTarget(machine.machine), 'ws-1')
     assert.equal(machine.window.tickets(), 1)
     // A new connection asks for a new one; the spent one opens nothing.
     closeEnvironmentStudio(pairedRoute(machine.machine.id))
-    await visitPairedChat(machine.machine, 'ws-1')
+    await visitEnvironmentChat(pairedTarget(machine.machine), 'ws-1')
     assert.equal(machine.window.tickets(), 2)
     // A ticket for no origin, or another's, is no window's: the listener refuses its socket.
     const ticket = await machine.window.api.environmentsTicket(`tailnet:${machine.machine.id}`)
@@ -365,7 +370,7 @@ test('a pairing that machine revokes closes the window’s client, and the next 
     assert.ok(device)
     machine.peer.devices.revokeDevice(device.id)
     assert.equal(await closesSoon(client), true)
-    const settled = await settlePairedChat(machine.machine, 'ws-1')
+    const settled = await settleEnvironmentChat(pairedTarget(machine.machine), 'ws-1')
     assert.equal(!settled.ok && settled.code, 'unauthorized')
     // A browse says so, as the one failure pairing again fixes, not as a machine away.
     const browse = await browseEnvironment(pairedTarget(machine.machine))

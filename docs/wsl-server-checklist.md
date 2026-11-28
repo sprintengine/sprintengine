@@ -212,7 +212,10 @@ watch a pull request in another if you can.
 ## E. Agents, tools and sign-in (spec V7, V10)
 
 1. In a server chat, ask the agent to list Studio's tools.
-   **Expect:** the core's tools, plus `browser` and `canvas`.
+   **Expect:** the core's tools, plus `browser` and `canvas`. Ask it which
+   agent CLIs it can launch and which workspaces it has.
+   **Expect:** the CLIs and workspaces of the distribution's own Studio
+   (`cli.runtime.list`, `workspace.list`), not the Windows desktop's.
 2. Ask the agent to open a page in the browser pane.
    **Expect:** the Windows pane opens it.
 3. Out of process (section G), ask the agent to open
@@ -318,10 +321,11 @@ distribution's own Studio server's. Run every step that is listed.
 5. Start an agent in a WSL terminal and ask it to list Studio's tools, then
    to list the chats in this workspace.
    **Expect:** it lists them: its tools are the distribution's own Studio's
-   (its chats, files and git), plus the browser, canvas, editor and tour this
-   desktop offers that Studio. **distro:** read the agent's MCP config: its
-   `SPRINTENGINE_USER_DATA_DIR` is the server's data directory
-   (`~/.local/share/sprintengine-studio/data*`), and no token is in it.
+   (its chats, workspaces, CLIs, files and git), plus the browser, canvas,
+   editor and tour this desktop offers that Studio. **distro:** read the
+   agent's MCP config: its `SPRINTENGINE_USER_DATA_DIR` is the server's data
+   directory (`~/.local/share/sprintengine-studio/data*`), and no token is in
+   it.
 6. Ask that agent to open a page in the browser pane.
    **Expect:** the page opens in this desktop's browser pane.
 7. Close that terminal, then in another terminal of the same distribution

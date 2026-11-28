@@ -6,6 +6,7 @@ import { createConversationTools, type ConversationToolsDeps } from '../../main/
 import {
   createConversationChatTools,
   type ConversationChatControl,
+  type FoundChat,
 } from '../../main/automation/conversation-chat-tools'
 import { createSubagentTools } from '../../main/automation/subagent-tools'
 import { LAUNCH_NOTICE_ORIGIN } from '../../main/agent-launch-notices'
@@ -24,7 +25,7 @@ import {
 } from '../../main/automation/conversation-lifecycle'
 import { gatewayCallerStarter, launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
 import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
-import { ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
+import { activeInvoker, ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
 import { bindDevToolsToCaller } from '../../main/automation/extension-dev-tools'
 import { extensionHookRefusal } from '../extensions/hooks/extension-hooks'
 import { studioGrantPrincipal, studioPrincipal } from '../../../packages/studio-protocol/src/permissions'
@@ -41,13 +42,19 @@ import { createPullRequestTools } from '../pull-requests/pull-request-tools'
 import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import { createLocalServerTools } from '../local-servers/local-server-tools'
 import { createFileViewTools } from '../file-views/file-view-tools'
+import { createWorkspaceTools } from '../workspaces/workspace-tools'
+import { createWorkspaceWithHooks } from '../extensions/hooks/workspace-hooks'
+import { createCliRuntimeTools } from './cli-runtime-tools'
 import type { StudioCore } from './studio-core'
 import { studioBridgeScriptPath } from '../platform/studio-paths'
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
+import type { StudioWorkspace } from '../../../packages/studio-protocol/src/workspaces'
+import { readStudioEnvironmentId } from '../environment/environment-id'
 import { isMachinePath } from '../../shared/machine-paths'
 import { confineToRoots } from '../../main/studio-rpc/studio-file-confinement'
-import { environmentCommand, environmentPage, launchWhereItLives } from './environment-chat-calls'
+import { chatEnvironments, environmentCommand, environmentPage } from './environment-chat-calls'
+import type { ConversationEnvironments } from '../../main/automation/conversation-tools'
 
 // The Studio MCP gateway over a core: the always-on socket agents reach the
 // app through, and the opt-in tailnet listener, where paired devices speak the
@@ -94,6 +101,14 @@ export type StudioGatewayOptions = Pick<
    */
   expectShellToolsets?: ExpectedShellToolsets
   /**
+   * The routes this computer reaches an environment by, best first
+   * (`formatEnvironmentRoute`), read from the environment registry the shell
+   * keeps; none for one it does not know. What a chat's address or link is
+   * routed by, for the agents' chat tools. A server with no shell (an SSH
+   * machine's, a distribution's) knows only its own environment.
+   */
+  environmentRoutes?: (environmentId: string) => Promise<readonly string[]>
+  /**
    * A gateway tool to leave out of every list now: a family the person
    * switched off (the agents' browser) while it is served here rather than
    * offered by the shell. Asked per list, so the switch holds without a restart.
@@ -125,15 +140,20 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   // The GitHub CLI's own sign-in for a host, which is what lets a pull request
   // there be read (`pull_request.link`).
   const gitHubHostToken = createGhHostTokenResolver(sharedGhRunner())
-  const chats = studioChatControl(core)
+  // Where a chat an agent names lives, by its address: one lookup for every chat tool.
+  let ownEnvironmentId: string | null = null
+  const environments = chatEnvironments({
+    clients: core.environmentClients,
+    ownEnvironmentId: () => (ownEnvironmentId ??= readStudioEnvironmentId(core.platform.paths.dataDir())),
+    routesOf: options.environmentRoutes ?? null,
+    recordOf: (workspaceId) => core.workspaceRegistry.getRecord(workspaceId),
+  })
+  const chats = studioChatControl(core, environments)
   const coreTools = [
     ...createConversationTools({
-      // A chat in a workspace an SSH machine holds starts there.
-      launch: launchWhereItLives(
-        core.environmentClients,
-        (workspaceId) => core.workspaceRegistry.getRecord(workspaceId),
-        (request) => core.conversationLaunchService.launch(request),
-      ),
+      launch: (request) => core.conversationLaunchService.launch(request),
+      // A chat on an SSH machine or in a WSL distribution starts and is tidied there.
+      environments,
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
       agentStarterOf: core.agentStarterOf,
       permissionModesOf: (cli) => listPluginRegistryEntries().find((entry) => entry.id === cli)?.permissionModes ?? [],
@@ -230,6 +250,29 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     // `worktree.lease` and `worktree.release`: a worktree of the agent's own
     // from this core's pool, beside the chats that work in it.
     ...core.worktrees.tools,
+    // `workspace.*` and `cli.runtime.list`: this Studio's own workspaces, a
+    // project's checkout and extensions read where its folder is, and the
+    // CLIs it runs, from the same core reads the Studio protocol answers with.
+    // Every Studio serves them, so an agent on a WSL distribution or an SSH
+    // machine hears about the machine it runs on.
+    ...createWorkspaceTools({
+      getWorkspaceSyncSnapshot: () => workspaceSyncService.getSnapshot(),
+      listWorkspaces: (listOptions) => core.workspaceList.list(listOptions),
+      listTerminalSessions: () => core.agentTerminals?.runtime.sessions.listTerminals() ?? [],
+      createWorkspace: (input, actor, context) =>
+        createWorkspaceWithHooks(
+          core.extensionHooks,
+          () => activeInvoker() ?? core.hookInvokers.ofGatewayCaller(context),
+          input,
+          (request) => workspaceSyncService.createWorkspace(request, actor),
+        ),
+      deviceMayName: async (folder) => (await confineToRoots(folder, ownWorkspaceFolders(core))).ok,
+      studioDataDirs: () => [platform.paths.dataDir()],
+      workspaceCheckout: (workspaceId, readOptions) => core.workspaceReads.checkout(workspaceId, readOptions),
+      workspaceExtensions: (workspaceId, cli, readOptions) =>
+        core.workspaceReads.extensions(workspaceId, cli, readOptions),
+    }),
+    ...createCliRuntimeTools({ listCliRuntimes: (cli) => core.cliRuntimes.list(cli) }),
   ]
 
   const callerInvoker = (context: McpConnectionContext | undefined): ExtensionInvoker => {
@@ -471,21 +514,21 @@ function createListChangePush() {
 }
 
 /**
- * This core's chats as one agent drives another (conversation-chat-tools.ts).
- * Its sends are recorded as Studio's, not the person's, so a chat an agent
- * messages keeps its place in the lists ordered by when the person last wrote.
+ * The chats an agent here drives (conversation-chat-tools.ts): this core's
+ * own, and those another environment holds. Its sends are recorded as
+ * Studio's, not the person's, so a chat an agent messages keeps its place in
+ * the lists ordered by when the person last wrote.
  *
- * A chat another environment holds (an SSH machine's, its record here only
- * that machine's copy) is driven there, as a client of that machine's Studio:
- * the same protocol method a window sends, on the desktop's own client of it
- * (`environmentClients`), never through this core's runtime (orchestrator
- * ruling 1). A machine that cannot be reached is said so in words.
+ * A chat is found where its address says it lives (`environments.place`,
+ * environment-chat-calls.ts), and another environment's is asked of that
+ * environment's Studio on the desktop's own client of it
+ * (`environmentClients`), with the same protocol methods a window sends,
+ * never through this core's runtime (orchestrator ruling 1). A machine that
+ * cannot be reached is said so in words.
  */
-function studioChatControl(core: StudioCore): ConversationChatControl {
+function studioChatControl(core: StudioCore, environments: ConversationEnvironments): ConversationChatControl {
   let host: ReturnType<StudioCore['createConversationHost']> | null = null
   const hostOf = () => (host ??= core.createConversationHost({ origin: LAUNCH_NOTICE_ORIGIN }))
-  const routeOf = (workspaceId: string): string | null =>
-    environmentRouteOfRecord(core.workspaceRegistry.getRecord(workspaceId))
   const localSession = localSessionOf(core)
   const remoteSession = async (route: string, workspaceId: string, agentId: string) => {
     const reached = await core.environmentClients?.clientFor(route)
@@ -494,32 +537,72 @@ function studioChatControl(core: StudioCore): ConversationChatControl {
     if (!listed?.ok) return undefined
     return latestSession(listed.sessions)
   }
-  return {
-    chatAgentsOf: (workspaceId) => {
-      const record = core.workspaceRegistry.getRecord(workspaceId)
-      if (!record || record.remoteOrigin) return null
-      return Object.entries(record.agents)
+  const unknownChat = (chatId: string, where: string) => ({
+    ok: false as const,
+    code: 'unknown_workspace',
+    message: `No chat "${chatId}" on ${where}.`,
+  })
+  // A chat this core holds.
+  const here = (workspaceId: string) => {
+    const record = core.workspaceRegistry.getRecord(workspaceId)
+    if (!record) return unknownChat(workspaceId, 'this machine')
+    const chat: FoundChat = {
+      route: null,
+      workspaceId,
+      agents: Object.entries(record.agents)
         .filter(([, agent]) => agent?.runtimeKind === 'conversation')
-        .map(([agentId]) => agentId)
+        .map(([agentId]) => agentId),
+      title: record.name ?? null,
+      keyOf: (agentId) => hostOf().resolveKey(workspaceId, agentId),
+    }
+    return { ok: true as const, chat }
+  }
+  // A chat another environment holds, as its Studio lists it.
+  const there = async (route: string, chatId: string) => {
+    const reached = await core.environmentClients?.clientFor(route)
+    if (!reached) return { ok: false as const, code: 'unavailable', message: UNREACHABLE }
+    if (!reached.ok) return { ok: false as const, code: 'unavailable', message: reached.message }
+    let rows: StudioWorkspace[]
+    try {
+      rows = (await reached.client.request('workspaces.list', {})).workspaces
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: 'unavailable',
+        message: `${reached.name}: ${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+    const row = rows.find((workspace) => workspace.id === chatId)
+    if (!row) return unknownChat(chatId, reached.name)
+    const workspaceRoot = row.folderPath
+    const chat: FoundChat = {
+      route,
+      workspaceId: row.id,
+      agents: [...(row.agentIds ?? [])],
+      title: row.name || null,
+      keyOf: (agentId) => (workspaceRoot ? { workspaceId: row.id, agentId, workspaceRoot } : null),
+    }
+    return { ok: true as const, chat }
+  }
+  return {
+    find: async (ref) => {
+      const place = await environments.place(ref)
+      if (!place.ok) return place
+      const chatId = place.workspaceId ?? ref.chatId
+      return place.route ? there(place.route, chatId) : here(chatId)
     },
-    resolveKey: (workspaceId, agentId) => hostOf().resolveKey(workspaceId, agentId),
     chatTitle: (workspaceId) => core.workspaceRegistry.getRecord(workspaceId)?.name,
-    session: (workspaceId, agentId) => {
-      const route = routeOf(workspaceId)
-      return route ? remoteSession(route, workspaceId, agentId) : localSession(workspaceId, agentId)
-    },
-    permissionOf: (key) => {
-      const route = routeOf(key.workspaceId)
+    session: ({ route, key }) =>
+      route ? remoteSession(route, key.workspaceId, key.agentId) : localSession(key.workspaceId, key.agentId),
+    permissionOf: ({ route, key }) => {
       if (!route) return hostOf().permissionOf?.(key) ?? 'manual'
       return remoteSession(route, key.workspaceId, key.agentId).then((session) => session?.permissionPreset ?? 'manual')
     },
-    command: async (key, clientId, commandId, command) => {
-      const route = routeOf(key.workspaceId)
+    command: async ({ route, key }, clientId, commandId, command) => {
       if (!route) return hostOf().command(key, clientId, commandId, command)
       return environmentCommand(core.environmentClients, route, key, commandId, command)
     },
-    readPage: async (key, page) => {
-      const route = routeOf(key.workspaceId)
+    readPage: async ({ route, key }, page) => {
       if (route) return environmentPage(core.environmentClients, route, key, page)
       if (page.before !== undefined) {
         const read = await core.conversations.readConversationPage(key, page.before, page.turns)
@@ -535,6 +618,8 @@ function studioChatControl(core: StudioCore): ConversationChatControl {
     },
   }
 }
+
+const UNREACHABLE = 'That machine cannot be reached from this computer.'
 
 /** Who a sub-agent's later tasks come from, as the command's client: Studio itself. */
 const SUBAGENT_TASK_CLIENT_ID = 'studio-subagent-tasks'

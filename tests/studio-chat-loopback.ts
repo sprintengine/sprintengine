@@ -7,6 +7,8 @@ import type { StudioFileSystem } from '../src/server/files/studio-file-system'
 import type { ConversationSessionFrame } from '../src/shared/conversation-runtime'
 import { configureWindowStudio, windowStudioClient } from '../src/renderer/src/studio/windowStudioClient'
 import { createMemoryChannel, type MemoryChannelEnd } from './memory-channel'
+import { createStudioChatLifecycleDomain } from '../src/server/chat-lifecycle/chat-lifecycle-domain'
+import { searchChatsHere, type SearchableChatHere } from '../src/main/automation/conversation-search'
 import { memoryWebSocketClass } from './memory-websocket'
 
 // The chat view's tests on the Studio protocol, which is the only way the
@@ -299,7 +301,16 @@ function fileSystemOver(api: Api): StudioFileSystem {
  */
 export function installStudioLoopback(
   win: { api?: Api },
-  options: { environmentId?: string; pullRequests?: StudioPullRequests } = {},
+  options: {
+    environmentId?: string
+    pullRequests?: StudioPullRequests
+    /**
+     * The chats the window's Studio searches for `conversation.searchChats`,
+     * in its order, each read by the window's `conversationSearch` stub. The
+     * rest of the chat lifecycle is not served here.
+     */
+    searchableChats?: () => readonly SearchableChatHere[]
+  } = {},
 ): StudioLoopback {
   const api = (win.api ??= {})
   // One chat surface for the window's life, as main provides one: its receipts
@@ -313,6 +324,7 @@ export function installStudioLoopback(
     chat: () => chat,
     fileSystem: fileSystemOver(api),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
+    ...(options.searchableChats ? { chatLifecycle: searchOnlyLifecycle(api, options.searchableChats) } : {}),
     // The socket is never started; windows say hello with their tickets.
     authenticator: createTicketAuthenticator(mintStudioTicket()),
   })
@@ -348,6 +360,27 @@ export function installStudioLoopback(
       await windowStudioClient(api as Parameters<typeof windowStudioClient>[0])
     },
   }
+}
+
+/** A chat lifecycle that only searches, as the window's Studio searches its chats. */
+function searchOnlyLifecycle(api: Api, chats: () => readonly SearchableChatHere[]) {
+  const notHere = (): never => {
+    throw new Error('Not served by the loopback.')
+  }
+  return createStudioChatLifecycleDomain({
+    lifecycle: {
+      markUnread: notHere,
+      snooze: notHere,
+      highlight: notHere,
+      setAutoSettle: notHere,
+      setAutoCompact: notHere,
+      rename: notHere,
+    },
+    deletion: notHere,
+    hasChat: (workspaceId) => chats().some((chat) => chat.workspaceId === workspaceId),
+    searchChats: (query) =>
+      searchChatsHere(query, { chats, search: (input) => call(api, 'conversationSearch', input) }),
+  })
 }
 
 /**

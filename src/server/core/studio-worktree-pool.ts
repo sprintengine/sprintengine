@@ -9,6 +9,8 @@ import { createAppSettledChatDeletion } from '../../main/settled-chat-deletion-a
 import type { WorkspaceRegistryService } from '../../main/workspace-registry-service'
 import type { WorkspaceSyncService } from '../../main/workspace-sync-service'
 import { installWorktreePool } from '../../main/worktree-pool/active-pool'
+import { createWorktreeBranchLedger, installWorktreeBranchLedger } from '../../main/worktree-branch-ledger'
+import type { StudioDatabase } from '../db/database'
 import { createAgentLeaseRelease } from '../../main/worktree-pool/agent-lease-release'
 import { createChatFolderGuard } from '../../main/worktree-pool/chat-folder-guard'
 import { createDependencyInstaller, installDependencyInstaller } from '../../main/worktree-pool/dependency-install'
@@ -53,6 +55,8 @@ export type WorktreeTerminalPaths = {
 
 export type StudioWorktreePoolDeps = {
   platform: Pick<StudioPlatform, 'paths'>
+  /** The data folder's database: the pools' records and the branches Studio made are kept there. */
+  database: StudioDatabase
   workspaceRegistry: Pick<WorkspaceRegistryService, 'getRecord'>
   workspaceSyncService: WorkspaceSyncService
   /** Where a chat's session works now (a running turn, a live child). Read lazily: the backend is built after. */
@@ -84,6 +88,13 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
   // are told from another profile's (agent-worktree-lock.ts): every process
   // that cuts agent worktrees for this data directory names the same one.
   setAgentWorktreeLockProfile(dataDir)
+  // The branches this server makes for worktrees, which its cleanup may
+  // delete: every agent worktree made here (git.ts) records into it.
+  const branchLedger = createWorktreeBranchLedger({
+    database: deps.database,
+    log: diagnosticLogger('worktree-branches'),
+  })
+  installWorktreeBranchLedger(branchLedger)
 
   const liveConversationPaths = (): Promise<string[]> => deps.liveConversationPaths().catch(() => [])
   // Where live work sits, for the pool and the agent worktree cleanup alike:
@@ -129,7 +140,8 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
   // worktree made with `fromPool` (git.ts) is leased from it, and the agent
   // worktree cleanup hands back the slots nothing uses.
   const pool = createWorktreePoolService({
-    store: createPoolStore(dataDir),
+    store: createPoolStore({ dataDir, database: deps.database }),
+    branchLedger,
     livePaths: liveWorkPaths,
     liveSessionPaths: liveConversationPaths,
     // Recovery, holds and evictions are what a person asks about later.

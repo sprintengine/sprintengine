@@ -6,6 +6,9 @@ import type { ConversationSessionSummary } from '../../../shared/conversation-ru
 import { withEnvironmentSessions } from '../hooks/conversationSessionsStore'
 import {
   createEnvironmentChatSource,
+  environmentChatSourceFor,
+  environmentResting,
+  environmentTargetsToFollow,
   followEnvironmentChats,
   followedEnvironmentChats,
   type EnvironmentChatSource,
@@ -33,11 +36,15 @@ function fakeEnvironment(environmentId: string, listed: ConversationSessionSumma
     state: 'open' as StudioClientState,
     welcome: { environment: { id: environmentId } },
     supports: () => true,
+    grant: { scopes: ['workspaces:read'] },
     request: async (method: string) => {
+      // Its rows are read too (`environmentChats.rows.test.ts`); these tests count its sessions.
+      if (method === 'conversation.list') return { conversations: [] }
       assert.equal(method, 'session.list')
       lists += 1
-      return { ok: true, sessions: listed }
+      return { ok: true, sessions: [...listed] }
     },
+    rpc: { 'workspaces.list': async () => ({ workspaces: [] }) },
     subscribe: (_topic: string, _params: unknown, listener: { onPayload(payload: unknown): void }) => {
       pushes.add(listener.onPayload)
       return () => pushes.delete(listener.onPayload)
@@ -216,4 +223,78 @@ test('a client that cannot be held is a refusal its caller hears, never an excep
     asked = source.client()
   })
   await assert.rejects(asked!, /reading 'api'/u)
+})
+
+test('every environment the list holds is followed by its best route, the window’s own Studio first', () => {
+  const up = { state: 'up', detail: null, lastReachedAt: null } as const
+  const stopped = { state: 'unknown', detail: null, lastReachedAt: null } as const
+  const targets = environmentTargetsToFollow([
+    { displayName: 'This Mac', routes: [{ kind: 'local' }], connection: up },
+    { displayName: 'build-box', routes: [{ kind: 'ssh', machine: 'build-box' }], connection: stopped },
+    { displayName: 'Ubuntu', routes: [{ kind: 'wsl', distro: 'Ubuntu' }], connection: up },
+    { displayName: 'Debian', routes: [{ kind: 'wsl', distro: 'Debian' }], connection: stopped },
+    {
+      displayName: 'mac-mini',
+      routes: [
+        { kind: 'tailnet', connection: 'conn-mini' },
+        { kind: 'ssh', machine: 'mac-mini' },
+      ],
+      connection: up,
+    },
+  ])
+  // A WSL distribution that is not running rests: its rows are its last-known
+  // list, and nothing is asked of it, which would start it. An SSH machine is
+  // followed whatever its state says.
+  assert.deepEqual(targets, [
+    { route: 'local', name: 'This Mac' },
+    { route: 'ssh:build-box', name: 'build-box' },
+    { route: 'wsl:Ubuntu', name: 'Ubuntu' },
+    { route: 'wsl:Debian', name: 'Debian', resting: true },
+    { route: 'tailnet:conn-mini', name: 'mac-mini' },
+  ])
+})
+
+test('the window’s own Studio is followed before the list names it', () => {
+  assert.deepEqual(environmentTargetsToFollow([]), [{ route: 'local', name: 'This computer' }])
+})
+
+test('a resting environment is drawn and not asked until it runs or a chat on it is opened', () => {
+  const made: Array<{ route: string; followed: boolean; closed: boolean }> = []
+  const make = (target: { route: string }) => {
+    const entry = { route: target.route, followed: false, closed: false }
+    made.push(entry)
+    return {
+      route: target.route,
+      snapshot: () => ({}) as never,
+      subscribe: () => {
+        entry.followed = true
+        return () => undefined
+      },
+      watch: () => () => undefined,
+      close: () => {
+        entry.closed = true
+      },
+      loadCached: () => undefined,
+    } as unknown as EnvironmentChatSource
+  }
+  const debian = { route: 'wsl:Debian', name: 'Debian' }
+  followEnvironmentChats([{ ...debian, resting: true }], make)
+  assert.deepEqual(made, [{ route: 'wsl:Debian', followed: false, closed: false }])
+  assert.equal(environmentResting('wsl:Debian'), true)
+  // It runs: the same source starts reading it.
+  followEnvironmentChats([debian], make)
+  assert.deepEqual(made, [{ route: 'wsl:Debian', followed: true, closed: false }])
+  assert.equal(environmentResting('wsl:Debian'), false)
+  // It stops: its connection goes, and its last-known rows are drawn again.
+  followEnvironmentChats([{ ...debian, resting: true }], make)
+  assert.equal(made[0]!.closed, true)
+  assert.deepEqual(made[1], { route: 'wsl:Debian', followed: false, closed: false })
+  // A chat on it is opened: it is followed, and stays followed while a chat view reads through it.
+  environmentChatSourceFor(debian)
+  assert.equal(made[1]!.followed, true)
+  followEnvironmentChats([{ ...debian, resting: true }], make)
+  assert.equal(made[1]!.closed, false)
+  assert.equal(environmentResting('wsl:Debian'), false)
+  followEnvironmentChats([], make)
+  assert.equal(made[1]!.closed, true)
 })

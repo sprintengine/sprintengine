@@ -63,7 +63,6 @@ import { createNodeStudioPaths } from '../platform/studio-paths'
 import { createRemoteShellBridge } from '../shell-bridge/remote'
 import { createShellSecretCipher, meshSealedTokens } from '../shell-bridge/shell-cipher'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from './gateway-backends'
-import { createWorkspaceExtensionsReader } from '../core/workspace-extensions-reader'
 import { provideServerChat } from './server-chat'
 import {
   SERVER_EVENTS,
@@ -88,8 +87,6 @@ import type {
 } from '../../../packages/studio-protocol/src/environment-access'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
-import { createWorkspaceWithHooks } from '../extensions/hooks/workspace-hooks'
-import { activeInvoker } from '../../main/module-host/extension-invocation'
 
 // The desktop's own Studio server, in a process of its own (phase 6 spec): the
 // core, its gateway and owner socket, its window listener, and the module kernel with every module's server half, composed in a utility
@@ -391,6 +388,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // the control channel (extension-open-bridge.ts).
   const extensionOpener = shellExtensionOpenOverControl(rpc)
   gateway = createStudioGateway(core, {
+    // A chat's address is routed by the shell's environment registry, asked
+    // each time: one registry, read where it is kept (environment-registry.ts).
+    environmentRoutes: async (environmentId) => {
+      const routes = await rpc.call<unknown>(SHELL_METHODS.environmentRoutes, { environmentId })
+      return Array.isArray(routes) ? routes.filter((route): route is string => typeof route === 'string') : []
+    },
     // An agent that starts a chat hears back from it, as one that launches a
     // terminal agent does.
     ...(terminals
@@ -441,14 +444,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           launchAgent: (request) => launchAgent(request),
           resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
           agentStarterOf: core.agentStarterOf,
-          createWorkspace: (input, actor, context) =>
-            createWorkspaceWithHooks(
-              core.extensionHooks,
-              () => activeInvoker() ?? core.hookInvokers.ofGatewayCaller(context),
-              input,
-              (request) => workspaceSyncService.createWorkspace(request, actor),
-            ),
-          studioDataDirs: () => [envelope.dataDir],
           getScheduledAgents: () => modules.scheduledAgents(),
           ...withDefinedMachineSchedules(machineSchedulesOf(core)),
           ...launchSettingsGatewayDeps(agentLaunchSettings),
@@ -460,12 +455,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           listModuleContributedTools: () =>
             modules.mcpTools().map((tool) => ({ moduleId: tool.moduleId, toolName: tool.registration.name })),
           readMarketplaceRegistry: (input) => extensions.marketplace.read(input),
-          // What a paired machine's composer offers a chat here.
-          readWorkspaceExtensions: createWorkspaceExtensionsReader({
-            listWorkspaceSkills: (input) => core.agents.skills.workspaceSkills.listWorkspaceSkills(input),
-            agentCapabilities: (input) => core.agents.skills.agentCapabilities.resolve(input),
-            listSources: () => core.agents.skills.skills.listSources(),
-          }),
         }),
       ),
       // `artifacts.*`: publishing agents' pages from this machine's disk, over

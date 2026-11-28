@@ -504,7 +504,7 @@ const farReviewer: MeshSubagent = {
   startedAt: 1_000,
 }
 
-/** The tab on a chat of a paired machine: its pane publishes it as `RemoteConversationPanel` does. */
+/** The tab on a chat of a paired machine: its pane publishes it as the one chat pane does for a listed chat (`useListedChat`). */
 async function openRemoteChat(tab: Awaited<ReturnType<typeof mountPanel>>) {
   const { createPairedChatTransport } = await import('../../../panels/agentChat/pairedChat')
   const { publishRemoteChat } = await import('../../../panels/agentChat/remoteChatRegistry')

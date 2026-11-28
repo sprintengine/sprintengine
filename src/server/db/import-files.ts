@@ -26,6 +26,14 @@ import { SCHEDULED_MESSAGES_FILE, scheduledMessagesFileReads } from '../../main/
 import { USAGE_LIMIT_RESUMES_FILE, usageLimitResumesFileReads } from '../../main/usage-limits/resume'
 import { CONVERSATION_OUTBOX_FILENAME_FOR_IMPORT, readConversationOutboxFile } from '../../main/conversation-outbox'
 import type { DataFormatStep } from '../environment/data-format'
+import { readWorktreeBranchesFile, WORKTREE_BRANCHES_FILE } from '../../main/worktree-branch-ledger'
+import { ADOPTIONS_LEDGER_FILE, readAdoptionsLedgerFile } from '../environment/environment-adoption'
+import { parsePoolRecord, POOL_DIR_NAME, POOL_RECORD_FILE_PATTERN } from '../../main/worktree-pool/pool-store'
+import {
+  legacyPullRequestRows,
+  PULL_REQUEST_RECORD_FILE,
+  pullRequestRecordFileRows,
+} from '../pull-requests/pull-request-record'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from './database'
 import type { SyncConnection } from './sqlite'
 
@@ -389,6 +397,140 @@ export const CHAT_RECORDS_STEP: DataFormatStep = {
     const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
     try {
       reportSkipped(importChatRecords(connection, dataDir))
+    } finally {
+      connection.close()
+    }
+  },
+}
+
+/**
+ * Format 6: the pull request record, a row per pull request. From
+ * `pull-requests/opened.json` as its store read it; with none, from the
+ * per-repository files the rule before it wrote (only the rows a chat's
+ * capture filed), which that store used to read once and delete. Both are
+ * left as they were.
+ */
+export function importPullRequestRecords(connection: SyncConnection, dataDir: string): FileImport[] {
+  const imported = importFile(connection, dataDir, PULL_REQUEST_RECORD_FILE, (text) => {
+    const read = text === null ? legacyPullRequestRows(dataDir) : pullRequestRecordFileRows(text)
+    if (!read) return { records: 0, skipped: 1 }
+    let records = 0
+    for (const [position, row] of read.rows.entries())
+      records += connection.run('INSERT OR IGNORE INTO pull_requests (id, position, body) VALUES (?, ?, ?)', [
+        row.id,
+        position,
+        row.body,
+      ]).changes
+    return { records, skipped: read.skipped }
+  })
+  return imported ? [imported] : []
+}
+
+/** The format step that moves the pull request record: format 5 to 6. */
+export const PULL_REQUEST_RECORD_STEP: DataFormatStep = {
+  to: 6,
+  files: [],
+  database: true,
+  run(dataDir) {
+    const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
+    try {
+      reportSkipped(importPullRequestRecords(connection, dataDir))
+    } finally {
+      connection.close()
+    }
+  },
+}
+
+/**
+ * Format 7: the worktree records. The branches Studio made for worktrees,
+ * each repository's in the order they were recorded and the repositories in
+ * the order they were last recorded in, and each pool's record from its
+ * `worktree-pool/pool-<id>.json`, each file its own import. A pool file that
+ * does not read is skipped and left as it was; its pool's slots are adopted
+ * as held on next use, as an unreadable record's were.
+ */
+export function importWorktreeRecords(connection: SyncConnection, dataDir: string): FileImport[] {
+  const imports = [
+    importFile(connection, dataDir, WORKTREE_BRANCHES_FILE, (text) => {
+      if (text === null) return { records: 0, skipped: 0 }
+      const repos = readWorktreeBranchesFile(text)
+      if (!repos) return { records: 0, skipped: 1 }
+      let records = 0
+      for (const { repo, branches } of repos)
+        for (const branch of branches)
+          records += connection.run('INSERT OR IGNORE INTO worktree_branches (repo, branch) VALUES (?, ?)', [
+            repo,
+            branch,
+          ]).changes
+      return { records, skipped: 0 }
+    }),
+  ]
+  let names: string[] = []
+  try {
+    names = readdirSync(join(dataDir, POOL_DIR_NAME)).sort()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  for (const name of names) {
+    const poolId = POOL_RECORD_FILE_PATTERN.exec(name)?.[1]
+    if (!poolId) continue
+    imports.push(
+      importFile(connection, dataDir, `${POOL_DIR_NAME}/${name}`, (text) => {
+        if (text === null) return { records: 0, skipped: 0 }
+        const record = parsePoolRecord(text)
+        if (!record || record.poolId !== poolId) return { records: 0, skipped: 1 }
+        connection.run('INSERT OR IGNORE INTO pool_records (pool_id, body) VALUES (?, ?)', [poolId, text])
+        return { records: 1, skipped: 0 }
+      }),
+    )
+  }
+  return imports.filter((entry): entry is FileImport => entry !== null)
+}
+
+/** The format step that moves the worktree records: format 6 to 7. */
+export const WORKTREE_RECORDS_STEP: DataFormatStep = {
+  to: 7,
+  files: [],
+  database: true,
+  run(dataDir) {
+    const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
+    try {
+      reportSkipped(importWorktreeRecords(connection, dataDir))
+    } finally {
+      connection.close()
+    }
+  },
+}
+
+/**
+ * Format 8: what a hand-over kept here under which digest
+ * (`environment-adoptions.json`), a row per record, pending marks included.
+ */
+export function importAdoptions(connection: SyncConnection, dataDir: string): FileImport[] {
+  const imported = importFile(connection, dataDir, ADOPTIONS_LEDGER_FILE, (text) => {
+    if (text === null) return { records: 0, skipped: 0 }
+    const entries = readAdoptionsLedgerFile(text)
+    if (!entries) return { records: 0, skipped: 1 }
+    let records = 0
+    for (const { key, entry } of entries)
+      records += connection.run(
+        'INSERT OR IGNORE INTO adoptions (key, digest, migration_id, at, pending) VALUES (?, ?, ?, ?, ?)',
+        [key, entry.digest, entry.migrationId, entry.at, entry.pending ? 1 : 0],
+      ).changes
+    return { records, skipped: 0 }
+  })
+  return imported ? [imported] : []
+}
+
+/** The format step that moves the hand-over's adoption ledger: format 7 to 8. */
+export const ADOPTIONS_STEP: DataFormatStep = {
+  to: 8,
+  files: [],
+  database: true,
+  run(dataDir) {
+    const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
+    try {
+      reportSkipped(importAdoptions(connection, dataDir))
     } finally {
       connection.close()
     }

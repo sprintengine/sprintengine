@@ -40,6 +40,7 @@ import { createDesktopShellTools } from './desktop-shell-tools'
 import { liveGatewayLaunchTokens, onGatewayLaunchTokenChange } from '../server/core/gateway-launch-tokens'
 import { createModuleRegistryMirror } from './modules/registry-mirror'
 import type { StudioPluginStatus } from '../../packages/studio-protocol/src/public'
+import { formatEnvironmentRoute, isEnvironmentId } from '../../packages/studio-protocol/src/environment'
 import {
   ensureSkillInstalled,
   setDefaultSkillManager,
@@ -1246,6 +1247,14 @@ export function createAppServices(
     log: (message) => {
       void writeDiagnosticLog({ level: 'info', title: 'Environments', message, source: 'workspace' })
     },
+  })
+  // The routes to one environment, for the server's agent tools, which take a
+  // chat's address: the registry stays here, read where it is kept.
+  server.rpc.handle(SHELL_METHODS.environmentRoutes, (params) => {
+    const environmentId = (params as { environmentId?: unknown } | null)?.environmentId
+    return isEnvironmentId(environmentId)
+      ? (environments.get(environmentId)?.routes ?? []).map((route) => formatEnvironmentRoute(route))
+      : []
   })
   registerEnvironmentsIpc(ipcMain, {
     environments,

@@ -11,11 +11,11 @@ folder's run lock (`run/studio.lock`) opens it, so there is one writer.
 it while the server runs) holds the records that moved out of files. Its code is
 in `src/server/db/`.
 
-| Since format | Records                                                                                                                               |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 2            | a launched chat's first message, the "always allow" approval rules, the launch notices, the prompts a person sent each terminal agent |
-| 3            | the devices paired with this Studio and the machines it is paired with, browser sessions, embeds, linked local servers, apps' toolsets, file views, extension approvals |
-| 4            | chat history: each chat's events and command receipts, the chat list's rows, search, the list of turns a stop may have left open, and tools' details and streamed output |
+| Since format | Records                                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2            | a launched chat's first message, the "always allow" approval rules, the launch notices, the prompts a person sent each terminal agent                                                |
+| 3            | the devices paired with this Studio and the machines it is paired with, browser sessions, embeds, linked local servers, apps' toolsets, file views, extension approvals              |
+| 4            | chat history: each chat's events and command receipts, the chat list's rows, search, the list of turns a stop may have left open, and tools' details and streamed output             |
 | 5            | the chat records (the workspace registry: a row per chat, and one for its windows, active chat and revision), the schedules with their runs, scheduled messages, usage-limit resumes |
 
 A paired machine's token is kept sealed by the platform's cipher, as its file
@@ -100,6 +100,56 @@ before, not as a fresh folder. Records the registry's parser drops as
 malformed are counted as skipped too. The uninstaller's command line (`--remove-integrations`)
 reads the chat records' folders from the database, read-only, and from the old
 file beside it.
+
+## Pull requests
+
+The pull request record is a row per pull request (`pull_requests`): who
+opened it, its state as last read, the watch an agent asked for and the news
+its chat was not told yet. A change writes only the rows it changed. At the
+first start of format 6, `pull-requests/opened.json` is imported once; a
+folder without one has the per-repository files of the rule before it
+imported instead (only the pull requests a chat opened). A file that does not
+read is skipped and counted, and every file stays as it was.
+
+## Worktrees
+
+The branches Studio made for worktrees, which the agent worktree cleanup may
+delete, are a row each (`worktree_branches`), numbered in the order they were
+recorded. Each worktree pool's record is a row (`pool_records`), written whole
+in one transaction; a slot's step in progress is committed before the git
+step it names starts, so a start after a crash knows what was cut short. The
+pool settings stay a file (`worktree-pool/settings.json`), and so does each
+pool's lock, `.pool.lock` in its slot folder: another Studio sharing the slots
+(another data folder, profile or machine) must see it, and it never opens
+this database. At the first start of format 7, `worktree-branches.json` and
+each `worktree-pool/pool-<id>.json` are imported once; a file that does not
+read is skipped and counted (that pool's slots are adopted as held on next
+use), and every file stays as it was.
+
+## Hand-over
+
+What a machine's Studio kept from a desktop's hand-over, under which digest,
+is a row per record (`adoptions`); a record about to be kept is marked
+pending first, so a hand-over repeated after a crash is held, not reported as
+already here. At the first start of format 8, `environment-adoptions.json` is
+imported once; a file that does not read is skipped and counted, and stays as
+it was. The parts a hand-over stages ahead of its chats stay files.
+
+## Moving a chat, and what a start clears away
+
+Moving a chat to another project renames its history's rows to the new
+project's store and notes the move (`chat_moves`) in one transaction, then
+moves its store folder, then writes its record; the note goes once the record
+is committed. A start that finds a note brings the rows and the folder to the
+project the chat's record names, so a crash at any step never leaves the
+history in one project and the chat in another.
+
+Once per start, in the background, the server removes what nothing in its data
+folder points at any more: picture folders of first messages no row names,
+terminal snapshots a stop left half-written more than an hour ago, and the
+chat histories written out for a hand-over in an earlier run. It never looks
+in the project stores in the home folder: those are shared with every other
+data folder on the machine.
 
 ## The first start of a new format
 

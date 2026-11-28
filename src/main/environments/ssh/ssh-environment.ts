@@ -46,7 +46,7 @@ import {
 //                     └─► failed            ├─► starting | upgrading | (attach) ─► connected
 //                                           └─► version-blocked
 //   connected ─lost─► reconnecting (BatchMode, backoff 1 → 30 s) ─► connected
-//                        │ a prompt would be needed: needs-sign-in (Connect)
+//                        │ a prompt would be needed: needs-sign-in (Sign in)
 //                        └ ten minutes of trying: disconnected ("last reached …"),
 //                          still tried every five minutes, and at once on a wake
 //

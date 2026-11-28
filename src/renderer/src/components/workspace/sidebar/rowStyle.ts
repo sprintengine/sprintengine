@@ -78,7 +78,7 @@ export const SELECTED_ROW_ACCENT: RowAccent = {
 // enters into it — with the row's icon gone there is nothing per-mode left to
 // tint, so the enablement gating this used to do (degrade a disabled module's
 // row to the generic accent) has nothing to degrade.
-export function rowAccent(workspace: Workspace): RowAccent {
+export function rowAccent(workspace: { highlight?: Workspace['highlight'] | null }): RowAccent {
   const highlight = workspace.highlight?.color
   if (highlight) {
     const swatch = getHighlightSwatch(highlight)
@@ -99,7 +99,7 @@ export function highlightRailClass(workspace: { highlight?: Workspace['highlight
 // bar of its own. The base row keeps `border-l-[4px] border-l-transparent`, so
 // a highlight rail appears and disappears without shifting the row's content
 // sideways, and the edge is a ring so it never moves the row either.
-export function activeRowClass(workspace: Workspace): string {
+export function activeRowClass(workspace: { highlight?: Workspace['highlight'] | null }): string {
   const accent = rowAccent(workspace)
   return `${highlightRailClass(workspace)} ${accent.bg} ${accent.text} ${SELECTION_EDGE_CLASS}`
 }

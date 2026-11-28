@@ -9,8 +9,9 @@ import type { ChatLink } from '../../../../../shared/deep-link'
 // id there (`packages/studio-protocol/src/chat-link.ts`):
 //
 //   - this machine's environment: the chat of that id in this window's store;
-//   - a paired machine's: the row here that follows that chat, else the chat
-//     as that machine lists it, opened as its sidebar row opens it;
+//   - another environment's (a paired desktop's, an SSH machine's, a WSL
+//     distribution's): the row here that follows that chat, else the chat as
+//     that environment lists it, opened as its sidebar row opens it;
 //   - none, a link from before links named one: every machine's chat of that
 //     id is a candidate. One opens; several are named and none opens, since
 //     the link cannot say which; none is said.
@@ -27,7 +28,7 @@ import type { ChatLink } from '../../../../../shared/deep-link'
 // Store-free, so every path is tested without a window: WorkspaceManager hands
 // in the reads and writes.
 
-/** A paired machine's chat a link can open (`remoteChatLinks.ts`). */
+/** Another environment's chat a link can open (`environmentChatsNow.ts`'s `chatsAtAddress`). */
 export type RemoteChatChoice = {
   environmentId: string | null
   machineName: string
@@ -41,7 +42,7 @@ export type ChatLinkOpenerDeps = {
   getChat: (chatId: string) => { agents: Record<string, { name: string }> } | null
   /** The chat here that follows a paired machine's chat at this address, by its id here; null for none. */
   followerOf: (address: { environmentId: string; chatId: string }) => string | null
-  /** The paired machines' chats the link names (`remoteChatLinkTargets`). */
+  /** Other environments' chats the link names, from their rows (`chatsAtAddress`). */
   remoteChats: (link: ChatLink) => RemoteChatChoice[]
   /** The window the store files the chat under, if any. */
   holderOf: (chatId: string) => string | null

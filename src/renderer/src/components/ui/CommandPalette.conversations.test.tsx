@@ -13,6 +13,7 @@ import type { Workspace, WorkspaceId, WorkspaceWindowId } from '../../../../shar
 import type { ModuleCommandContext } from '../../commands/types'
 import type { CommandAvailabilityContext } from '../../commands/availability'
 import type { PaletteScope } from '../commandPaletteSearch'
+import type { RemoteSessionOpenSpec } from '../workspace/remoteBand/remoteSessionsModel'
 
 const fixtures = vi.hoisted(() => ({
   state: {
@@ -26,6 +27,7 @@ const fixtures = vi.hoisted(() => ({
     openExtensionsSurface: () => {},
   },
   pullRequests: {} as Record<string, BranchPullRequest[]>,
+  environmentRows: [] as unknown[],
 }))
 vi.mock('../../store/workspaceStore', () => {
   const useWorkspaceStore = (select: (state: typeof fixtures.state) => unknown) => select(fixtures.state)
@@ -40,6 +42,10 @@ vi.mock('../../modules', async () => {
 vi.mock('../../hooks/useTerminalSessions', () => ({
   useTerminalSessions: () => [],
   isLiveTerminal: () => false,
+}))
+// Other environments' chats, as their environments list them.
+vi.mock('../workspace/remoteBand/useEnvironmentChatRows', () => ({
+  useEnvironmentChatRows: () => fixtures.environmentRows,
 }))
 vi.mock('../workspace/useConversationPullRequests', () => ({
   useConversationPullRequests: () => fixtures.pullRequests,
@@ -102,6 +108,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   pending = []
   fixtures.state.workspaces = workspaces
+  fixtures.environmentRows = []
   fixtures.pullRequests = {
     'ws-2': [
       {
@@ -130,8 +137,16 @@ beforeEach(() => {
       conversationSearch,
     },
   })
-  // History is searched by the window's Studio, over the protocol.
-  installStudioLoopback(window as never)
+  // History is searched by the window's Studio, over the protocol
+  // (`conversation.searchChats`), in each chat it holds.
+  installStudioLoopback(window as never, {
+    searchableChats: () =>
+      workspaces.map((workspace) => ({
+        workspaceId: workspace.id,
+        workspaceRoot: workspace.folderPath!,
+        chatTitle: workspace.name,
+      })),
+  })
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
@@ -142,15 +157,19 @@ afterEach(async () => {
   vi.useRealTimers()
 })
 
-async function render(initialScope: PaletteScope = 'conversations') {
+async function render(
+  initialScope: PaletteScope = 'conversations',
+  options: { workspaces?: Workspace[]; onOpenEnvironmentChat?: (spec: RemoteSessionOpenSpec) => string | null } = {},
+) {
   await act(async () =>
     root.render(
       <CommandPalette
         onClose={() => {}}
         onRunCommand={() => false}
         onOpenRemoteConnections={() => {}}
+        {...(options.onOpenEnvironmentChat ? { onOpenEnvironmentChat: options.onOpenEnvironmentChat } : {})}
         workspaceWindowId={'window-1' as WorkspaceWindowId}
-        workspaces={workspaces}
+        workspaces={options.workspaces ?? workspaces}
         activeWorkspaceId={'ws-1' as WorkspaceId}
         activeScopes={[]}
         commandAvailability={{} as CommandAvailabilityContext}
@@ -264,4 +283,53 @@ test('the scrim blurs over a conversation and keeps its plain tone over a termin
   await render()
   expect(scrim().classList.contains('scrim-glass')).toBe(false)
   chat.remove()
+})
+
+// Another environment's chat is a row of its own, by its address, from what
+// its environment lists; a record this window keeps of one (an SSH copy, a
+// paired chat attached here) is not a second row of it.
+test("another environment's chat is one row from its environment's list, and a record here of it is none", async () => {
+  fixtures.environmentRows = [
+    {
+      key: 'env-ssh:rw1',
+      route: 'ssh:build-box',
+      environmentId: 'env-ssh',
+      connectionId: null,
+      machineName: 'build-box',
+      title: 'Tide tables',
+      workspaceId: 'rw1',
+      workspaceRoot: '/home/dev/.sprintengine-worktrees/harbour/pool-02',
+      projectFolder: '/home/dev/harbour',
+      repository: null,
+      agents: [],
+      attachedWorkspaceId: 'ws-copy',
+    },
+  ]
+  const copy = {
+    id: 'ws-copy',
+    name: 'Tide tables',
+    mode: 'standard',
+    folderPath: '/home/dev/harbour',
+    environment: { kind: 'ssh', id: 'build-box', label: 'build-box' },
+    agents: chatAgent,
+  } as unknown as Workspace
+  const opened: RemoteSessionOpenSpec[] = []
+  await render('conversations', {
+    workspaces: [...workspaces, copy],
+    onOpenEnvironmentChat: (spec) => {
+      opened.push(spec)
+      return 'ws-copy'
+    },
+  })
+  await type('tide')
+  const rows = options().filter((option) => option.textContent?.includes('Tide tables'))
+  expect(rows).toHaveLength(1)
+  expect(rows[0]!.id).toBe('palette-option-switch-env-ssh:rw1')
+  // Its project there, not its slot.
+  expect(rows[0]!.textContent).toContain('harbour')
+  expect(rows[0]!.textContent).not.toContain('pool-02')
+  await act(async () => rows[0]!.click())
+  expect(opened.map((spec) => [spec.route, spec.chatId, spec.attachedWorkspaceId])).toEqual([
+    ['ssh:build-box', 'rw1', 'ws-copy'],
+  ])
 })

@@ -32,6 +32,7 @@ import { onWindowVisibilityChange, windowActivity, type WindowActivity } from '.
 import { windowChatServices } from '../components/panels/agentChat/windowChat'
 import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
 import { followedEnvironmentChats, onFollowedEnvironmentChats } from '../studio/environmentChats'
+import { WINDOW_STUDIO_ROUTE } from '../studio/environmentStudio'
 import { useWorkspaceStore } from '../store/workspaceStore'
 
 /**
@@ -62,6 +63,13 @@ function heldOnRoute(route: string, workspaceId: string): boolean {
     )
 }
 
+/**
+ * Every followed environment but the window's own Studio, whose sessions are
+ * `local` already: heard here again, each of its lifecycle events would be
+ * heard twice.
+ */
+const otherEnvironmentChats = () => followedEnvironmentChats().filter((source) => source.route !== WINDOW_STUDIO_ROUTE)
+
 const windowSessions = (): ConversationSessionsApi =>
   typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'
     ? withEnvironmentSessions(windowChatServices().sessions, heldOnRoute)
@@ -89,7 +97,7 @@ export function withEnvironmentSessions(
     list: async () => {
       const here = await local.list()
       if (!here.ok) return here
-      const there = followedEnvironmentChats().flatMap((source) =>
+      const there = otherEnvironmentChats().flatMap((source) =>
         source.snapshot().sessions.filter((session) => holds(source.route, session.workspaceId)),
       )
       return there.length === 0 ? here : { ok: true, sessions: [...here.sessions, ...there] }
@@ -98,7 +106,7 @@ export function withEnvironmentSessions(
       const stopLocal = local.onLifecycleEvent(listener, onReconnected)
       const following = new Map<string, () => void>()
       const sync = () => {
-        const sources = followedEnvironmentChats()
+        const sources = otherEnvironmentChats()
         const routes = new Set(sources.map((source) => source.route))
         for (const [route, stop] of following)
           if (!routes.has(route)) {
@@ -109,10 +117,17 @@ export function withEnvironmentSessions(
           if (!following.has(source.route)) following.set(source.route, source.onLifecycleEvent(listener))
       }
       sync()
-      // A followed environment added or dropped, or one of them listed again.
+      // A followed environment added or dropped, or its sessions listed again;
+      // its rows moving (`environmentChats.ts`) is not the session list's news.
+      const sessionsOf = () =>
+        new Map(otherEnvironmentChats().map((source) => [source.route, source.snapshot().sessions]))
+      let seen = sessionsOf()
       const stopFollowed = onFollowedEnvironmentChats(() => {
         sync()
-        onReconnected?.()
+        const now = sessionsOf()
+        const moved = now.size !== seen.size || [...now].some(([route, sessions]) => seen.get(route) !== sessions)
+        seen = now
+        if (moved) onReconnected?.()
       })
       return () => {
         stopFollowed()

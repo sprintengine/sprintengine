@@ -5,6 +5,8 @@ import { join } from 'node:path'
 
 import { test } from 'vitest'
 
+import { testDatabaseAt } from '../../../tests/studio-database'
+
 import type { PullRequestStateRead } from '../../main/github/branch-pull-request'
 import type { ConversationEvent, ConversationToolDetailResult } from '../../shared/conversation-runtime'
 import { createPullRequestDomain, type PullRequestsChanged } from './pull-request-domain'
@@ -31,7 +33,7 @@ async function domainOver(options: { checkouts?: Record<string, PullRequestCheck
   const detailReads: string[] = []
   const userDataDir = await mkdtemp(join(tmpdir(), 'sprintengine-pr-domain-'))
   const record = createPullRequestRecord({
-    userDataDir,
+    database: testDatabaseAt(userDataDir),
     reads: { readPullRequestState: async () => read() },
     now: () => NOW,
     timers: { setTimeout: () => 0, clearTimeout: () => undefined },
@@ -39,7 +41,7 @@ async function domainOver(options: { checkouts?: Record<string, PullRequestCheck
     logWarning: () => undefined,
   })
   const domain = createPullRequestDomain({
-    dataDir: userDataDir,
+    database: testDatabaseAt(userDataDir),
     record,
     conversations: {
       onEvent: (listener) => {

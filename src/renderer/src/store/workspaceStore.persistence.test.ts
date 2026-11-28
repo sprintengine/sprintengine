@@ -309,16 +309,14 @@ test('workspaceStore.persistence', async () => {
   // asserted end-to-end in `src/main/workspace-registry-reconciliation.test.ts`.
 
   // ── CASE 3 ──────────────────────────────────────────────────────────────────
-  // Backup mirror fires for non-empty registry writes only, coalesced on a
-  // one-second timer.
+  // The backup of this window's settings is refreshed when they change,
+  // coalesced on a one-second timer.
   await new Promise<void>((resolve) => setTimeout(resolve, 1100))
-  const nonEmptyBackupCalls = backupWriteCalls.length
-  assert.ok(nonEmptyBackupCalls > 0, 'backup write IPC fires for non-empty registry writes')
+  assert.ok(backupWriteCalls.length > 0, 'a settings change refreshes the backup')
   const lastBackup = backupWriteCalls[backupWriteCalls.length - 1]
-  assert.equal(typeof lastBackup.data, 'object', 'backup payload uses split registry/settings envelopes')
-  // The window sends only the settings envelope it owns. Main fills the
-  // registry half in from its own registry when it writes the file
-  // (`src/main/workspace-backup.test.ts`), so no registry is serialized here.
+  assert.equal(typeof lastBackup.data, 'object', 'backup payload is the settings envelope')
+  // Only the settings: the workspace list is the server's, in its database,
+  // never copied into the backup (`src/main/workspace-backup.test.ts`).
   const lastBackupData = lastBackup.data as { registry?: unknown; settings: string }
   assert.equal('registry' in lastBackupData, false, 'the window does not serialize the registry into the backup')
   const lastBackupSettings = JSON.parse(lastBackupData.settings) as SettingsRecord
@@ -391,11 +389,7 @@ test('workspaceStore.persistence', async () => {
     frozenBeforeClear,
     'removing the last workspace does not write the frozen registry key',
   )
-  assert.equal(
-    backupWriteCalls.length,
-    backupCallsBeforeClear,
-    'backup is NOT mirrored on intentional-empty writes (AC4 — non-empty mirror only)',
-  )
+  assert.ok(backupWriteCalls.length >= backupCallsBeforeClear)
 
   // ── CASE 4b ─────────────────────────────────────────────────────────────────
   // forgetFolder is the second explicit removal path that can leave workspaces=[].
@@ -486,14 +480,16 @@ test('workspaceStore.persistence', async () => {
   assert.ok(intentDiag.storageSource === 'fresh' || intentDiag.storageSource === 'localStorage')
 
   // ── CASE 6 ──────────────────────────────────────────────────────────────────
-  // Backup recovery for truly dangerous empty (corrupt localStorage with no
-  // intent record): recovery rehydrates from backup and emits one final
-  // diagnostic with storageSource='backup'.
+  // This window's storage was lost: its settings come back from the backup,
+  // its workspace list does not (that is the server's, mirrored from it). A
+  // backup an older build wrote as a { registry, settings } pair gives its
+  // settings half only. One final diagnostic, storageSource='backup'.
   diagnosticLog.length = 0
   useWorkspaceStore.setState({
     workspaces: [],
     activeWorkspaceId: null,
     workspaceRegistryEmptyState: null,
+    sidebarCollapsed: false,
     appSettings: {
       ...useWorkspaceStore.getState().appSettings,
       projectKnowledgeRoots: {},
@@ -501,6 +497,18 @@ test('workspaceStore.persistence', async () => {
     },
   })
   stored['sprintengine-workspaces'] = 'unreadable garbage {{{'
+  delete stored['sprintengine-app-settings']
+  const backupSettings = JSON.stringify({
+    state: {
+      appSettings: {
+        ...useWorkspaceStore.getState().appSettings,
+        projectKnowledgeRoots: { '/Users/example/recovered': 'knowledge' },
+        recentWorkspaceFolders: ['/Users/example/recovered'],
+      },
+      sidebarCollapsed: true,
+    },
+    version: 46,
+  } satisfies SettingsRecord)
   backupReadResponse = {
     ok: true,
     payload: {
@@ -522,67 +530,91 @@ test('workspaceStore.persistence', async () => {
           },
           version: 46,
         } satisfies RegistryRecord),
-        settings: JSON.stringify({
-          state: {
-            appSettings: {
-              ...useWorkspaceStore.getState().appSettings,
-              projectKnowledgeRoots: {
-                '/Users/example/recovered': 'knowledge',
-              },
-              recentWorkspaceFolders: ['/Users/example/recovered'],
-            },
-            sidebarCollapsed: true,
-          },
-          version: 46,
-        } satisfies SettingsRecord),
+        settings: backupSettings,
       } satisfies BackupPair,
     },
   }
   await __workspaceStoreRunBackupRecoveryForTests()
 
   const recoveredState = useWorkspaceStore.getState()
-  assert.equal(recoveredState.workspaces.length, 1)
-  assert.equal(recoveredState.workspaces[0]?.id, 'ws-from-backup')
-  assert.equal(recoveredState.activeWorkspaceId, 'ws-from-backup')
-  assert.equal(recoveredState.workspaceRegistryEmptyState, null, 'recovery clears any stale intent record')
-  // Knowledge roots are one of the launch settings main owns: a wiped
-  // localStorage never lost them, so recovery leaves the window's copy of
-  // main's record alone rather than adopting whatever an old backup carried.
-  assert.deepEqual(
-    recoveredState.appSettings.projectKnowledgeRoots,
-    {},
-    'split backup recovery does not restore the launch settings main owns',
-  )
+  assert.equal(recoveredState.workspaces.length, 0, 'the workspace list is never taken from the backup')
+  // Knowledge roots are one of the launch settings main owns: recovery leaves
+  // the window's copy of main's record alone.
+  assert.deepEqual(recoveredState.appSettings.projectKnowledgeRoots, {})
   assert.deepEqual(recoveredState.appSettings.recentWorkspaceFolders, ['/Users/example/recovered'])
-  assert.equal(recoveredState.sidebarCollapsed, true, 'split backup recovery restores sidebarCollapsed')
+  assert.equal(recoveredState.sidebarCollapsed, true, 'recovery restores sidebarCollapsed')
+  assert.equal(stored['sprintengine-app-settings'], backupSettings, 'the settings key is written back')
   assert.equal(diagnosticLog.length, 1)
-  const recoveryDiag = diagnosticLog[0].payload as {
-    storageSource: string
-    classification: string
-    hydratedWorkspaceCount: number
-  }
-  assert.equal(recoveryDiag.storageSource, 'backup')
-  assert.equal(recoveryDiag.classification, 'dangerous_empty_unreadable')
-  assert.equal(recoveryDiag.hydratedWorkspaceCount, 1)
+  assert.equal((diagnosticLog[0].payload as { storageSource: string }).storageSource, 'backup')
+
+  // With the settings key there, the backup is not read again.
+  diagnosticLog.length = 0
+  useWorkspaceStore.setState({ sidebarCollapsed: false })
+  await __workspaceStoreRunBackupRecoveryForTests()
+  assert.equal(useWorkspaceStore.getState().sidebarCollapsed, false, 'present settings are not replaced')
 
   // ── CASE 7 ──────────────────────────────────────────────────────────────────
-  // If the user creates a workspace while async backup recovery is in flight, the
-  // just-written registry is newer than the backup and must not be overwritten.
+  // A settings change made while the backup is being read is newer than the
+  // backup, and is not replaced by it.
   diagnosticLog.length = 0
-  stored['sprintengine-workspaces'] = 'unreadable garbage {{{'
-  useWorkspaceStore.setState({
-    workspaces: [],
-    activeWorkspaceId: null,
-    workspaceRegistryEmptyState: null,
-  })
-
+  delete stored['sprintengine-app-settings']
   let resolveBackupRead!: (value: WorkspaceBackupReadResult) => void
-  const suiteRun = (backupReadDeferred = new Promise<WorkspaceBackupReadResult>((resolve) => {
+  backupReadDeferred = new Promise<WorkspaceBackupReadResult>((resolve) => {
     resolveBackupRead = resolve
-  }))
+  })
   const inFlightRecovery = __workspaceStoreRunBackupRecoveryForTests()
   await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  useWorkspaceStore.getState().setSidebarCollapsed(true)
+  flushWorkspaceSettingsWrite()
+  const settingsWhileReading = stored['sprintengine-app-settings']
+  assert.ok(settingsWhileReading, 'the change reached the settings key')
+  resolveBackupRead({
+    ok: true,
+    payload: {
+      version: 46,
+      writtenAt: new Date().toISOString(),
+      data: { settings: JSON.stringify({ state: { sidebarCollapsed: false }, version: 46 }) },
+    },
+  })
+  await inFlightRecovery
+  backupReadDeferred = null
+  assert.equal(useWorkspaceStore.getState().sidebarCollapsed, true, 'the newer change stands')
+  assert.equal(stored['sprintengine-app-settings'], settingsWhileReading)
 
+  // ── CASE 8 ──────────────────────────────────────────────────────────────────
+  // A backup with no settings half (the bare registry envelope of a much older
+  // build) restores nothing.
+  diagnosticLog.length = 0
+  delete stored['sprintengine-app-settings']
+  useWorkspaceStore.setState({ sidebarCollapsed: false })
+  backupReadResponse = {
+    ok: true,
+    payload: {
+      version: 44,
+      writtenAt: '2026-05-18T10:00:00.000Z',
+      data: JSON.stringify({
+        state: {
+          workspaces: [{ id: 'ws-old', name: 'old', folderPath: '/Users/dev/old', agents: {} } as Workspace],
+          appSettings: { recentWorkspaceFolders: ['/Users/dev/old'] },
+          sidebarCollapsed: true,
+        },
+        version: 44,
+      }),
+    },
+  }
+  await __workspaceStoreRunBackupRecoveryForTests()
+  assert.equal(useWorkspaceStore.getState().workspaces.length, 0)
+  assert.equal(useWorkspaceStore.getState().sidebarCollapsed, false)
+  assert.equal(stored['sprintengine-app-settings'], undefined)
+  assert.equal((diagnosticLog[0]?.payload as { storageSource: string }).storageSource, 'fresh')
+
+  // The cases below work on a workspace, as the server's snapshot would have given this window, and on stored settings.
+  stored['sprintengine-app-settings'] = settingsWhileReading
+  useWorkspaceStore.setState({
+    workspaces: [persistedWorkspace],
+    activeWorkspaceId: persistedWorkspace.id,
+    workspaceRegistryEmptyState: null,
+  })
   const raceTemplate: LayoutTemplate = {
     id: 'race-template',
     name: 'Race',
@@ -590,159 +622,6 @@ test('workspaceStore.persistence', async () => {
     previewSlots: [],
     layout: { global: {}, borders: [], layout: { type: 'row', children: [] } },
   }
-  const freshWorkspaceId = useWorkspaceStore.getState().addWorkspace(raceTemplate, {
-    name: 'Fresh Workspace',
-    folderPath: '/Users/example/fresh',
-  })
-  resolveBackupRead({
-    ok: true,
-    payload: {
-      version: 46,
-      writtenAt: new Date().toISOString(),
-      data: {
-        registry: JSON.stringify({
-          state: {
-            workspaces: [
-              {
-                id: 'ws-stale-backup',
-                name: 'Stale backup',
-                folderPath: '/Users/example/stale',
-                agents: {},
-              } as Workspace,
-            ],
-            activeWorkspaceId: 'ws-stale-backup',
-            workspaceRegistryEmptyState: null,
-          },
-          version: 46,
-        } satisfies RegistryRecord),
-        settings: JSON.stringify({ state: {}, version: 46 } satisfies SettingsRecord),
-      } satisfies BackupPair,
-    },
-  })
-  await inFlightRecovery
-  backupReadDeferred = null
-
-  const raceState = useWorkspaceStore.getState()
-  assert.equal(raceState.activeWorkspaceId, freshWorkspaceId)
-  assert.equal(raceState.workspaces.length, 1)
-  assert.equal(raceState.workspaces[0]?.id, freshWorkspaceId)
-  assert.equal(
-    raceState.workspaces.some((workspace) => workspace.id === 'ws-stale-backup'),
-    false,
-    'in-flight backup recovery must not replace a freshly-created workspace',
-  )
-
-  // ── CASE 8 ──────────────────────────────────────────────────────────────────
-  // Legacy T22-era backup salvage. Pre-T23 backups mirrored the full envelope
-  // including appSettings (projectKnowledgeRoots, recentWorkspaceFolders,
-  // learning, CLI/MCP, etc.). On a dangerous-empty cold-load that triggers
-  // recovery, the salvage path must carry the fields this window owns through
-  // to sprintengine-app-settings instead of letting the next persist write
-  // commit the current empty defaults over them.
-  //
-  // Evidence shape mirrors the production incident: 4 projectKnowledgeRoots
-  // keyed by absolute paths + non-empty recentWorkspaceFolders + a populated
-  // mcp record. The roots and the MCP record are launch settings, which main
-  // owns now and keeps in its own file, so a wiped localStorage no longer
-  // loses them: the salvage leaves the window's copy of main's record alone
-  // and never writes the backup's copy back to localStorage.
-  diagnosticLog.length = 0
-  useWorkspaceStore.setState({
-    workspaces: [],
-    activeWorkspaceId: null,
-    workspaceRegistryEmptyState: null,
-    appSettings: {
-      ...useWorkspaceStore.getState().appSettings,
-      projectKnowledgeRoots: {},
-      recentWorkspaceFolders: [],
-    },
-  })
-  stored['sprintengine-workspaces'] = 'unreadable garbage {{{'
-
-  const legacyBackupAppSettings = {
-    cliRuntimes: {
-      codex: { command: 'codex' },
-      'claude-code': { command: 'claude' },
-    },
-    lastSelectedCli: 'claude-code',
-    lastAgentSpawnPermissionPreset: 'default',
-    projectKnowledgeRoots: {
-      '/Users/dev/workspace/sprintengine': 'knowledge',
-      '/Users/dev/workspace/sprintengine-mobile': '../sprintengine/knowledge',
-      '/Users/dev/workspace/docs-site': '../sprintengine/knowledge',
-      '/Users/dev/workspace/marketing-site': '../sprintengine/knowledge',
-    },
-    recentWorkspaceFolders: ['/Users/dev/workspace/sprintengine', '/Users/dev/workspace/sprintengine-mobile'],
-    mcp: { syncEnabled: true, servers: {} },
-  }
-
-  backupReadResponse = {
-    ok: true,
-    payload: {
-      version: 44,
-      writtenAt: '2026-05-18T10:00:00.000Z',
-      // T22 backup shape: full envelope, no workspaceRegistryEmptyState yet.
-      data: JSON.stringify({
-        state: {
-          workspaces: [
-            {
-              id: 'ws-sprintengine',
-              name: 'sprintengine',
-              folderPath: '/Users/dev/workspace/sprintengine',
-              agents: {},
-            } as Workspace,
-          ],
-          activeWorkspaceId: 'ws-sprintengine',
-          appSettings: legacyBackupAppSettings,
-          sidebarCollapsed: false,
-        },
-        version: 44,
-      }),
-    },
-  }
-
-  await __workspaceStoreRunBackupRecoveryForTests()
-
-  const salvaged = useWorkspaceStore.getState()
-  assert.equal(salvaged.workspaces.length, 1)
-  assert.equal(salvaged.workspaces[0]?.id, 'ws-sprintengine')
-
-  // The launch settings are main's: the backup's copy does not replace the
-  // window's read model of main's record.
-  assert.deepEqual(
-    salvaged.appSettings.projectKnowledgeRoots,
-    {},
-    'recovery leaves the knowledge roots to main, whose file a localStorage wipe never touches',
-  )
-
-  // The non-workspace app-settings this window owns survive.
-  assert.equal(salvaged.appSettings.recentWorkspaceFolders.length, 2)
-  assert.equal(salvaged.sidebarCollapsed, false, 'salvaged sidebarCollapsed honored')
-
-  // sprintengine-app-settings on disk was written immediately so the next persist
-  // write does not clobber the salvage with current empty defaults — and the
-  // backup's launch fields are not written back with it. (This window has no
-  // main to migrate to, so any pre-ownership values its own envelope held are
-  // still carried; the backup's are not among them.)
-  const settingsAfterSalvage = JSON.parse(stored['sprintengine-app-settings']) as SettingsRecord
-  const salvagedEnvelope = settingsAfterSalvage.state.appSettings as Record<string, unknown>
-  assert.deepEqual(salvagedEnvelope.recentWorkspaceFolders, [
-    '/Users/dev/workspace/sprintengine',
-    '/Users/dev/workspace/sprintengine-mobile',
-  ])
-  const envelopeRoots = (salvagedEnvelope.projectKnowledgeRoots ?? {}) as Record<string, unknown>
-  assert.equal(
-    envelopeRoots['/Users/dev/workspace/sprintengine'],
-    undefined,
-    'the backup copy of a launch setting is not written to localStorage',
-  )
-
-  // The salvage lands in the settings key and in memory; it never writes the
-  // frozen registry key, which main owns the successor to.
-  assert.ok(
-    (JSON.parse(stored['sprintengine-app-settings']) as SettingsRecord).state.appSettings,
-    'the salvage is committed to the settings key, which the renderer still owns',
-  )
 
   // ── CASE: runtime-kind round-trip through partialize + storage ───────────────
   // T5 AC #5: conversation runtime fields survive the real persist normalization
@@ -1152,6 +1031,4 @@ test('workspaceStore.persistence', async () => {
 
   console.info = originalInfo
   console.log('workspaceStore.persistence.test.ts: ok')
-
-  await suiteRun
 })

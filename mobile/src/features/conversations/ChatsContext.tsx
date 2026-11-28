@@ -42,6 +42,7 @@ import type { FollowUpBehavior } from "./followUp";
 import { createRecentRead } from "./recentRead";
 import {
   beginSnooze,
+  chatRowSeen,
   confirmSnooze,
   failSnooze,
   isChatSnoozed,
@@ -614,7 +615,8 @@ export function ChatsProvider({
       if (!api || !row.settleable) return false;
       const key = chatWorkspaceKey(row);
       setSettles((current) => beginSettle(current, key));
-      const result = await api.settle(row.thread.workspaceId).catch(() => null);
+      const seen = chatRowSeen(row.thread, Date.now());
+      const result = await api.settle(row.thread.workspaceId, true, seen).catch(() => null);
       if (result?.ok) {
         setSettles((current) => confirmSettle(current, key, Date.now()));
         void refresh();
@@ -663,7 +665,9 @@ export function ChatsProvider({
       // What Undo puts back: the snooze the row was drawn with, while it is still ahead.
       const before = isChatSnoozed(row.thread, now) ? (row.thread.snoozedUntil ?? null) : null;
       setSnoozes((current) => beginSnooze(current, key, until));
-      const result = await api.snooze(row.thread.workspaceId, until).catch(() => null);
+      // An Undo puts back the phone's own snooze, asked on no row: it goes without `seen`.
+      const seen = undoing ? null : chatRowSeen(row.thread, now);
+      const result = await api.snooze(row.thread.workspaceId, until, seen).catch(() => null);
       if (result?.ok && result.data) {
         const answered = result.data.snoozedUntil;
         setSnoozes((current) => confirmSnooze(current, key, answered, Date.now()));

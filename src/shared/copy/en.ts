@@ -685,9 +685,6 @@ export const en = {
     useDeleteSettledChats: {
       theChatWasNotDeleted: 'The chat was not deleted',
       theChatsWereNotDeleted: 'The chats were not deleted',
-      deleteOn: (title: unknown, machineName: unknown) => `Delete “${title}” on ${machineName}?`,
-      delete: 'Delete',
-      deletedOn: (title: unknown, machineName: unknown) => `Deleted “${title}” on ${machineName}`,
     },
     // src/renderer/src/hooks/useWorkspaceFolderStatus.ts
     useWorkspaceFolderStatus: {
@@ -1298,8 +1295,8 @@ export const en = {
         quoteInReply2: 'Quote in reply',
         quote: 'Quote',
       },
-      // src/renderer/src/components/panels/agentChat/RemoteConversationPanel.tsx
-      remoteConversationPanel: {
+      // src/renderer/src/components/panels/agentChat/listedChat.ts
+      listedChat: {
         updateStudioOnToDrive: (machineName: unknown) => `Update Studio on ${machineName} to drive its chats.`,
         connectingTo: (machineName: unknown) => `Connecting to ${machineName}.`,
         isnTAnsweringShowingWhat: (machineName: unknown) =>
@@ -1511,6 +1508,7 @@ export const en = {
     },
     // src/renderer/src/components/panels/AgentChatView.tsx
     agentChatView: {
+      noLongerListsThisSubagent: (machineName: unknown) => `${machineName} no longer lists this subagent.`,
       systemSettingsDidNotOpen: 'System Settings did not open',
       thisAgentHasNoConversation: 'This agent has no conversation provider selected.',
       providerCheckFailed: 'Provider check failed.',
@@ -4387,6 +4385,10 @@ export const en = {
       noMessageOfYoursTo: 'No message of yours to title this chat from.',
       theModelAnsweredWithNo: 'The model answered with no title.',
     },
+    // src/renderer/src/store/slices/workspacesSlice.ts
+    workspacesSlice: {
+      wasNotChanged: (name: unknown) => `“${name}” was not changed`,
+    },
     // src/renderer/src/store/workspaceStore.ts
     workspaceStore: {
       wasNotSaved: (name: unknown) => `“${name}” was not saved`,
@@ -4463,8 +4465,9 @@ export const en = {
       nameTheWorkspaceWhoseBoards: 'Name the workspace whose boards to list.',
       nameTheBoardToShow: 'Name the board to show.',
     },
-    // src/renderer/src/studio/pairedChats.ts
+    // src/renderer/src/studio/environmentChatRecords.ts
     pairedChats: {
+      thisComputer: 'This computer',
       canTFromHereYet: (machineName: unknown, doing: unknown) =>
         `${machineName} can’t ${doing} from here yet. Update Studio there.`,
       canTListItsChats: (machineName: unknown) => `${machineName} can’t list its chats here yet. Update Studio there.`,
@@ -6383,20 +6386,18 @@ export const en = {
         needsApproval: 'Needs approval',
         failed: 'Failed',
         done: 'Done',
+        conversation: 'Conversation',
       },
       // src/renderer/src/components/workspace/remoteBand/remoteListFreshness.ts
       remoteListFreshness: {
         signedOut: 'Signed out',
-        notPaired: 'Not paired',
-        oldPairing: 'Old pairing',
-        pairedAgainSince: (machine: unknown) =>
-          `${machine} was paired again since this chat was opened here; open it from the list to follow it over the new pairing.`,
+        notConnected: 'Not connected',
+        isNotRunning: (machine: unknown) => `${machine} is not running; it is not started just to list its chats.`,
         outOfDate: 'Out of date',
         notAnswering: 'Not answering',
         pairAgain: 'pair again',
         pairAgainWith: (machine: unknown) => `Pair again with ${machine} in Settings`,
         refusedThisDevice: (machine: unknown) => `${machine} no longer accepts this device.`,
-        noLongerPaired: (machine: unknown) => `${machine} is no longer paired with this device.`,
         shareNoProtocol: (machine: unknown) => `${machine} runs a Studio this app cannot read; update one of them.`,
         isNotAnswering: (machine: unknown) => `${machine} is not answering.`,
         readAt: (ago: unknown) => `This is its list of chats from ${ago}.`,
@@ -6789,6 +6790,8 @@ export const en = {
       startedInTheBackground: 'Started in the background',
       open: 'Open',
       couldnTOpenFrom: (title: unknown, machineName: unknown) => `Couldn't open ${title} from ${machineName}`,
+      noAgentListedThere: (machine: unknown) =>
+        `${machine} lists no agent in this chat that a pane here can follow; open it on ${machine}.`,
       theSoloLayoutTemplateIs2: 'The Solo layout template is missing.',
       couldNotStartAChat: (machineName: unknown) => `Could not start a chat on ${machineName}`,
       startedOnButNoPane: (machineName: unknown) => `Started on ${machineName}, but no pane could open`,

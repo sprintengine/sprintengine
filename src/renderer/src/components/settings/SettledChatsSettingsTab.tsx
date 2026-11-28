@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 
-import type { WorkspaceId } from '../../../../shared/workspace'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { showToast } from '../../store/toastStore'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'
@@ -13,12 +13,18 @@ import {
   MIN_AUTO_SETTLE_AFTER_DAYS,
   normalizeAutoSettleAfterDays,
 } from '../../utils/workspaceSettle'
-import { createSettledChatsSelector, type SettledChatEntry } from './settledChatsModel'
-import { remoteOriginChatWorkspaceId } from '../workspace/remoteBand/remoteSessionsModel'
+import {
+  bySettledAt,
+  createSettledChatsSelector,
+  environmentSettledChats,
+  type SettledChatEntry,
+} from './settledChatsModel'
+import { isEnvironmentRecord, type RemoteSessionOpenSpec } from '../workspace/remoteBand/remoteSessionsModel'
+import { useEnvironmentChatRows } from '../workspace/remoteBand/useEnvironmentChatRows'
+import { useRemoteSessions } from '../workspace/remoteBand/useRemoteSessions'
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useDeleteSettledChats } from '../../hooks/useDeleteSettledChats'
-import { settlePairedChat } from '../../studio/pairedChats'
-import { environmentStudioAvailable } from '../../studio/environmentStudio'
+import { settleEnvironmentChat } from '../../studio/environmentChatRecords'
 import { copy } from '../../../../shared/copy'
 
 const SETTLED_PAGE = 100
@@ -89,9 +95,12 @@ const quietDays = (days: number): string => (days === 1 ? 'a day' : `${days} day
 
 export function SettledChatsSettingsTab({
   onOpenChat,
+  onOpenEnvironmentChat,
 }: {
-  /** Leave Settings for this chat. */
-  onOpenChat: (id: WorkspaceId) => void
+  /** Leave Settings for this computer's chat. */
+  onOpenChat: (id: string) => void
+  /** Leave Settings for another environment's chat, opened where it is. */
+  onOpenEnvironmentChat: (spec: RemoteSessionOpenSpec) => void
 }): React.JSX.Element {
   const moduleOverrides = useWorkspaceStore((s) => s.appSettings.modules)
   const setWorkspaceSettled = useWorkspaceStore((s) => s.setWorkspaceSettled)
@@ -109,19 +118,27 @@ export function SettledChatsSettingsTab({
   // array until one of them moves, so a background agent's write elsewhere
   // re-renders nothing here.
   const [selectSettledChats] = useState(createSettledChatsSelector)
-  const chats = useWorkspaceStore((s) => selectSettledChats(s.workspaces, moduleOverrides))
+  const localChats = useWorkspaceStore((s) => selectSettledChats(s.workspaces, moduleOverrides))
+  // Every other environment's settled chats, as it lists them; the records
+  // here of its chats only say which one opening focuses.
+  const records = useWorkspaceStore(useShallow((s) => s.workspaces.filter(isEnvironmentRecord)))
+  const settledThere = useEnvironmentChatRows(records, moduleOverrides, true)
+  const { refresh } = useRemoteSessions()
+  const chats = useMemo(
+    () => [...localChats, ...environmentSettledChats(settledThere)].sort(bySettledAt),
+    [localChats, settledThere],
+  )
   // Hundreds of chats settle on a long-lived profile; the page draws the most
   // recent and folds the rest.
   const [shown, setShown] = useState(SETTLED_PAGE)
-  // A chat opened here from a paired machine rests over there: that machine
-  // is asked to bring it back, so every device lists it again, and it comes
-  // back here once it has said yes. A machine that keeps no rest has nothing
-  // to ask.
+  // Another environment's chat rests there: that environment is asked to
+  // bring it back, so every device lists it again, and it leaves this list
+  // once its list is read again.
   const unsettle = useCallback(
-    (id: WorkspaceId) => {
-      const origin = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === id)?.remoteOrigin
-      if (!origin || !environmentStudioAvailable()) {
-        setWorkspaceSettled(id, false)
+    (chat: SettledChatEntry) => {
+      const where = chat.environment
+      if (!where) {
+        setWorkspaceSettled(chat.chatId, false)
         return
       }
       const refused = (message: string) =>
@@ -130,27 +147,25 @@ export function SettledChatsSettingsTab({
           title: copy.settings.settledChatsSettingsTab.theChatWasNotBrought,
           description: message,
         })
-      void settlePairedChat(
-        { id: origin.connectionId, machineName: origin.machineName },
-        remoteOriginChatWorkspaceId(origin),
-        false,
-      )
+      void settleEnvironmentChat({ route: where.route, name: where.machineName }, chat.chatId, false)
         .then((answer) => {
-          if (answer.ok || answer.code === 'lifecycle_unsupported') setWorkspaceSettled(id, false)
+          if (answer.ok) refresh(where.route)
           else refused(answer.message)
         })
         .catch((error: unknown) => refused(error instanceof Error ? error.message : String(error)))
     },
-    [setWorkspaceSettled],
+    [setWorkspaceSettled, refresh],
   )
-  const open = useStableCallback(onOpenChat)
+  const open = useStableCallback((chat: SettledChatEntry) =>
+    chat.environment ? onOpenEnvironmentChat(chat.environment) : onOpenChat(chat.chatId),
+  )
   const remaining = chats.length - shown
-  const { deleteChats, deleting } = useDeleteSettledChats()
-  const [selected, setSelected] = useState<ReadonlySet<WorkspaceId>>(new Set())
+  const { deleteChats, deleting } = useDeleteSettledChats({ onDeletedThere: refresh })
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   // A chat that left the list (deleted, un-settled, deleted elsewhere) leaves the selection.
-  const selectedIds = chats.filter((chat) => selected.has(chat.id)).map((chat) => chat.id)
-  const allSelected = chats.length > 0 && selectedIds.length === chats.length
-  const toggleSelected = useCallback((id: WorkspaceId) => {
+  const selectedChats = chats.filter((chat) => selected.has(chat.key))
+  const allSelected = chats.length > 0 && selectedChats.length === chats.length
+  const toggleSelected = useCallback((id: string) => {
     setSelected((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
@@ -159,13 +174,13 @@ export function SettledChatsSettingsTab({
     })
   }, [])
   const remove = useCallback(
-    async (ids: readonly WorkspaceId[]) => {
-      const gone = await deleteChats(ids)
-      if (gone.length > 0) setSelected((current) => new Set([...current].filter((id) => !gone.includes(id))))
+    async (targets: readonly SettledChatEntry[]) => {
+      const gone = await deleteChats(targets)
+      if (gone.length > 0) setSelected((current) => new Set([...current].filter((key) => !gone.includes(key))))
     },
     [deleteChats],
   )
-  const removeOne = useCallback((id: WorkspaceId) => void remove([id]), [remove])
+  const removeOne = useCallback((chat: SettledChatEntry) => void remove([chat]), [remove])
 
   return (
     <div role="tabpanel" id="settings-panel-settled-chats" aria-labelledby="settings-tab-settled-chats">
@@ -202,8 +217,8 @@ export function SettledChatsSettingsTab({
           <div className="mb-2 flex items-center gap-3 px-4">
             <Checkbox
               checked={allSelected}
-              indeterminate={selectedIds.length > 0 && !allSelected}
-              onChange={() => setSelected(allSelected ? new Set() : new Set(chats.map((chat) => chat.id)))}
+              indeterminate={selectedChats.length > 0 && !allSelected}
+              onChange={() => setSelected(allSelected ? new Set() : new Set(chats.map((chat) => chat.key)))}
               label={
                 allSelected
                   ? copy.settings.settledChatsSettingsTab.allSelected(chats.length)
@@ -214,11 +229,11 @@ export function SettledChatsSettingsTab({
           <SettingCard as="ul" ariaLabel={copy.settings.settledChatsSettingsTab.settledChats}>
             {chats.slice(0, shown).map((chat) => (
               <SettledChatRow
-                key={chat.id}
+                key={chat.key}
                 chat={chat}
                 now={now}
-                selected={selected.has(chat.id)}
-                busy={deleting.has(chat.id)}
+                selected={selected.has(chat.key)}
+                busy={deleting.has(chat.key)}
                 onToggleSelected={toggleSelected}
                 onUnsettle={unsettle}
                 onOpen={open}
@@ -236,9 +251,9 @@ export function SettledChatsSettingsTab({
           </GhostButton>
         </div>
       ) : null}
-      {selectedIds.length > 0 ? (
+      {selectedChats.length > 0 ? (
         <div className="sticky bottom-0 mt-4 flex items-center gap-3 rounded-[var(--radius-shell)] border border-[color:var(--border-strong)] bg-[color:var(--bg-surface-raised)] px-4 py-2.5">
-          <span className="text-body font-medium text-[color:var(--text-strong)]">{selectedIds.length} selected</span>
+          <span className="text-body font-medium text-[color:var(--text-strong)]">{selectedChats.length} selected</span>
           <span className="flex-1" />
           <GhostButton size="xs" onClick={() => setSelected(new Set())}>
             {copy.settings.settledChatsSettingsTab.clearSelection}
@@ -246,11 +261,11 @@ export function SettledChatsSettingsTab({
           <Tooltip multiline content={copy.settings.settledChatsSettingsTab.deleteTheSelectedChatsAnd}>
             <DangerButton
               size="xs"
-              disabled={selectedIds.some((id) => deleting.has(id))}
-              onClick={() => void remove(selectedIds)}
+              disabled={selectedChats.some((chat) => deleting.has(chat.key))}
+              onClick={() => void remove(selectedChats)}
             >
               {copy.settings.settledChatsSettingsTab.delete}
-              {selectedIds.length === 1 ? '1 chat' : `${selectedIds.length} chats`}
+              {selectedChats.length === 1 ? '1 chat' : `${selectedChats.length} chats`}
             </DangerButton>
           </Tooltip>
         </div>
@@ -260,9 +275,9 @@ export function SettledChatsSettingsTab({
 }
 
 /** What a row's Delete says it does, on hover and keyboard focus. */
-export function settledChatDeleteTooltip(remoteMachine: string | null): string {
-  return remoteMachine
-    ? `Removes this chat from this computer only. The chat, its history and its worktree stay on ${remoteMachine}, where it can be deleted. You confirm first.`
+export function settledChatDeleteTooltip(machineName: string | null): string {
+  return machineName
+    ? `Deletes this chat and its history on ${machineName}, for every device that follows it. Its worktree there is removed or goes back to the pool unless it has uncommitted changes, and its branch is kept. You confirm first.`
     : 'Deletes this chat and its history for good. Its worktree is removed or goes back to the pool unless it has uncommitted changes, and its branch is kept. You confirm first.'
 }
 
@@ -281,17 +296,16 @@ const SettledChatRow = React.memo(function SettledChatRow({
   selected: boolean
   /** Being deleted now. */
   busy: boolean
-  onToggleSelected: (id: WorkspaceId) => void
-  onUnsettle: (id: WorkspaceId) => void
-  onOpen: (id: WorkspaceId) => void
-  onDelete: (id: WorkspaceId) => void
+  onToggleSelected: (key: string) => void
+  onUnsettle: (chat: SettledChatEntry) => void
+  onOpen: (chat: SettledChatEntry) => void
+  onDelete: (chat: SettledChatEntry) => void
 }) {
-  const removeWord = chat.remoteMachine ? 'Remove' : 'Delete'
   return (
     <li className="flex items-center gap-3 px-4 py-3">
       <Checkbox
         checked={selected}
-        onChange={() => onToggleSelected(chat.id)}
+        onChange={() => onToggleSelected(chat.key)}
         ariaLabel={copy.settings.settledChatsSettingsTab.select(chat.title)}
         disabled={busy}
       />
@@ -312,27 +326,27 @@ const SettledChatRow = React.memo(function SettledChatRow({
         <GhostButton
           size="xs"
           aria-label={copy.settings.settledChatsSettingsTab.unSettle(chat.title)}
-          onClick={() => onUnsettle(chat.id)}
+          onClick={() => onUnsettle(chat)}
         >
           {copy.settings.settledChatsSettingsTab.unSettle2}
         </GhostButton>
         <OutlineButton
           size="xs"
           aria-label={copy.settings.settledChatsSettingsTab.open(chat.title)}
-          onClick={() => onOpen(chat.id)}
+          onClick={() => onOpen(chat)}
         >
           {copy.settings.settledChatsSettingsTab.open2}
         </OutlineButton>
-        <Tooltip multiline content={settledChatDeleteTooltip(chat.remoteMachine)}>
+        <Tooltip multiline content={settledChatDeleteTooltip(chat.environment?.machineName ?? null)}>
           <GhostButton
             size="xs"
             tone="danger"
             busy={busy}
             disabled={busy}
-            aria-label={`${removeWord} ${chat.title}`}
-            onClick={() => onDelete(chat.id)}
+            aria-label={`Delete ${chat.title}`}
+            onClick={() => onDelete(chat)}
           >
-            {removeWord}
+            Delete
           </GhostButton>
         </Tooltip>
       </div>

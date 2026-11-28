@@ -12,6 +12,7 @@ import {
   CONVERSATION_PROTOCOL_MIN_SUPPORTED,
   CONVERSATION_PROTOCOL_VERSION,
   STUDIO_CAPABILITIES,
+  STUDIO_CHAT_ROWS_CAPABILITY,
   STUDIO_CHAT_CAPABILITIES,
   STUDIO_SESSION_FILE_UPLOADS_CAPABILITY,
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,
@@ -38,6 +39,7 @@ import {
   STUDIO_LOCAL_SERVERS_CAPABILITY,
   STUDIO_PROCESSES_CAPABILITY,
   STUDIO_BROWSER_TABS_CAPABILITY,
+  STUDIO_CHAT_REST_SEEN_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
   STUDIO_EXTENSION_EDITORS_CAPABILITY,
   STUDIO_EXTENSION_HOST_CAPABILITY,
@@ -340,7 +342,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_LOCAL_SERVERS_CAPABILITY || options.localServers !== undefined) &&
         (capability !== STUDIO_PROCESSES_CAPABILITY || options.processes !== undefined) &&
         (capability !== STUDIO_BROWSER_TABS_CAPABILITY || options.browserTabs !== undefined) &&
-        (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
+        ((capability !== STUDIO_WORKSPACES_CAPABILITY && capability !== STUDIO_CHAT_ROWS_CAPABILITY) ||
+          options.discovery !== undefined) &&
         ((capability !== STUDIO_EXTENSION_HOST_CAPABILITY && capability !== STUDIO_EXTENSION_EDITORS_CAPABILITY) ||
           options.modules !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_READINESS_CAPABILITY || options.readiness !== undefined) &&
@@ -363,6 +366,9 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_AGENT_SKILLS_CAPABILITY || options.agentSkills !== undefined) &&
         (capability !== STUDIO_SCHEDULES_CAPABILITY || options.schedules !== undefined) &&
         (capability !== STUDIO_CHAT_LIFECYCLE_CAPABILITY || options.chatLifecycle !== undefined) &&
+        // A row's reading guards both a settle and a snooze, so it is said only where both are served.
+        (capability !== STUDIO_CHAT_REST_SEEN_CAPABILITY ||
+          (options.chatLifecycle !== undefined && options.backend.followed?.settle !== undefined)) &&
         (capability !== STUDIO_FILE_VIEWS_CAPABILITY || options.fileViews !== undefined) &&
         (capability !== STUDIO_CANVAS_BOARDS_CAPABILITY || options.canvas !== undefined) &&
         (capability !== STUDIO_EXTENSIONS_CAPABILITY || options.extensions !== undefined) &&

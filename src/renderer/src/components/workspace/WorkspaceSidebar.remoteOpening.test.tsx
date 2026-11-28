@@ -109,11 +109,16 @@ test('WorkspaceSidebar.remoteOpening', async () => {
     }),
     'conversation.visit': () => ({ lastVisitedAt: Date.now() }),
   })
+  // The window follows the machine it is paired with (`useFollowWindowEnvironments`).
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
 
   const React = await import('react')
   const { act } = React
   const { createRoot } = await import('react-dom/client')
   const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+  // This computer's chats are the rows its own Studio lists.
+  const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
   const { useChatOpening } = await import('../panels/agentChat/unreadDivider')
   const { useWorkspaceStore } = await import('../../store/workspaceStore')
   useWorkspaceStore.setState({ chatListView: 'projects' })
@@ -189,6 +194,7 @@ test('WorkspaceSidebar.remoteOpening', async () => {
   }
   const render = (activeWorkspaceId: string) =>
     act(() => {
+      serveWindowChats(window.api, props(activeWorkspaceId).workspaces)
       root.render(
         React.createElement(
           React.Fragment,
@@ -216,5 +222,6 @@ test('WorkspaceSidebar.remoteOpening', async () => {
     act(() => {
       root.unmount()
     })
+    followEnvironmentChats([])
   }
 })

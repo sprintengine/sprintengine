@@ -154,31 +154,31 @@
     },
     {
       "name": "conversation.create",
-      "sha256": "d0a9e391d155b9776d558eaa2df6332ca7c8d827f1db64a6df48d39eaf6bc238"
+      "sha256": "d103a3d7869c869f7ff21ed8d18390e6da3618e6e790bc9ce8608f5ca14eae06"
     },
     {
       "name": "conversation.settle",
-      "sha256": "1cc60f2e59d82bafa25aa76409b275281ab8b724262dafc7bc4c6661c9984fa6"
+      "sha256": "3cfa110088934f2f476913649c1c595d29e05cb3d16972bdfcc2c4ba2dd8cab1"
     },
     {
       "name": "conversation.visit",
-      "sha256": "c1be0e1a10bd253c5ac015cdd3859210f589c180a22aa9f6154250f3bb7382da"
+      "sha256": "083a178151325a5876c795f0e893d4d60d6cb08b6e88630c3dc8343657729675"
     },
     {
       "name": "conversation.mark_unread",
-      "sha256": "3c2161f38ef3a4b106ece523aa149731ae2cac491aa53faef5480375f2f26784"
+      "sha256": "2a1e94ea0920f25dc6ce45fbffea14fa21488c1e3c8fe991f8e983a4a09772b3"
     },
     {
       "name": "conversation.snooze",
-      "sha256": "606269d06ef59b5175d509da704d12722661dc24e5fec7b451e8856df09c0032"
+      "sha256": "07149baa1ea448296b6a001bd783991569ae69302b86e1bd7bae5c8f54217ef2"
     },
     {
       "name": "conversation.highlight",
-      "sha256": "ff31fc7b7c06cdbf9e1240af61f83670939b833cbcd22666f0a2551f0641fdf4"
+      "sha256": "ac04f40e1819c321376f3a7a9b89b99f2f9ce57bd3a5bec885c30e83f656b855"
     },
     {
       "name": "conversation.auto_settle",
-      "sha256": "fd712db735bae797dc99470ec9e28561ff229c33563e57dd8bca166370e86542"
+      "sha256": "1c025cf726c2fa5529d8722cc2c18cc06da42f76b41db124f7a2ae1efaac749f"
     },
     {
       "name": "conversation.change_project",
@@ -190,19 +190,19 @@
     },
     {
       "name": "conversation.send",
-      "sha256": "7e841da0f12b5de986e1e727dd2c9ec585354b19b742b8f7b4d8b99e24fd3962"
+      "sha256": "1e31d96f4756f89bbaf9d3fe37d7af9dabfecf8ba54c7561de26e88b00fee323"
     },
     {
       "name": "conversation.read",
-      "sha256": "721fc457ddbbe7d606b9b27eee95b0bddac0f50f1baef8cdc0a981ab2529aa3b"
+      "sha256": "d2f4c4269d0127c03f706a8d08f2bf0d2499b614925b926c7c472554cdf1db15"
     },
     {
       "name": "conversation.wait",
-      "sha256": "166c69ea8152cd791895c11cb3c4580f82b6168ec97aa892bd61ea656ae109ef"
+      "sha256": "b4a771508e18cbbe6c924839f4150628745dea2ffd089b63f0b45b88bb65767a"
     },
     {
       "name": "conversation.interrupt",
-      "sha256": "617e12674520f14b708021c9e71e45ba1674d7e10aa017030e31424ea86996ca"
+      "sha256": "ea262dd324bea57bfc0792e885ede698f90713e8efbc8cf4dfcbc8157f4af6f4"
     },
     {
       "name": "subagent.start",
@@ -289,16 +289,16 @@
       "sha256": "7678e50cd0d430bebf9a51e73007501b0abbd22fcf0859d753a1f87a1bf2aba6"
     },
     {
+      "name": "cli.runtime.list",
+      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
+    },
+    {
       "name": "agent.launch",
       "sha256": "c0938b85a46733e589649d4514352050b28180f006fd8463c8c6d151789e6043"
     },
     {
       "name": "agent.status",
       "sha256": "5b945502be77364d361f23f39f156dc6eabda0029062a4b7937967540f756595"
-    },
-    {
-      "name": "cli.runtime.list",
-      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
     },
     {
       "name": "terminal.list",
@@ -652,31 +652,31 @@
     },
     {
       "name": "conversation.create",
-      "sha256": "d0a9e391d155b9776d558eaa2df6332ca7c8d827f1db64a6df48d39eaf6bc238"
+      "sha256": "d103a3d7869c869f7ff21ed8d18390e6da3618e6e790bc9ce8608f5ca14eae06"
     },
     {
       "name": "conversation.settle",
-      "sha256": "1cc60f2e59d82bafa25aa76409b275281ab8b724262dafc7bc4c6661c9984fa6"
+      "sha256": "3cfa110088934f2f476913649c1c595d29e05cb3d16972bdfcc2c4ba2dd8cab1"
     },
     {
       "name": "conversation.visit",
-      "sha256": "c1be0e1a10bd253c5ac015cdd3859210f589c180a22aa9f6154250f3bb7382da"
+      "sha256": "083a178151325a5876c795f0e893d4d60d6cb08b6e88630c3dc8343657729675"
     },
     {
       "name": "conversation.mark_unread",
-      "sha256": "3c2161f38ef3a4b106ece523aa149731ae2cac491aa53faef5480375f2f26784"
+      "sha256": "2a1e94ea0920f25dc6ce45fbffea14fa21488c1e3c8fe991f8e983a4a09772b3"
     },
     {
       "name": "conversation.snooze",
-      "sha256": "606269d06ef59b5175d509da704d12722661dc24e5fec7b451e8856df09c0032"
+      "sha256": "07149baa1ea448296b6a001bd783991569ae69302b86e1bd7bae5c8f54217ef2"
     },
     {
       "name": "conversation.highlight",
-      "sha256": "ff31fc7b7c06cdbf9e1240af61f83670939b833cbcd22666f0a2551f0641fdf4"
+      "sha256": "ac04f40e1819c321376f3a7a9b89b99f2f9ce57bd3a5bec885c30e83f656b855"
     },
     {
       "name": "conversation.auto_settle",
-      "sha256": "fd712db735bae797dc99470ec9e28561ff229c33563e57dd8bca166370e86542"
+      "sha256": "1c025cf726c2fa5529d8722cc2c18cc06da42f76b41db124f7a2ae1efaac749f"
     },
     {
       "name": "conversation.change_project",
@@ -688,19 +688,19 @@
     },
     {
       "name": "conversation.send",
-      "sha256": "7e841da0f12b5de986e1e727dd2c9ec585354b19b742b8f7b4d8b99e24fd3962"
+      "sha256": "1e31d96f4756f89bbaf9d3fe37d7af9dabfecf8ba54c7561de26e88b00fee323"
     },
     {
       "name": "conversation.read",
-      "sha256": "721fc457ddbbe7d606b9b27eee95b0bddac0f50f1baef8cdc0a981ab2529aa3b"
+      "sha256": "d2f4c4269d0127c03f706a8d08f2bf0d2499b614925b926c7c472554cdf1db15"
     },
     {
       "name": "conversation.wait",
-      "sha256": "166c69ea8152cd791895c11cb3c4580f82b6168ec97aa892bd61ea656ae109ef"
+      "sha256": "b4a771508e18cbbe6c924839f4150628745dea2ffd089b63f0b45b88bb65767a"
     },
     {
       "name": "conversation.interrupt",
-      "sha256": "617e12674520f14b708021c9e71e45ba1674d7e10aa017030e31424ea86996ca"
+      "sha256": "ea262dd324bea57bfc0792e885ede698f90713e8efbc8cf4dfcbc8157f4af6f4"
     },
     {
       "name": "subagent.start",
@@ -787,16 +787,16 @@
       "sha256": "7678e50cd0d430bebf9a51e73007501b0abbd22fcf0859d753a1f87a1bf2aba6"
     },
     {
+      "name": "cli.runtime.list",
+      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
+    },
+    {
       "name": "agent.launch",
       "sha256": "c0938b85a46733e589649d4514352050b28180f006fd8463c8c6d151789e6043"
     },
     {
       "name": "agent.status",
       "sha256": "5b945502be77364d361f23f39f156dc6eabda0029062a4b7937967540f756595"
-    },
-    {
-      "name": "cli.runtime.list",
-      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
     },
     {
       "name": "terminal.list",
@@ -1025,12 +1025,12 @@
       "sha256": "7678e50cd0d430bebf9a51e73007501b0abbd22fcf0859d753a1f87a1bf2aba6"
     },
     {
-      "name": "agent.status",
-      "sha256": "5b945502be77364d361f23f39f156dc6eabda0029062a4b7937967540f756595"
-    },
-    {
       "name": "cli.runtime.list",
       "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
+    },
+    {
+      "name": "agent.status",
+      "sha256": "5b945502be77364d361f23f39f156dc6eabda0029062a4b7937967540f756595"
     },
     {
       "name": "backlog.list",

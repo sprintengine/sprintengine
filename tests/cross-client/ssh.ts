@@ -19,6 +19,17 @@ import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER } from './client'
 import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
+import {
+  agentTidyReadsBack,
+  listedAtItsAddress,
+  markReadsBack,
+  settleReadsBack,
+  staleSettleRefused,
+  type ListReach,
+} from './list'
+import { agentCreatesThere, desktopAgentReaching, type DesktopAgent } from './agent-by-address'
+import { linkTo, openedByLink } from './open'
+import { agentDiscoveredThere, discoveredThere, type AgentToolCall } from './discover'
 
 // An SSH machine, for real: the dockerized sshd the SSH machine suites use,
 // the desktop's SSH environment (ssh-environment.ts) installing the server tree
@@ -116,6 +127,37 @@ export async function runSshLeg(input: {
   const otherParts = createStudioConversationParts(async () =>
     machineStudioClient((await other.connect({ interactive: true })).owner, machineSpellingOf('ssh:gate')!),
   )
+  /**
+   * One tool call by an agent on build-box: a script run by the server's own
+   * Node there, on the gateway socket the server's discovery file names, as
+   * an agent's MCP bridge reaches it.
+   */
+  const agentCallOnMachine: AgentToolCall = async (name, args) => {
+    const script = [
+      "const net = require('node:net')",
+      "const info = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'))",
+      "const params = JSON.parse(Buffer.from(process.argv[3], 'base64').toString('utf8'))",
+      'setTimeout(() => process.exit(2), 15000)',
+      'const socket = net.createConnection(info.socketPath, () =>',
+      "  socket.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params }) + '\\n'))",
+      "let buffer = ''",
+      "socket.setEncoding('utf8')",
+      "socket.on('data', (chunk) => {",
+      '  buffer += chunk',
+      "  const end = buffer.indexOf('\\n')",
+      '  if (end !== -1) process.stdout.write(buffer.slice(0, end), () => process.exit(0))',
+      '})',
+    ].join('\n')
+    const encoded = (text: string) => Buffer.from(text, 'utf8').toString('base64')
+    const out = sshd.exec(
+      `echo ${encoded(script)} | base64 -d > /tmp/gate-agent-call.cjs && ` +
+        `"$(readlink /proc/${serverPid()}/exe)" /tmp/gate-agent-call.cjs ` +
+        `/home/dev/.local/share/sprintengine-studio/data/sprintengine-studio-mcp-info.json ` +
+        encoded(JSON.stringify({ name, arguments: args })),
+      'dev',
+    )
+    return JSON.parse(out) as Record<string, any>
+  }
   const serverPid = () =>
     Number(
       sshd.exec(
@@ -157,6 +199,15 @@ export async function runSshLeg(input: {
     return machineStudioClient(await windowClient, machineSpellingOf('ssh:gate')!)
   }
   const parts = createStudioConversationParts(windowStudio)
+  // An agent on the desktop, its gateway reaching the machine on the window's client (agent-by-address.ts).
+  const byDesktopAgent = async (work: (agent: DesktopAgent) => Promise<void>) => {
+    const agent = await desktopAgentReaching({ who: 'build-box', route: 'ssh:gate', client: windowStudio })
+    try {
+      await work(agent)
+    } finally {
+      await agent.close()
+    }
+  }
   let stopFollowing: () => void = () => undefined
   try {
     sshd.exec('mkdir -p /home/dev/repo', 'dev')
@@ -215,6 +266,8 @@ export async function runSshLeg(input: {
       sessionId = await newChatThere({ leg: 'ssh', label: 'build-box', client: await windowStudio(), parts, key })
       follow()
       await feed.until((each) => each.syncs > 0, 'the chat followed', 30_000)
+      // An agent on the desktop starts one in the same project by the machine's environment id.
+      await byDesktopAgent((agent) => agentCreatesThere(agent, key.workspaceId))
     })
 
     const first = 'turn on build-box'
@@ -411,6 +464,34 @@ export async function runSshLeg(input: {
         throw new Error(
           `ssh: the environment did not notice its server die (still "${stateAfter}" 30 s later); a Reconnect brought it back, by its cursor`,
         )
+    })
+
+    // list: the window, the client every desktop reaches the machine by, sees the
+    // chat at its address with its row's facts; a star and a settle asked
+    // there read back in its list.
+    await matrix.run('ssh', 'list', async () => {
+      const window: ListReach = { who: 'ssh', ask: async (work) => work(await windowStudio()) }
+      await listedAtItsAddress([window], key.workspaceId)
+      await markReadsBack(window, [window], key.workspaceId)
+      await staleSettleRefused(window, [window], key.workspaceId)
+      await settleReadsBack(window, [window], key.workspaceId)
+      // An agent on the desktop unstars and brings it back by its address: the machine's record moves.
+      await byDesktopAgent((agent) => agentTidyReadsBack(agent, [window], key.workspaceId))
+    })
+
+    // open: the window is handed the chat's link and opens it on the Studio it names.
+    await matrix.run('ssh', 'open', async () => {
+      const window: ListReach = { who: 'ssh', ask: async (work) => work(await windowStudio()) }
+      await openedByLink('ssh', [window], await linkTo(window, key.workspaceId, key.agentId))
+    })
+
+    // discover: the window reads what New chat offers there of the machine's
+    // own Studio. Its image has no git, so the project is not a repository.
+    // An agent on build-box asks its own Studio's gateway the same, and hears
+    // the machine's answer.
+    await matrix.run('ssh', 'discover', async () => {
+      await discoveredThere('ssh', await windowStudio(), key.workspaceId, { git: false })
+      await agentDiscoveredThere('ssh', agentCallOnMachine, key.workspaceId, { git: false })
     })
   } finally {
     stopFollowing()

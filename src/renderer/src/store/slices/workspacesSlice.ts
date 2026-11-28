@@ -1,3 +1,4 @@
+import type { StudioChatSeen } from '../../../../../packages/studio-protocol/src/public'
 import type { IJsonModel } from 'flexlayout-react'
 import { current, isDraft } from 'immer'
 import { nanoid } from 'nanoid'
@@ -7,6 +8,7 @@ import { isSettledWorkspace, settleWorkspacePatch, wakeWorkspacePatch } from '..
 import { hasSnooze, snoozeWorkspacePatch, wakeSnoozedWorkspacePatch } from '../../utils/workspaceSnooze'
 import type { WorkspaceFieldsPatch } from '../../../../shared/workspace-sync'
 import {
+  chatRestSeen,
   workspaceLifecycleSnapshot,
   type WorkspaceLifecycleRequest,
   type WorkspaceLifecycleResult,
@@ -20,6 +22,10 @@ import { workspaceProjectRoot, workspaceProjectRootOf } from '../../utils/worksp
 import { isProjectlessChatsRoot } from '../../../../shared/projectless-chats'
 import { normalizeProjectRootKey } from '../../utils/projectKnowledge'
 import { normalizeRecentWorkspaceFolders } from './settingsSlice'
+import { changeLocalChat, restLocalChat } from '../localChatRecord'
+import { showToast } from '../toastStore'
+import type { MeshConversationChange } from '../../../../shared/tailnet-mesh'
+import { copy } from '../../../../shared/copy'
 import { releaseWorktreeEntriesOwnedBy } from './worktreesSlice'
 import {
   workspaceSyncClient,
@@ -84,6 +90,11 @@ function getCurrentWorkspaceWindowIdForSlice(): WorkspaceWindowId {
   } catch {
     return PRIMARY_WORKSPACE_WINDOW_ID
   }
+}
+
+/** Whether a record field still holds what a change set it to: its marks are compared by value. */
+function sameField(held: unknown, asked: unknown): boolean {
+  return held === asked || JSON.stringify(held ?? null) === JSON.stringify(asked ?? null)
 }
 
 export function workspaceFolderKey(value: string | null | undefined): string | null {
@@ -635,19 +646,46 @@ export function createWorkspacesSlice(
   // tells its caller so.
   getState: () => WorkspacesSliceCarrier,
 ): WorkspacesSlice {
-  // A hand gesture on a chat's rest, already applied here, goes to main to be
-  // decided, one at a time per chat. Each answer names the chat's rest as main
-  // has it — as it wrote it, or as it stands after a no — and the row takes
-  // it, so the next gesture is made on main's reading and its stamps, not on
-  // this window's (a Settle and a quick Un-settle would otherwise read as two
-  // different rests). A gesture made while another is on its way is sent on
-  // the reading the first comes back with, and only the last answer moves the
-  // row, so a row the person has moved on is not dragged back meanwhile.
+  // A hand gesture on a chat's rest, already applied here, is asked of the
+  // chat's Studio (`conversation.settle` / `conversation.snooze`, over the
+  // window's own client), one at a time per chat, as a gesture on any other
+  // environment's chat is. A no puts the row back where it was before the
+  // gesture and says why; a yes stands, and the chat's record comes back as
+  // its Studio wrote it on the registry the window mirrors.
   //
-  // A no with nothing to go back to: `unreachable` puts the row back where it
-  // was before the gesture; `unavailable` (no main to ask, as in a test
-  // harness) leaves it as applied.
+  // `unavailable` (no Studio to ask, as in a test harness) leaves it as applied.
+  // The chat a change is asked of: its record as the window has it, for where it lives.
+  const chatOf = (id: WorkspaceId): Pick<Workspace, 'id' | 'environment'> =>
+    getState().workspaces.find((w) => w.id === id) ?? { id }
   const inFlight = new Map<WorkspaceId, Promise<WorkspaceLifecycleResult>>()
+  // A star, colour, name or Auto-settle asked of the chat's own Studio. The
+  // record moved at once; a refusal puts back what it held before, field by
+  // field where nothing has moved it again since, and says why, as a refused
+  // settle or snooze does. A window with no Studio to ask keeps its record.
+  const askChatChange = (
+    id: WorkspaceId,
+    change: MeshConversationChange,
+    asked: Partial<Workspace>,
+    before: Partial<Workspace>,
+  ): void => {
+    void changeLocalChat(chatOf(id), change).then((answer) => {
+      if (answer.ok || answer.code === 'unavailable') return
+      let name: string | null = null
+      set((state) => {
+        const ws = state.workspaces.find((w) => w.id === id)
+        if (!ws) return
+        name = ws.name
+        for (const key of Object.keys(asked) as (keyof Workspace)[])
+          if (sameField(ws[key], asked[key])) Object.assign(ws, { [key]: before[key] })
+      })
+      if (name !== null)
+        showToast({
+          tone: 'neutral',
+          title: copy.store.workspacesSlice.wasNotChanged(name),
+          description: answer.message,
+        })
+    })
+  }
   const adoptRest = (workspaceId: WorkspaceId, rest: WorkspaceLifecycleSnapshot): void => {
     const { settledAt, settledOverride, snoozedUntil } = rest
     set((state) => {
@@ -655,24 +693,30 @@ export function createWorkspacesSlice(
       if (ws) Object.assign(ws, { settledAt, settledOverride, snoozedUntil })
     })
   }
-  const sendLifecycleIntent = (request: WorkspaceLifecycleRequest): Promise<WorkspaceLifecycleResult> => {
+  // The chat as its row was drawn goes with the gesture (`seen`), so its
+  // Studio refuses one asked on a chat that has moved on since. A gesture
+  // queued behind this window's own earlier one was asked on the window's own
+  // optimistic reading, which that answer's stamps replace: it goes without.
+  const sendLifecycleIntent = (
+    request: WorkspaceLifecycleRequest,
+    seen: StudioChatSeen,
+  ): Promise<WorkspaceLifecycleResult> => {
     const { workspaceId } = request
     const before = inFlight.get(workspaceId)
-    // Read once an answer is in, by when `sent` is this gesture's promise.
     const ask = async (): Promise<WorkspaceLifecycleResult> => {
-      let asked = request
-      if (before) {
-        const previous = await before
-        const known = previous.ok ? previous.committed : previous.current
-        if (known) asked = { ...request, snapshot: known }
+      if (before) await before
+      const lastInputAt = request.intent.kind === 'settle' ? request.intent.lastInputAt : undefined
+      const answer = await restLocalChat(chatOf(workspaceId), request.intent, {
+        seen: before ? null : seen,
+        lastInputAt,
+      })
+      if (!answer.ok) {
+        if (answer.code !== 'unavailable' && inFlight.get(workspaceId) === sent)
+          adoptRest(workspaceId, request.snapshot)
+        return answer
       }
-      const result = await workspaceSyncClient.dispatchLifecycleIntent(asked)
-      if (inFlight.get(workspaceId) === sent) {
-        if (result.ok) adoptRest(workspaceId, result.committed)
-        else if (result.current) adoptRest(workspaceId, result.current)
-        else if (result.code === 'unreachable') adoptRest(workspaceId, asked.snapshot)
-      }
-      return result
+      const now = getState().workspaces.find((w) => w.id === workspaceId)
+      return { ok: true, workspaceId, committed: now ? workspaceLifecycleSnapshot(now) : request.snapshot }
     }
     const sent = ask()
     inFlight.set(workspaceId, sent)
@@ -1017,9 +1061,11 @@ export function createWorkspacesSlice(
     // off the chat list.
     setWorkspaceHighlight: (id, highlight) => {
       let next: WorkspaceHighlight | null = null
+      let before: WorkspaceHighlight | undefined
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
+        before = ws.highlight ? { ...ws.highlight } : undefined
         const current: WorkspaceHighlight = ws.highlight ?? { starred: false, color: null }
         next = {
           starred: highlight.starred ?? current.starred,
@@ -1027,18 +1073,29 @@ export function createWorkspacesSlice(
         }
         ws.highlight = next
       })
-      if (next) void workspaceSyncClient.dispatchUpdateWorkspaceFields(id, { highlight: next })
+      if (next) {
+        const { starred, color } = next as WorkspaceHighlight
+        askChatChange(id, { kind: 'highlight', starred, color }, { highlight: next }, { highlight: before })
+      }
     },
 
     clearWorkspaceHighlight: (id) => {
       let cleared = false
+      let before: WorkspaceHighlight | undefined
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
+        before = ws.highlight ? { ...ws.highlight } : undefined
         ws.highlight = undefined
         cleared = true
       })
-      if (cleared) void workspaceSyncClient.dispatchUpdateWorkspaceFields(id, { highlight: null })
+      if (cleared)
+        askChatChange(
+          id,
+          { kind: 'highlight', starred: false, color: null },
+          { highlight: undefined },
+          { highlight: before },
+        )
     },
 
     // A hand decision about rest (settled-chats, 2026-09-07). Settle parks the
@@ -1051,11 +1108,13 @@ export function createWorkspacesSlice(
     // (`fromWindow`), which puts the row back where main has it.
     setWorkspaceSettled: (id, settled) => {
       let request: WorkspaceLifecycleRequest | null = null
+      let seen: StudioChatSeen | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
         const snapshot = workspaceLifecycleSnapshot(ws)
         const now = Date.now()
+        seen = chatRestSeen(ws, now)
         Object.assign(ws, settled ? settleWorkspacePatch(ws, now, 'settled') : wakeWorkspacePatch('active', ws, now))
         request = {
           workspaceId: id,
@@ -1068,7 +1127,7 @@ export function createWorkspacesSlice(
         }
       })
       // A hand gesture is this window's to report, whichever window routes the row.
-      return request ? sendLifecycleIntent(request) : Promise.resolve(null)
+      return request && seen ? sendLifecycleIntent(request, seen) : Promise.resolve(null)
     },
 
     // Not a hand gesture: the primary window's cleanup sweep stamps it when it
@@ -1107,15 +1166,22 @@ export function createWorkspacesSlice(
     // The row menu's Auto-settle switch. Settles and wakes nothing by itself:
     // the sweep reads it on its next tick.
     setWorkspaceAutoSettle: (id, enabled) => {
-      const patch: WorkspaceFieldsPatch = { autoSettleEnabled: enabled ? true : null }
       let changed = false
+      let before: Workspace['autoSettleEnabled']
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws || (ws.autoSettleEnabled === true) === enabled) return
-        Object.assign(ws, patch)
+        before = ws.autoSettleEnabled
+        Object.assign(ws, { autoSettleEnabled: enabled ? true : null })
         changed = true
       })
-      if (changed) void workspaceSyncClient.dispatchUpdateWorkspaceFields(id, patch)
+      if (changed)
+        askChatChange(
+          id,
+          { kind: 'auto-settle', enabled },
+          { autoSettleEnabled: enabled ? true : null },
+          { autoSettleEnabled: before },
+        )
     },
 
     // The row menu's Auto compact switch: `true` or `false` for this chat,
@@ -1145,6 +1211,7 @@ export function createWorkspacesSlice(
     // window made it, and main decides it, exactly as Settle does.
     setWorkspaceSnoozed: (id, wakeAt) => {
       let request: WorkspaceLifecycleRequest | null = null
+      let seen: StudioChatSeen | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
@@ -1154,6 +1221,7 @@ export function createWorkspacesSlice(
         // say nothing.
         if (wakeAt === null && !hasSnooze(ws)) return
         const snapshot = workspaceLifecycleSnapshot(ws)
+        seen = chatRestSeen(ws, Date.now())
         Object.assign(ws, wakeAt === null ? wakeSnoozedWorkspacePatch() : snoozeWorkspacePatch(wakeAt))
         request = {
           workspaceId: id,
@@ -1161,7 +1229,7 @@ export function createWorkspacesSlice(
           intent: wakeAt === null ? { kind: 'wake' } : { kind: 'snooze', until: wakeAt },
         }
       })
-      return request ? sendLifecycleIntent(request) : Promise.resolve(null)
+      return request && seen ? sendLifecycleIntent(request, seen) : Promise.resolve(null)
     },
 
     // Monotonic: `lastTerminalActivityAt` only moves forward, and is fed from the
@@ -1543,9 +1611,11 @@ export function createWorkspacesSlice(
     // it the winning rename would still be auto-titled over.
     renameWorkspace: (id, name) => {
       let accepted: string | null = null
+      let before: Pick<Workspace, 'name' | 'titleLocked'> | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
+        before = { name: ws.name, titleLocked: ws.titleLocked }
         ws.name = name.trim() || ws.name
         // A hand-typed name is final: auto-titling must never overwrite it, and
         // the lock is set even when the rename was a no-op (the user retyping
@@ -1553,7 +1623,8 @@ export function createWorkspacesSlice(
         ws.titleLocked = true
         accepted = ws.name
       })
-      if (accepted) void workspaceSyncClient.dispatchRenameWorkspace(id, accepted, true)
+      if (accepted && before)
+        askChatChange(id, { kind: 'rename', name: accepted }, { name: accepted, titleLocked: true }, before)
     },
 
     // Name a still-default workspace after the first real prompt sent inside it.
@@ -1566,16 +1637,19 @@ export function createWorkspacesSlice(
     // leaves the workspace unlocked for the next one.
     autoTitleWorkspaceFromPrompt: (id, prompt) => {
       let accepted: string | null = null
+      let before: Pick<Workspace, 'name' | 'titleLocked'> | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws || ws.titleLocked) return
         const title = deriveWorkspaceTitle(prompt)
         if (!title) return
+        before = { name: ws.name, titleLocked: ws.titleLocked }
         ws.name = title
         ws.titleLocked = true
         accepted = title
       })
-      if (accepted) void workspaceSyncClient.dispatchRenameWorkspace(id, accepted, true)
+      if (accepted && before)
+        askChatChange(id, { kind: 'rename', name: accepted }, { name: accepted, titleLocked: true }, before)
       return accepted
     },
 
@@ -1585,6 +1659,7 @@ export function createWorkspacesSlice(
       const title = rawTitle.trim()
       if (!title) return false
       let landed = false
+      let before: Pick<Workspace, 'name' | 'titleLocked'> | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
@@ -1592,11 +1667,13 @@ export function createWorkspacesSlice(
         // app's name"; a hand rename and an explicit name at birth both set it.
         const stillOurs = replacing !== null ? ws.name === replacing : !ws.titleLocked
         if (!stillOurs || ws.name === title) return
+        before = { name: ws.name, titleLocked: ws.titleLocked }
         ws.name = title
         ws.titleLocked = true
         landed = true
       })
-      if (landed) void workspaceSyncClient.dispatchRenameWorkspace(id, title, true)
+      if (landed && before)
+        askChatChange(id, { kind: 'rename', name: title }, { name: title, titleLocked: true }, before)
       return landed
     },
 

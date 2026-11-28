@@ -7,8 +7,10 @@ import type {
   ConversationUsageLimitNotice,
   ConversationUsageLimitResumeAction,
   ConversationUsageLimitSnapshot,
+  ConversationWireHighlight,
 } from '../../packages/conversation-protocol/src/public'
 import { readableConversationPhase } from '../../packages/conversation-protocol/src/public'
+import type { StudioChatSeen } from '../../packages/studio-protocol/src/public'
 import { conversationPhaseWorking, phaseWithBackgroundWork } from './conversation/phase'
 import type { RepositoryIdentity } from './repository-identity'
 import type { CliPermissionPreset } from './cli-permission-preset'
@@ -66,6 +68,29 @@ export type MeshWorkspace = {
    * workspace is one this machine draws no row for.
    */
   settledAt?: number | null
+  /**
+   * What the chat's row draws, as its machine's record says (`chat-rows`).
+   * Absent from a machine built before it said, whose listed chats
+   * (`conversation.list`) carry those facts instead.
+   */
+  row?: MeshWorkspaceRow
+}
+
+/** A workspace's row facts on the machine that holds it (`StudioWorkspace`'s chat-row members); each absent when it has none. */
+export type MeshWorkspaceRow = {
+  createdAt?: number
+  recencyAt?: number
+  lastUserMessageAt?: number
+  /** When anything last happened in it, which a Settle or Snooze sends back as `seen` (`chat-rest-seen`). */
+  activityAt?: number
+  lastTurnEndedAt?: number
+  lastVisitedAt?: number
+  visitRewoundAt?: number
+  scheduledAgentId?: string
+  snoozedUntil?: number
+  highlight?: ConversationWireHighlight
+  autoSettle?: true
+  worktree?: { branch: string | null; projectFolder?: string }
 }
 
 /**
@@ -208,7 +233,7 @@ export type MeshVisitConversationResult =
  * is), Auto-settle, and Mark unread.
  */
 export type MeshConversationChange =
-  | { kind: 'snooze'; until: number | null }
+  | { kind: 'snooze'; until: number | null; seen?: StudioChatSeen }
   | { kind: 'highlight'; starred?: boolean; color?: ConversationHighlightColor | null }
   | { kind: 'auto-settle'; enabled: boolean }
   | { kind: 'mark-unread' }
@@ -234,8 +259,8 @@ export type MeshConversationManageChange =
  * (`chat-lifecycle`): the chat renamed there, so every device lists it by the
  * new name; its Auto compact switched there, the machine that runs it
  * compacting it by itself; a settled chat deleted there for good, its plan
- * read first (`pairedChatDeletePlan`); and what was said in its chats
- * found from here (`searchPairedChats`). `unwatchPullRequest`:
+ * read first (`environmentChatDeletePlan`); and what was said in its chats
+ * found from here (`searchEnvironmentChats`). `unwatchPullRequest`:
  * `pull-request-watch`, a watch of the chat's pull request ended there
  * (`pullRequests.unwatch`), where its listed pull request says it is watched.
  */

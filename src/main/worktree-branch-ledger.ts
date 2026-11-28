@@ -1,9 +1,8 @@
-import { mkdir, readFile, realpath } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { realpath } from 'node:fs/promises'
+import { isAbsolute, resolve } from 'node:path'
 
 import { isRecord } from '../shared/records'
-import { installedStudioPlatform } from '../server/platform/platform'
-import { writeFileAtomic } from '../server/platform/atomic-file'
+import type { StudioDatabase } from '../server/db/database'
 import type { GitCommandResult } from './git'
 import { runGitCommand } from './git-run'
 
@@ -21,93 +20,87 @@ import { runGitCommand } from './git-run'
  *
  * Keyed by the repository's common git directory with symlinks resolved, which
  * every worktree of a repository shares, however its checkout is spelled. Kept
- * in one small file under the profile's data directory, written whole and
- * atomically; a missing or unreadable file reads as empty, which deletes
- * nothing but `agent/` branches. Each repository keeps its newest
- * `MAX_BRANCHES_PER_REPO` names and the file its most recently touched
- * `MAX_REPOS` repositories: a name that falls off is a branch the cleanup
- * leaves for the person, never one it deletes by mistake.
+ * in the server's database (`worktree_branches`, a row per branch, numbered in
+ * the order they were recorded); each change is one transaction. Each
+ * repository keeps its newest `MAX_BRANCHES_PER_REPO` names, and the table its
+ * `MAX_REPOS` most recently recorded-in repositories: a name that falls off is
+ * a branch the cleanup leaves for the person, never one it deletes by mistake.
  *
- * The desktop and a Studio server out of process may both make worktrees for
- * the same profile, so every change reads the file again just before writing
- * it, and changes in this process are written one after another; a read waits
- * for this process's changes still being written. Two processes writing in the
- * same instant can still lose one's change. That fails safe: a branch whose
- * name is lost is one the cleanup leaves for the person, and a name that
- * should have been struck off is struck off by the next sweep that finds its
- * branch gone.
+ * Only the Studio server that holds the data folder keeps it: it is the one
+ * process that makes and cleans agent worktrees there. A process with no
+ * ledger installed records nothing and knows nothing, which deletes nothing
+ * but `agent/` branches.
  */
 
-const FILE_NAME = 'worktree-branches.json'
+/** The file builds before the database kept the ledger in, under the data folder; read once, by the import. */
+export const WORKTREE_BRANCHES_FILE = 'worktree-branches.json'
 const VERSION = 1
 const MAX_BRANCHES_PER_REPO = 2_000
 const MAX_REPOS = 200
 
-type RepoEntry = { updatedAt: number; branches: string[] }
-type LedgerFile = { version: typeof VERSION; repos: Record<string, RepoEntry> }
-
 type RunGit = (cwd: string, args: string[]) => Promise<GitCommandResult>
 
 export type WorktreeBranchLedgerDeps = {
-  /** The profile's data directory, or null when this process has none (nothing is kept). */
-  dataDir: () => string | null
+  database: StudioDatabase
   runGit?: RunGit
-  now?: () => number
   log?: (line: string) => void
 }
 
 export type WorktreeBranchLedger = {
   /** Write down that Studio made `branch` in the repository at `repoPath` (any path inside it). */
   record(repoPath: string, branch: string): Promise<void>
-  /** The branches Studio made in the repository at `repoPath`; empty when none are known. */
+  /** The branches Studio made in the repository at `repoPath`, oldest first; empty when none are known. */
   branches(repoPath: string): Promise<ReadonlySet<string>>
   /** Strike names off: Studio deleted those branches, or they are gone. */
   forget(repoPath: string, branches: Iterable<string>): Promise<void>
 }
 
-function parseLedger(text: string | null): LedgerFile {
-  const empty: LedgerFile = { version: VERSION, repos: {} }
-  if (text === null) return empty
+/**
+ * The ledger file builds before the database wrote, as the import brings it
+ * in: each repository's branches, oldest first, the repositories in the order
+ * they were last recorded in. Null when this build cannot read it.
+ */
+export function readWorktreeBranchesFile(text: string): Array<{ repo: string; branches: string[] }> | null {
   let raw: unknown
   try {
     raw = JSON.parse(text)
   } catch {
-    return empty
+    return null
   }
-  if (!isRecord(raw) || raw.version !== VERSION || !isRecord(raw.repos)) return empty
-  const repos: Record<string, RepoEntry> = {}
+  if (!isRecord(raw) || raw.version !== VERSION || !isRecord(raw.repos)) return null
+  const repos: Array<{ repo: string; branches: string[]; updatedAt: number }> = []
   for (const [repo, entry] of Object.entries(raw.repos)) {
     if (!repo || !isRecord(entry) || !Array.isArray(entry.branches)) continue
     const branches = entry.branches.filter((branch): branch is string => typeof branch === 'string' && branch !== '')
     if (branches.length === 0) continue
     const updatedAt = typeof entry.updatedAt === 'number' && Number.isFinite(entry.updatedAt) ? entry.updatedAt : 0
-    repos[repo] = { updatedAt, branches: branches.slice(-MAX_BRANCHES_PER_REPO) }
+    repos.push({ repo, branches: [...new Set(branches)].slice(-MAX_BRANCHES_PER_REPO), updatedAt })
   }
-  return { version: VERSION, repos }
+  return repos
+    .sort((a, b) => a.updatedAt - b.updatedAt)
+    .slice(-MAX_REPOS)
+    .map(({ repo, branches }) => ({ repo, branches }))
 }
 
-/** The file with its oldest repositories dropped past the limit. */
-function bounded(ledger: LedgerFile): LedgerFile {
-  const entries = Object.entries(ledger.repos)
-  if (entries.length <= MAX_REPOS) return ledger
-  entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt)
-  return { version: VERSION, repos: Object.fromEntries(entries.slice(0, MAX_REPOS)) }
-}
+/** The statements that keep one repository's newest names, and the newest repositories. */
+const TRIM_STATEMENTS = (repo: string) => [
+  {
+    sql: `DELETE FROM worktree_branches WHERE repo = ? AND seq NOT IN
+            (SELECT seq FROM worktree_branches WHERE repo = ? ORDER BY seq DESC LIMIT ${MAX_BRANCHES_PER_REPO})`,
+    params: [repo, repo],
+  },
+  {
+    sql: `DELETE FROM worktree_branches WHERE repo NOT IN
+            (SELECT repo FROM worktree_branches GROUP BY repo ORDER BY MAX(seq) DESC LIMIT ${MAX_REPOS})`,
+  },
+]
 
 export function createWorktreeBranchLedger(deps: WorktreeBranchLedgerDeps): WorktreeBranchLedger {
   const runGit: RunGit = deps.runGit ?? ((cwd, args) => runGitCommand(cwd, args))
-  const now = deps.now ?? Date.now
   const log = deps.log ?? ((line: string) => console.warn(`[worktree-branches] ${line}`))
   // A repository's identity, per path asked about: a git process once, not per call.
   const identities = new Map<string, Promise<string | null>>()
   let chain: Promise<unknown> = Promise.resolve()
-
-  const filePath = (): string | null => {
-    const dir = deps.dataDir()
-    return dir ? join(dir, FILE_NAME) : null
-  }
-
-  const read = async (path: string): Promise<LedgerFile> => parseLedger(await readFile(path, 'utf8').catch(() => null))
 
   function identity(repoPath: string): Promise<string | null> {
     let known = identities.get(repoPath)
@@ -130,18 +123,15 @@ export function createWorktreeBranchLedger(deps: WorktreeBranchLedgerDeps): Work
     return known
   }
 
-  /** Apply `change` to the file as it is on disk now, after every change this process made before it. */
-  function update(repoPath: string, change: (entry: RepoEntry | undefined) => RepoEntry | null): Promise<void> {
+  /** Run a change for the repository at `repoPath`, after every change this process asked for before it. */
+  function update(
+    repoPath: string,
+    statements: (repo: string) => Array<{ sql: string; params?: string[] }>,
+  ): Promise<void> {
     const run = chain.then(async () => {
-      const path = filePath()
       const repo = await identity(repoPath)
-      if (!path || !repo) return
-      const ledger = await read(path)
-      const next = change(ledger.repos[repo])
-      if (next === null) delete ledger.repos[repo]
-      else ledger.repos[repo] = next
-      await mkdir(dirname(path), { recursive: true })
-      await writeFileAtomic(path, `${JSON.stringify(bounded(ledger))}\n`)
+      if (!repo) return
+      await deps.database.batch(statements(repo))
     })
     // One failed write is logged and does not stop the next: a branch left
     // unrecorded is one the cleanup leaves alone.
@@ -151,38 +141,58 @@ export function createWorktreeBranchLedger(deps: WorktreeBranchLedgerDeps): Work
 
   return {
     record(repoPath, branch) {
-      return update(repoPath, (entry) => {
-        const branches = (entry?.branches ?? []).filter((name) => name !== branch)
-        branches.push(branch)
-        return { updatedAt: now(), branches: branches.slice(-MAX_BRANCHES_PER_REPO) }
-      })
+      return update(repoPath, (repo) => [
+        // Recorded again, it is the newest.
+        { sql: 'DELETE FROM worktree_branches WHERE repo = ? AND branch = ?', params: [repo, branch] },
+        { sql: 'INSERT INTO worktree_branches (repo, branch) VALUES (?, ?)', params: [repo, branch] },
+        ...TRIM_STATEMENTS(repo),
+      ])
     },
 
     async branches(repoPath) {
       // What this process recorded a moment ago is part of the answer.
       await chain
-      const path = filePath()
-      const repo = path ? await identity(repoPath).catch(() => null) : null
-      if (!path || !repo) return new Set()
-      return new Set((await read(path)).repos[repo]?.branches ?? [])
+      const repo = await identity(repoPath).catch(() => null)
+      if (!repo) return new Set()
+      try {
+        const rows = await deps.database.all<{ branch: string }>(
+          'SELECT branch FROM worktree_branches WHERE repo = ? ORDER BY seq',
+          [repo],
+        )
+        return new Set(rows.map((row) => row.branch))
+      } catch (error) {
+        log(`could not read the record: ${String(error)}`)
+        return new Set()
+      }
     },
 
     forget(repoPath, branches) {
-      const gone = new Set(branches)
-      if (gone.size === 0) return Promise.resolve()
-      return update(repoPath, (entry) => {
-        if (!entry) return null
-        const kept = entry.branches.filter((name) => !gone.has(name))
-        return kept.length ? { updatedAt: entry.updatedAt, branches: kept } : null
-      })
+      const gone = [...new Set(branches)]
+      if (gone.length === 0) return Promise.resolve()
+      return update(repoPath, (repo) =>
+        gone.map((branch) => ({
+          sql: 'DELETE FROM worktree_branches WHERE repo = ? AND branch = ?',
+          params: [repo, branch],
+        })),
+      )
     },
   }
 }
 
-let shared: WorktreeBranchLedger | null = null
+const NOTHING_KEPT: WorktreeBranchLedger = {
+  record: async () => undefined,
+  branches: async () => new Set(),
+  forget: async () => undefined,
+}
 
-/** The ledger in this process's profile data directory; nothing is kept in a process with no platform. */
+let installed: WorktreeBranchLedger | null = null
+
+/** Keep `ledger` as this process's, or none (its server stopped). The Studio core installs its own. */
+export function installWorktreeBranchLedger(ledger: WorktreeBranchLedger | null): void {
+  installed = ledger
+}
+
+/** The ledger of the Studio server in this process; one that keeps nothing when no server is. */
 export function worktreeBranchLedger(): WorktreeBranchLedger {
-  shared ??= createWorktreeBranchLedger({ dataDir: () => installedStudioPlatform()?.paths.dataDir() ?? null })
-  return shared
+  return installed ?? NOTHING_KEPT
 }

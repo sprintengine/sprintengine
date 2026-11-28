@@ -195,6 +195,58 @@ export const STUDIO_MIGRATIONS: readonly Migration[] = [
         CREATE TABLE store_records (name TEXT PRIMARY KEY, body TEXT NOT NULL);
       `),
   },
+  {
+    id: 5,
+    name: 'pull-request-record',
+    // The pull request record, a row per pull request (`record-table.ts`).
+    up: (db) => db.exec(recordTableSql('pull_requests')),
+  },
+  {
+    id: 6,
+    name: 'worktree-records',
+    up: (db) =>
+      db.exec(`
+        -- The branches Studio made for worktrees (worktree-branch-ledger.ts), numbered in the order recorded.
+        CREATE TABLE worktree_branches (
+          seq INTEGER PRIMARY KEY,
+          repo TEXT NOT NULL,
+          branch TEXT NOT NULL,
+          UNIQUE (repo, branch)
+        );
+        -- Each worktree pool's record (worktree-pool/pool-store.ts), written whole.
+        CREATE TABLE pool_records (pool_id TEXT PRIMARY KEY, body TEXT NOT NULL);
+      `),
+  },
+  {
+    id: 7,
+    name: 'chat-moves',
+    // A chat's move to another project while its record is not yet written (chat-moves.ts).
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE chat_moves (
+          workspace_id TEXT PRIMARY KEY,
+          from_folder TEXT NOT NULL,
+          to_folder TEXT NOT NULL,
+          from_key TEXT NOT NULL,
+          to_key TEXT NOT NULL
+        );
+      `),
+  },
+  {
+    id: 8,
+    name: 'adoptions',
+    // What a hand-over kept here under which digest (environment-adoption.ts), a row per record.
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE adoptions (
+          key TEXT PRIMARY KEY,
+          digest TEXT NOT NULL,
+          migration_id TEXT NOT NULL,
+          at INTEGER NOT NULL,
+          pending INTEGER NOT NULL
+        );
+      `),
+  },
 ]
 
 /** Run the migrations `connection` has not had, in order; returns the ids it ran. */

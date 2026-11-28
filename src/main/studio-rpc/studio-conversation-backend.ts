@@ -306,6 +306,8 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
         ...(request.worktreeName ? { worktreeName: request.worktreeName } : {}),
         ...(request.inWorktree ? { existingWorktreePath: request.inWorktree } : {}),
         ...(request.effort ? { reasoningEffort: request.effort } : {}),
+        // Held on the chat for every turn, as the launch keeps it for any caller.
+        ...(request.mode ? { mode: request.mode } : {}),
         ...(request.cli ? { cli: request.cli } : {}),
         ...(request.model ? { cliModel: request.model } : {}),
         ...(request.prompt ? { prompt: request.prompt } : {}),
@@ -380,8 +382,8 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
       ...(host.listCommands ? { listCommands: (key, refresh) => host.listCommands!(key, refresh) } : {}),
       ...(deps.lifecycle
         ? {
-            settle: (workspaceId, settled, byOwner) => {
-              const done = deps.lifecycle!.settle(workspaceId, settled, byOwner ? 'gateway' : 'mobile')
+            settle: (workspaceId, settled, byOwner, asked) => {
+              const done = deps.lifecycle!.settle(workspaceId, settled, byOwner ? 'gateway' : 'mobile', null, asked)
               return done.ok ? { ok: true, settledAt: done.settledAt } : done
             },
             visit: (workspaceId, visitedAt, byOwner) => {

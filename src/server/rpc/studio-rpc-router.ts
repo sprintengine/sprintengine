@@ -366,6 +366,7 @@ const STABLE_MESSAGES: Readonly<Record<StableCode, string>> = {
   conversation_start_failed: 'The conversation could not be started.',
   worktree_unavailable: 'No worktree could be made or found for the chat here, so nothing was started.',
   unsupported_effort: "That effort is not one this chat's agent CLI offers here.",
+  unsupported_mode: 'That agent CLI cannot run a chat in that mode here, so nothing was started.',
   command_id_conflict: 'That command id was already used for a different command. Send this one under a new id.',
   // Another send to the chat is being prepared: the client tries again after
   // `retryAfterMs` (the SDK does so by itself), rather than failing for good.
@@ -1152,7 +1153,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     method: StudioMethod,
   ): Refused<'not_found' | 'conflict' | 'unavailable'> {
     if (done.code === 'unknown_workspace') return noChat(workspaceId)
-    if (done.code === 'working') return refuse('conflict', done.message)
+    if (done.code === 'working' || done.code === 'stale') return refuse('conflict', done.message)
     return voice.failed('unavailable', done.message, method)
   }
 
@@ -1425,7 +1426,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!key) return notFound(wire)
       return composerAnswer(await list(key, refresh === true), wire, voice, 'conversation.listCommands')
     },
-    'conversation.settle': async ({ workspaceId, commandId, settled }, { grant, voice }) => {
+    'conversation.settle': async ({ workspaceId, commandId, settled, seen, lastInputAt }, { grant, voice }) => {
       const settle = followed.settle
       if (!settle) return unserved('conversation.settle')
       // A retry under its command id is answered with the first answer, not
@@ -1433,7 +1434,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       return once(
         keptId('conversation.settle', grant, commandId),
         async () => {
-          const done = settle(workspaceId, settled !== false, grant.owner)
+          const asked = { ...(seen ? { seen } : {}), ...(lastInputAt !== undefined ? { lastInputAt } : {}) }
+          const done = settle(workspaceId, settled !== false, grant.owner, asked)
           if (done.ok) return { ok: true as const, result: { settledAt: done.settledAt } }
           return settleRefusal(done, workspaceId, voice, 'conversation.settle')
         },

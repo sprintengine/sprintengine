@@ -4,7 +4,6 @@
 import { type Workspace, type WorkspaceId } from '../../../../../shared/workspace'
 import type { RepositoryIdentity } from '../../../../../shared/repository-identity'
 import { type RemoteConversation } from '../remoteBand/remoteSessionsModel'
-import { type FolderIdentityMap, folderIdentityKey } from '../useFolderRepositoryIdentities'
 import { workspaceProjectRoot, workspaceProjectRootOf } from '../../../utils/workspaceWorktree'
 import { shortMachineName } from '../../remote/machineRowModel'
 import { isMeshConversationPane } from '../../../../../shared/tailnet-mesh'
@@ -40,16 +39,14 @@ export type FolderGroup = {
     repository: RepositoryIdentity | null
   } | null
   /**
-   * Conversations on paired machines that no window here is attached to
-   * (owner, 2026-09-11). They are rows of this project like any other — the
-   * difference is that opening one attaches a pane rather than focusing a
-   * workspace, so they cannot be `Workspace`s until they are opened.
+   * Other environments' chats in this project (owner, 2026-09-11), by
+   * address: rows of it like any other, read off their environment's list.
    */
   remoteRows: RemoteConversation[]
   /**
    * …and the ones of them asleep on their machine, which this project's
    * Snoozed shelf holds beside its own, until each wakes. Absent where no
-   * paired machine's chat sleeps.
+   * other environment's chat sleeps.
    */
   remoteSleepingRows?: RemoteConversation[]
 }
@@ -62,83 +59,37 @@ export const NULL_FOLDER_KEY = '__no_folder__'
  */
 export type LocalGroupHeader = { key: string; folderPath: string; missing: boolean }
 
-export function resolveGroups(
-  workspaces: readonly Workspace[],
-  identities: FolderIdentityMap,
-): { keys: Map<string, string>; headers: Map<string, LocalGroupHeader>; projectlessKey: string | null } {
-  // The local twin per repository, chosen by a rule that does not move when
-  // rows are reordered or a chat is added: a plain checkout over a worktree
-  // (a worktree shares its checkout's remote, and is its own header), then
-  // the lexically first folder. Otherwise a remote row hopped between the
-  // two headers on unrelated actions.
-  const localByIdentity = new Map<string, { key: string; folder: string; worktree: boolean }>()
+export function resolveGroups(workspaces: readonly Workspace[]): {
+  keys: Map<string, string>
+  headers: Map<string, LocalGroupHeader>
+  projectlessKey: string | null
+} {
   const keys = new Map<string, string>()
-  for (const workspace of workspaces) {
-    const key = groupKeyOf(workspace)
-    keys.set(workspace.id, key)
-    const folder = workspace.folderPath?.trim()
-    if (!folder || workspace.remoteOrigin || workspace.environment) continue
-    const identity = identities.get(folderIdentityKey(folder))
-    if (!identity?.canonicalKey) continue
-    const candidate = {
-      key,
-      // The group's key, not the row's own folder: a worktree row already
-      // files under its parent, so that is the header a remote twin would
-      // be joining if this row were the pick.
-      folder: key,
-      worktree: Boolean(workspace.worktree) || ownFolderKeyOf(workspace) !== key,
-    }
-    const current = localByIdentity.get(identity.canonicalKey)
-    const better =
-      !current ||
-      (current.worktree && !candidate.worktree) ||
-      (current.worktree === candidate.worktree && candidate.folder < current.folder)
-    if (better) localByIdentity.set(identity.canonicalKey, candidate)
-  }
-  for (const workspace of workspaces) {
-    const repository = workspace.remoteOrigin?.repository
-    if (!repository?.canonicalKey) continue
-    const local = localByIdentity.get(repository.canonicalKey)
-    if (local) keys.set(workspace.id, local.key)
-  }
-  // A chat started without a project on another machine joins this window's
-  // own "No project" header when it has one: neither is in a project, and two
-  // headers of that name would read as two places.
-  const projectlessKey = localProjectlessKey(workspaces)
-  if (projectlessKey) {
-    for (const [id, key] of keys) if (key === PROJECTLESS_GROUP_KEY) keys.set(id, projectlessKey)
-  }
-  // Two passes, because a header is a folder's own statement first. A row
-  // that IS the folder speaks for it — path and missing-ness both — so a
-  // plain workspace of the project always wins the header over a worktree
-  // filed under it.
+  for (const workspace of workspaces) keys.set(workspace.id, groupKeyOf(workspace))
+  // Each header's folder: the row that IS the folder, else the project a
+  // worktree row was cut from, so a header founded by a worktree row still
+  // names, reveals and creates into its project.
   const headers = new Map<string, LocalGroupHeader>()
   for (const workspace of workspaces) {
-    const key = keys.get(workspace.id) ?? groupKeyOf(workspace)
+    const key = keys.get(workspace.id)!
     const folderPath = workspace.folderPath?.trim()
-    if (workspace.remoteOrigin || workspace.environment || !folderPath || headers.has(key)) continue
-    if (ownFolderKeyOf(workspace) !== key) continue
+    if (!folderPath || headers.has(key) || ownFolderKeyOf(workspace) !== key) continue
     headers.set(key, { key, folderPath, missing: workspace.folderMissing === true })
   }
-  // Then the keys nobody spoke for: a worktree chat whose parent project is
-  // not itself open. The header is still the parent's — its name and its
-  // full path — and never missing, since no row here has looked at it.
   for (const workspace of workspaces) {
-    const key = keys.get(workspace.id) ?? groupKeyOf(workspace)
-    if (workspace.remoteOrigin || workspace.environment || headers.has(key)) continue
+    const key = keys.get(workspace.id)!
+    if (headers.has(key)) continue
     const folderPath = workspaceProjectRoot(workspace)
     if (!folderPath) continue
     headers.set(key, { key, folderPath, missing: false })
   }
-  return { keys, headers, projectlessKey }
+  return { keys, headers, projectlessKey: localProjectlessKey(workspaces) }
 }
 
-/** The key of this window's own "No project" header, or null when it has none. */
+/** This window's own "No project" header, which other environments' projectless chats join. */
 function localProjectlessKey(workspaces: readonly Workspace[]): string | null {
-  for (const workspace of workspaces) {
-    if (workspace.remoteOrigin || workspace.environment) continue
+  for (const workspace of workspaces)
     if (isProjectlessChatsRoot(workspaceProjectRoot(workspace))) return groupKeyOf(workspace)
-  }
   return null
 }
 
@@ -172,49 +123,45 @@ export function folderDisplayName(value: string | null): string {
 export const PROJECTLESS_GROUP_KEY = 'projectless'
 
 /**
- * Which header a row files under. Local rows group by folder exactly as they
- * always have; a remote-born row (`workspace.remoteOrigin`, the durable
- * provenance record — the mark rides the workspace, not a live pane, so
- * closing the pane never loses it) groups by the machine
- * and the remote workspace, never under "No folder". A legacy remote row —
- * no `remoteOrigin`, no folder, but mesh panes in its layout — groups by
- * the machine its layout names.
- *
- * A worktree-backed row files under the project it was cut from, not under
- * its own checkout: the person branched one project, they did not open a
+ * Which header one of this window's own chats files under: its project's
+ * folder. A worktree-backed row files under the project it was cut from, not
+ * under its own checkout: the person branched one project, they did not open a
  * second one, and a header named after the slug says otherwise. The row says
  * it is a worktree on its own line instead.
  */
 export function groupKeyOf(workspace: Workspace): string {
-  // A chat started without a project on another machine is in no project
-  // there either: its folder is that one chat's, so keying by it gave every
-  // such chat a header of its own, named after the folder. They share one
-  // "No project" header, which `resolveGroups` folds into this window's own
-  // when it has one.
-  if (workspace.environment) {
-    if (projectlessScopeOf(workspace.folderPath)) return PROJECTLESS_GROUP_KEY
-    // A row on an SSH machine (phase 8) files under that machine's folder: the
-    // same path on this computer is another folder. A worktree there files
-    // under its project, as one here does.
-    return `ssh:${workspace.environment.id}:${folderKey(workspaceProjectRoot(workspace))}`
-  }
-  const origin = workspace.remoteOrigin
-  if (origin && projectlessScopeOf(origin.workspaceRoot)) return PROJECTLESS_GROUP_KEY
-  // A remote row files under its PROJECT, not under itself (owner,
-  // 2026-09-11). Keyed by the repository where the machine could name one — so
-  // two chats in one checkout over there share a header, and the same
-  // repository on two machines is one project — and otherwise by the folder
-  // they stand in on that machine. Keying by the remote workspace id, as this
-  // did, gave every remote chat a header of its own.
-  if (origin) {
-    if (origin.repository?.canonicalKey) return `remote-repo:${origin.repository.canonicalKey}`
-    return remoteFolderGroupKey(origin.connectionId, origin.workspaceRoot)
-  }
-  if (!workspace.folderPath) {
-    const [machine] = meshMachineNamesOf(workspace)
-    if (machine) return `remote:${machine.toLowerCase()}`
-  }
   return folderKey(workspaceProjectRoot(workspace))
+}
+
+/**
+ * Which header a chat files under, whichever environment it is on
+ * (design-environments PR 3): one header per repository, however many
+ * machines hold a clone of it (this window's own header of it when it has
+ * one); otherwise one per folder on its environment, since the same path on
+ * two machines is two folders; and one for every chat started without a
+ * project. This window's own chats key by their folder alone, the keys their
+ * headers have always had (`groupKeyOf`), which a repository's chats elsewhere
+ * join through `byRepository`.
+ */
+export function projectKeyOf(
+  project: {
+    /** Its environment's id (or route, before the environment has said its id). */
+    environmentId: string
+    projectFolder: string | null
+    repository: RepositoryIdentity | null
+    projectless: boolean
+  },
+  local: {
+    /** This window's own header of each repository it holds, by canonical key. */
+    byRepository: ReadonlyMap<string, string>
+    /** This window's own "No project" header, when it has one. */
+    projectlessKey: string | null
+  },
+): string {
+  if (project.projectless) return local.projectlessKey ?? PROJECTLESS_GROUP_KEY
+  const canonicalKey = project.repository?.canonicalKey
+  if (canonicalKey) return local.byRepository.get(canonicalKey) ?? `repository:${canonicalKey}`
+  return `${project.environmentId}:${folderKey(project.projectFolder)}`
 }
 
 /**
@@ -229,11 +176,6 @@ export function groupKeyOf(workspace: Workspace): string {
  */
 export function remoteProjectFolder(workspaceRoot: string | null | undefined): string | null {
   return workspaceProjectRootOf({ folderPath: workspaceRoot })
-}
-
-/** The header of a paired machine's chat whose repository it could not name: one per project on that machine. */
-export function remoteFolderGroupKey(connectionId: string, workspaceRoot: string | null | undefined): string {
-  return `remote:${connectionId}:${folderKey(remoteProjectFolder(workspaceRoot))}`
 }
 
 /**
@@ -260,24 +202,6 @@ export function newChatProjectTarget(workspace: Workspace): string | null {
   const target = workspaceProjectRoot(workspace) ?? own
   if (folderKey(target) === ownFolderKeyOf(workspace)) return workspace.folderMissing ? null : target
   return target
-}
-
-export function remoteGroupOf(workspace: Workspace): FolderGroup['remote'] {
-  if (workspace.environment)
-    return { machineName: workspace.environment.label, workspaceRoot: workspace.folderPath, repository: null }
-  const origin = workspace.remoteOrigin
-  if (origin) {
-    return {
-      machineName: origin.machineName,
-      workspaceRoot: origin.workspaceRoot,
-      repository: origin.repository ?? null,
-    }
-  }
-  if (!workspace.folderPath) {
-    const [machine] = meshMachineNamesOf(workspace)
-    if (machine) return { machineName: machine, workspaceRoot: null, repository: null }
-  }
-  return null
 }
 
 /**
@@ -307,19 +231,6 @@ export function remoteProjectName(workspaceRoot: string | null, machineName: str
   return folderDisplayName(remoteProjectFolder(workspaceRoot))
 }
 
-export function remoteGroupDisplayName(workspace: Workspace): string {
-  if (workspace.environment) {
-    // Its project, as the row's header key has it: a worktree's recorded
-    // parent, which the path convention alone would not find.
-    const folder = projectlessScopeOf(workspace.folderPath) ? workspace.folderPath : workspaceProjectRoot(workspace)
-    return remoteProjectName(folder, workspace.environment.label)
-  }
-  const origin = workspace.remoteOrigin
-  if (origin) return remoteProjectName(origin.workspaceRoot, origin.machineName)
-  const [machine] = meshMachineNamesOf(workspace)
-  return machine ? shortMachineName(machine) : 'No folder'
-}
-
 export function buildFolderGroups(
   workspaces: Workspace[],
   keyOf: (workspace: Workspace) => string = groupKeyOf,
@@ -337,19 +248,16 @@ export function buildFolderGroups(
       // group with a header of its own: the header is the project's, read
       // off the header map whatever row happens to come first in the list.
       const merged = key !== ownFolderKeyOf(workspace) ? (headers.get(key) ?? null) : null
-      const remote = merged ? null : remoteGroupOf(workspace)
       // Trimmed for the same reason `folderKey` trims: whatever the key
       // called "no folder" must not reappear as a header path made of spaces.
       const folderPath = merged ? merged.folderPath : workspace.folderPath?.trim() || null
       groups.set(key, {
         key,
-        displayName: remote ? remoteGroupDisplayName(workspace) : folderDisplayName(folderPath),
-        // A remote group has no LOCAL path: nothing here may reveal, forget,
-        // or create into a folder that lives on another machine.
-        fullPath: remote ? null : folderPath,
-        missing: remote ? false : merged ? merged.missing : workspace.folderMissing === true,
+        displayName: folderDisplayName(folderPath),
+        fullPath: folderPath,
+        missing: merged ? merged.missing : workspace.folderMissing === true,
         workspaces: [],
-        remote,
+        remote: null,
         remoteRows: [],
       })
     }
@@ -358,7 +266,7 @@ export function buildFolderGroups(
     // Only a row that IS the folder may report it gone. A pruned worktree is
     // its own folder's loss, not the project's, and painting the project
     // missing would also take away the header's New chat and Reveal.
-    if (workspace.folderMissing && !group.remote && ownFolderKeyOf(workspace) === key) group.missing = true
+    if (workspace.folderMissing && ownFolderKeyOf(workspace) === key) group.missing = true
   }
 
   return groupOrder.map((key) => groups.get(key)!)
@@ -431,9 +339,4 @@ export function meshPanesOf(workspace: Workspace): Array<{ tabId: string; machin
   walk(model?.layout)
   if (Array.isArray(model?.borders)) for (const border of model.borders) walk(border)
   return panes
-}
-
-/** The unique machine names of the workspace's mesh panes, in layout order. */
-export function meshMachineNamesOf(workspace: Workspace): string[] {
-  return [...new Set(meshPanesOf(workspace).map((pane) => pane.machineName))]
 }

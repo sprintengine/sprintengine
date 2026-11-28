@@ -67,6 +67,8 @@ test('WorkspaceSidebar.markUnread', async () => {
   const { createRoot } = await import('react-dom/client')
   const { useWorkspaceStore } = await import('../../store/workspaceStore')
   const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+  // This computer's chats are the rows its own Studio lists.
+  const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
   const { useChatOpening } = await import('../panels/agentChat/unreadDivider')
   type SidebarProps = Parameters<typeof WorkspaceSidebar>[0]
   type Workspace = SidebarProps['workspaces'][number]
@@ -122,6 +124,7 @@ test('WorkspaceSidebar.markUnread', async () => {
   }
   const render = async (props: SidebarProps): Promise<void> => {
     act(() => {
+      serveWindowChats(window.api, props.workspaces)
       root.render(React.createElement(WorkspaceSidebar, props))
     })
     await settle()

@@ -70,6 +70,7 @@ test('a create carries New chat’s options to the launch service, and "No proje
   )
   await create({ workspaceId: 'ws-1', newChat: true, inWorktree: '/Users/dev/app-wt' }, 'launch-2', { kind: 'person' })
   await create({ noProject: true, prompt: 'fix it' }, 'launch-3', { kind: 'person' })
+  await create({ workspaceId: 'ws-1', newChat: true, mode: 'plan' }, 'launch-4', { kind: 'person' })
   assert.deepEqual(launched, [
     {
       workspaceId: 'ws-1',
@@ -92,6 +93,14 @@ test('a create carries New chat’s options to the launch service, and "No proje
       newChatIn: { folderPath: '/Users/dev/No project/fix-it-abc123' },
       prompt: 'fix it',
       launchCommandId: 'launch-3',
+      startedBy: { kind: 'person' },
+    },
+    // The mode every turn runs in, which the launch holds on the chat.
+    {
+      workspaceId: 'ws-1',
+      newChat: true,
+      mode: 'plan',
+      launchCommandId: 'launch-4',
       startedBy: { kind: 'person' },
     },
   ])

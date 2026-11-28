@@ -27,6 +27,7 @@ import type {
   StudioChatExportPage,
   StudioListChange,
   StudioWindowTicketGrant,
+  StudioChatSeen,
 } from '../../../packages/studio-protocol/src/public'
 import type { AgentStarter } from '../../shared/agent-state'
 import type {
@@ -240,8 +241,16 @@ export type StudioFollowedBackend = {
    * asked before its uploads are staged, which a repeat does not need.
    */
   sentBefore?(key: ConversationKey, clientId: string, commandId: string): Promise<boolean>
-  /** The chat's rest, written to its workspace's record as its row menu writes it; `byOwner` says whose write it is. */
-  settle?(workspaceId: string, settled: boolean, byOwner: boolean): StudioLifecycleOutcome<{ settledAt: number | null }>
+  /**
+   * The chat's rest, written to its workspace's record as its row menu writes it; `byOwner` says whose write it is.
+   * `asked` is the chat as the asking row drew it and the asker's keystroke clock (`chat-rest-seen`), when sent.
+   */
+  settle?(
+    workspaceId: string,
+    settled: boolean,
+    byOwner: boolean,
+    asked?: { seen?: StudioChatSeen; lastInputAt?: number },
+  ): StudioLifecycleOutcome<{ settledAt: number | null }>
   visit?(
     workspaceId: string,
     visitedAt: number | undefined,

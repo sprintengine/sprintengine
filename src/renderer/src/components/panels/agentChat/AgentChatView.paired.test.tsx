@@ -504,7 +504,15 @@ async function mountRemote({
   if (refused) studio.refuse = () => refused
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
-  const { default: RemoteConversationPanel } = await import('./RemoteConversationPanel')
+  // The one chat pane, given a paired chat's tab as the layout reads it.
+  const { default: AgentChatView } = await import('../AgentChatView')
+  const { paneChatOfPairedTab } = await import('./paneChat')
+  const opened = paneChatOfPairedTab({
+    connectionId: key.connectionId,
+    machineName: 'mac-mini',
+    remoteWorkspaceId: key.workspaceId,
+    remoteAgentId: key.agentId,
+  })!
   // A chat's `/` list is kept for the window under the chat; each test's chat asks afresh.
   const { resetConversationCommandsCache } = await import('./useConversationCommands')
   resetConversationCommandsCache()
@@ -521,12 +529,10 @@ async function mountRemote({
         ConfirmDialogProvider,
         null,
         createElement(ChatPanel, panelProps('local-workspace')),
-        createElement(RemoteConversationPanel, {
+        createElement(AgentChatView, {
           workspaceId: 'local-workspace',
-          connectionId: key.connectionId,
-          machineName: 'mac-mini',
-          remoteWorkspaceId: key.workspaceId,
-          remoteAgentId: key.agentId,
+          agentId: opened.agentId,
+          chat: opened.chat,
         }),
       ),
     ),

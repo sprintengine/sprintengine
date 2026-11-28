@@ -641,7 +641,6 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'workspaceSync.snapshot',
           'workspaceSync.eventsAfter',
           'workspaceSync.dispatch',
-          'workspaceSync.lifecycle',
           'workspaceSync.setSettledChatsSettings',
           'workspaceSync.setModuleRunStates',
           'workspaceRegistry.needsHydration',

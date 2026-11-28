@@ -23,20 +23,21 @@ import type { WslServerConnection } from './wsl-environment-manager'
 
 // The desktop's toolsets, for a chat agent in WSL (phase 7 spec, 3.7). An
 // agent there reaches its own server's gateway, which serves the core's tools
-// but has no browser, canvas, editor, tour, terminals or agent launches, and
-// none of what the Windows side keeps: the person's workspace list, the
-// backlog, scheduled agents, its extensions. So the front door is a client of each
+// (its chats, its workspaces, a project's checkout and extensions, the CLIs it
+// runs: all of the machine it runs on) but has no browser, canvas, editor,
+// tour, terminals or agent launches, and none of what the Windows side keeps:
+// the backlog, scheduled agents, its extensions. So the front door is a client of each
 // WSL server too, with the shell role, and offers it those as toolsets: the
 // ones the desktop's shell offers the Windows-side server, each call run
 // through that side's registry, which hands it to the shell; and the
 // Windows-side server's own tools of those families, each call run by the
 // tool's own handler there, as the shell runs its tools out of process. The
 // answer goes back the same way. An agent in WSL lists the tools an agent on
-// Windows does, but for four families: `conversation`, `subagent` and `file`
-// (a chat's file views), which the WSL server serves itself for its own
-// chats, and `tailnet`, which is served on the Windows side's owner-only
-// socket and nowhere else (`tailnet-tools.ts`); of `extension`, only the two
-// that read what runs here.
+// Windows does, but for the families the WSL server serves itself about its
+// own machine (`conversation`, `subagent`, `file`, `workspace`, `cli` and the
+// rest of the core's), and `tailnet`, which is served on the Windows side's
+// owner-only socket and nowhere else (`tailnet-tools.ts`); of `extension`,
+// only the two that read what runs here.
 //
 // In process the shell offers only the browser and the canvas, and the
 // editor, tours, terminals and agent launches are the Windows gateway's own
@@ -45,31 +46,35 @@ import type { WslServerConnection } from './wsl-environment-manager'
 //
 // The offers follow the Windows side's: a toolset the shell offers later is
 // offered on, one it withdraws is withdrawn. A tool named with a second dot
-// (`cli.runtime.list`) crosses with its later dots as underscores, since a
+// (`family.part.name`) crosses with its later dots as underscores, since a
 // protocol tool name has none; an agent that rewrites dots reads the same
 // name either way. A module's tool (`review_list_pending`) crosses in a
 // toolset named for the part before its first underscore.
 //
 // Tool inputs cross as the agent wrote them, except the file paths the
-// editor's tools take and the folder `workspace.create` opens: those are
-// read on Windows, so an absolute Linux path is respelled the way Windows
-// opens it (`/home/dev/a.ts` as `\\wsl.localhost\<distro>\home\dev\a.ts`,
-// a path under the drive mount as the drive's), and a `~` path, whose home
-// Windows cannot know, is refused in words. A relative path stays relative to
-// the workspace, which is how the Windows side reads it.
+// editor's tools take: those are read on Windows, so an absolute Linux path
+// is respelled the way Windows opens it (`/home/dev/a.ts` as
+// `\\wsl.localhost\<distro>\home\dev\a.ts`, a path under the drive mount as
+// the drive's), and a `~` path, whose home Windows cannot know, is refused in
+// words. A relative path stays relative to the workspace, which is how the
+// Windows side reads it.
 
 /** The toolsets the desktop's shell offers (decision R78). */
 export const RELAYED_TOOLSETS = ['browser', 'canvas', 'editor', 'tour', 'terminal', 'agent'] as const
 
 /**
  * The families of Studio's own tools whose data the Windows side keeps, which
- * a WSL server cannot serve: the backlog (phase 7, 3.7), and the workspace
- * list, scheduled agents, the CLI catalog, the extensions it runs and the
- * marketplace, which an agent on Windows is listed beside it. Of `extension`
- * only the reads cross (`EXTENSION_READ_TOOLS`): the rest of that family makes
- * extension projects on this computer's disk, for an agent working here.
+ * a WSL server cannot serve: the backlog, whose `backlog.work` hands an item
+ * to an agent in one of this desktop's terminals (phase 7, 3.7); scheduled
+ * agents, made by this desktop's Scheduled agents module and handed to the
+ * machine whose folder they run in; the extensions this desktop runs, which
+ * its windows report; and the marketplace its Extensions door reads. Of
+ * `extension` only the reads cross (`EXTENSION_READ_TOOLS`): the rest of that
+ * family makes extension projects on this computer's disk, for an agent
+ * working here. Not `workspace` or `cli`: every Studio serves those from its
+ * own core, about its own machine (studio-gateway.ts).
  */
-export const WINDOWS_SIDE_TOOLSETS = ['backlog', 'workspace', 'schedule', 'cli', 'extension', 'marketplace'] as const
+export const WINDOWS_SIDE_TOOLSETS = ['backlog', 'schedule', 'extension', 'marketplace'] as const
 
 /** Whether one of this side's tools crosses to a WSL server at all, beside its family being taken. */
 function crosses(toolset: string, toolName: string): boolean {
@@ -140,7 +145,7 @@ function ownerLiveness(owner: Pick<StudioClient, 'state' | 'closed'>): RelayLive
   }
 }
 
-/** A WSL server as a relay target, its editor and workspace paths respelled for Windows. */
+/** A WSL server as a relay target, its editor's paths respelled for Windows. */
 export function wslRelayTarget(connection: WslServerConnection): RelayTarget {
   return {
     key: `wsl:${connection.distro}`,
@@ -166,15 +171,14 @@ class RelayPathError extends Error {}
 
 /**
  * A relayed tool's arguments as the Windows side reads them: the editor's
- * file paths and a new workspace's folder in Windows spelling. Throws
- * `RelayPathError` for a `~` path.
+ * file paths in Windows spelling. Throws `RelayPathError` for a `~` path.
  */
 export function relayedToolArgs(
   toolset: string,
   args: Record<string, unknown>,
   where: { distro: string; driveMountRoot: string | null },
 ): Record<string, unknown> {
-  if (toolset !== 'editor' && toolset !== 'workspace') return args
+  if (toolset !== 'editor') return args
   const respell = (path: unknown): unknown => {
     if (typeof path !== 'string') return path
     const trimmed = path.trim()
@@ -193,10 +197,6 @@ export function relayedToolArgs(
       ? { ...value, path: respell((value as { path: unknown }).path) }
       : value
   const next: Record<string, unknown> = { ...args }
-  if (toolset === 'workspace') {
-    if (args.folderPath !== undefined) next.folderPath = respell(args.folderPath)
-    return next
-  }
   if (Array.isArray(args.files)) next.files = args.files.map(location)
   if (Array.isArray(args.paths)) next.paths = args.paths.map(respell)
   if (args.focus !== undefined) next.focus = location(args.focus)

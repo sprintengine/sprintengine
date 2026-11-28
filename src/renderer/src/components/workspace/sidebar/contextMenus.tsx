@@ -13,7 +13,6 @@ import {
   resolveSnoozePresets,
 } from '../../../utils/workspaceSnooze'
 import { newChatProjectTarget, type FolderGroup } from './folderGroups'
-import { isStarred } from '../../../utils/highlight'
 import { isSettledWorkspace, normalizeAutoSettleAfterDays } from '../../../utils/workspaceSettle'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import {
@@ -104,33 +103,6 @@ export type ChatMarkAction =
 
 /** A change to a chat's marks or sleep, as opposed to its rest: what a paired machine's `chat-lifecycle` takes. */
 export type ChatMarkChange = Exclude<ChatMarkAction, 'toggle-settle'>
-
-export function isChatMarkChange(action: string): action is ChatMarkChange {
-  return (
-    action === 'toggle-star' ||
-    action === 'toggle-auto-settle' ||
-    action === 'wake' ||
-    action === 'clear-color' ||
-    action.startsWith('snooze:')
-  )
-}
-
-export type ContextMenuAction =
-  | 'open'
-  | 'mark-unread'
-  | 'stop-watching'
-  | 'rename'
-  | 'regenerate-title'
-  | 'new-chat'
-  | 'reveal'
-  | 'copy-link'
-  | 'move-to-new-window'
-  | 'move-to-main-window'
-  | ChatMarkAction
-  | 'toggle-auto-compact'
-  | 'toggle-schedule-pause'
-  | 'delete-settled'
-  | `type-action:${string}`
 
 /**
  * A chat menu's row: `DescribedMenuItem`, whose `tooltip` is required, so no
@@ -297,275 +269,48 @@ function ChatRestAndMarkItems({
   )
 }
 
-// Workspace-row context menu. Generic menu chrome (surface, clamped
-// positioning, items, dividers, swatch row, dismissal, focus handling) lives
-// in the ui/ContextMenu primitive; only the sidebar's actions stay here.
-export function WorkspaceContextMenu({
-  x,
-  y,
-  workspace,
-  chatLink,
-  moduleOverrides,
-  isDetachedWindow,
-  now,
-  working,
-  remoteMarks = false,
-  remoteManage,
-  remoteNewChat = false,
-  autoCompact = null,
-  canMarkUnread = false,
-  watchedPullRequestNumber = null,
-  schedule = null,
-  canDelete = false,
-  remoteDelete = false,
-  onClose,
-  onSelect,
-  onPickColor,
-}: {
-  x: number
-  y: number
-  workspace: Workspace | null
-  /**
-   * The chat's link (`chatLinkOfWorkspace`): by its address, the Studio that
-   * holds it and its id there, so the same link opens it there, here, and on
-   * any other device that follows it. Null when the row has no address yet
-   * (its machine has not said its id) or an id a link cannot carry.
-   */
-  chatLink: string | null
-  moduleOverrides: Parameters<typeof resolveEnabledWorkspaceType>[1]
-  isDetachedWindow: boolean
-  /** An agent in the chat is still working, so Settle and Snooze wait (`workspaceIsWorking`). */
-  working: boolean
-  /** The clock the wake times and the asleep/awake reading are resolved against. */
-  now: number
-  /**
-   * A row born on a paired machine whose machine takes the row menu's marks
-   * (`chat-lifecycle`): its Star, Highlight color, Snooze and Auto-settle are
-   * that machine's, and `workspace` carries them as that machine lists them.
-   */
-  remoteMarks?: boolean
-  /** What of a paired machine's chat's management its machine takes from here (`MeshConversationManage`). */
-  remoteManage?: MeshConversationManage
-  /** A paired machine's chat whose machine this pairing may start a chat on: New chat in project opens there. */
-  remoteNewChat?: boolean
-  /**
-   * The Auto compact switch for a chat here (see `ChatRestAndMarkItems`);
-   * null leaves it off the menu.
-   */
-  autoCompact?: { on: boolean; claude: boolean } | null
-  /**
-   * An agent here has finished something, the chat is not the one in front,
-   * and its row is not already marked: Mark unread has something to mark.
-   */
-  canMarkUnread?: boolean
-  /** The pull request Studio is watching for the chat, by number: Stop watching stops it. Null offers nothing. */
-  watchedPullRequestNumber?: number | null
-  /**
-   * The schedule here that started this chat, and whether it is paused: the
-   * menu offers to pause it, or resume it. Null for every other chat.
-   */
-  schedule?: { paused: boolean } | null
-  /**
-   * The window can delete settled chats (a confirm dialog and main's delete
-   * are there). Delete is offered only on a settled chat: Settle is how a
-   * chat is put away, and deleting is for one already put away. A paired
-   * machine's is offered where that machine deletes its chats from here
-   * (`remoteDelete`).
-   */
-  canDelete?: boolean
-  /**
-   * A paired machine's settled chat, whose machine deletes its chats from
-   * here (`chat-lifecycle`): Delete deletes it there, then this computer's record.
-   */
-  remoteDelete?: boolean
-  onClose: () => void
-  onSelect: (action: ContextMenuAction) => void
-  onPickColor: (color: HighlightColor) => void
-}) {
-  if (!workspace) return null
-  const typeActions = workspaceTypeRowActions(workspace, moduleOverrides)
-  // Reveal is about THIS row's folder, so a missing one takes it away. New
-  // chat is about the project the row files under, which a pruned worktree
-  // does not touch — hence the two predicates rather than one.
-  const folderPathExists = Boolean(workspace.folderPath) && !workspace.folderMissing
-  const newChatTarget = newChatProjectTarget(workspace)
-  const canNewChatInProject = newChatTarget !== null
-  // A `sprintengine://` link opens the desktop app, so a browser tab does not
-  // offer one; nor does a row with no link.
-  const canCopyLink = clientSupports('deep-links') && chatLink !== null
-  const starred = isStarred(workspace.highlight)
-  const settled = isSettledWorkspace(workspace)
-  const snoozed = isSnoozedWorkspace(workspace, now)
-  const autoSettle = workspace.autoSettleEnabled === true
-  const currentColor = workspace.highlight?.color ?? null
-  // Settle is the one way a row is put away: there is no Close beside it. A
-  // row born on a paired machine asks that machine first where it keeps its
-  // chats' rest, and rests here alone where it keeps none; it never offers
-  // Un-settle: a settled one is off the rail here. Its sleep and Auto-settle
-  // are that machine's, offered where it takes them.
-  const remote = Boolean(workspace.remoteOrigin)
-  const where: ChatMenuPlace = workspace.remoteOrigin
-    ? {
-        kind: 'remote',
-        machineName: workspace.remoteOrigin.machineName,
-        marks: remoteMarks,
-        ...(remoteManage ? { manage: remoteManage } : {}),
-      }
-    : { kind: 'local' }
-  // Reveal is shown off, and says why, for a folder this computer cannot
-  // show: one on the paired machine the chat runs on, or one gone from disk.
-  const revealUnavailable = remote || (Boolean(workspace.folderPath) && workspace.folderMissing === true)
-  const settle = remote ? (settled ? null : 'settle') : settled ? 'unsettle' : 'settle'
-  const sleeps = remote ? remoteMarks : !settled
-  const canSnooze = remote ? !settled : canSnoozeWorkspace(workspace)
-
-  return (
-    <ContextMenu
-      x={x}
-      y={y}
-      ariaLabel={appCopy.workspace.sidebar.contextMenus.workspaceActions(workspace.name)}
-      onClose={onClose}
-      surfaceClassName="min-w-[240px]"
-    >
-      <ChatMenuItem tooltip={tips.open()} onClick={() => onSelect('open')}>
-        {appCopy.workspace.sidebar.contextMenus.open}
-      </ChatMenuItem>
-      {canMarkUnread ? (
-        <ChatMenuItem tooltip={tips.markUnread(where)} onClick={() => onSelect('mark-unread')}>
-          {appCopy.workspace.sidebar.contextMenus.markUnread}
-        </ChatMenuItem>
-      ) : null}
-      <ChatMenuItem tooltip={tips.rename(where)} onClick={() => onSelect('rename')} shortcut="F2">
-        {appCopy.workspace.sidebar.contextMenus.rename}
-      </ChatMenuItem>
-      {canRegenerateTitleOf(workspace) ? (
-        <ChatMenuItem tooltip={tips.regenerateTitle()} onClick={() => onSelect('regenerate-title')}>
-          {appCopy.workspace.sidebar.contextMenus.regenerateTitle}
-        </ChatMenuItem>
-      ) : null}
-      {canNewChatInProject ? (
-        <ChatMenuItem
-          tooltip={tips.newChat(isProjectlessChatsRoot(newChatTarget))}
-          onClick={() => onSelect('new-chat')}
-        >
-          {isProjectlessChatsRoot(newChatTarget) ? 'New chat without a project' : 'New chat in project'}
-        </ChatMenuItem>
-      ) : remote && remoteNewChat ? (
-        <ChatMenuItem tooltip={tips.newChat(false, where)} onClick={() => onSelect('new-chat')}>
-          {appCopy.workspace.sidebar.contextMenus.newChatInProject}
-        </ChatMenuItem>
-      ) : null}
-      {folderPathExists ? (
-        <ChatMenuItem tooltip={tips.reveal()} onClick={() => onSelect('reveal')}>
-          {appCopy.workspace.sidebar.contextMenus.revealFolder}
-        </ChatMenuItem>
-      ) : revealUnavailable ? (
-        <ChatMenuItem
-          disabled
-          hint={
-            remote
-              ? appCopy.workspace.sidebar.contextMenus.on(workspace.remoteOrigin!.machineName)
-              : appCopy.workspace.sidebar.contextMenus.missing
-          }
-          tooltip={tips.revealUnavailable(where)}
-          onClick={() => undefined}
-        >
-          {appCopy.workspace.sidebar.contextMenus.revealFolder}
-        </ChatMenuItem>
-      ) : null}
-      {canCopyLink ? (
-        <ChatMenuItem tooltip={tips.copyLink(where)} onClick={() => onSelect('copy-link')}>
-          {appCopy.workspace.sidebar.contextMenus.copyLinkToChat}
-        </ChatMenuItem>
-      ) : null}
-      {isDetachedWindow ? (
-        <ChatMenuItem tooltip={tips.moveToMainWindow()} onClick={() => onSelect('move-to-main-window')}>
-          {appCopy.workspace.sidebar.contextMenus.moveToMainWindow}
-        </ChatMenuItem>
-      ) : (
-        <ChatMenuItem tooltip={tips.moveToNewWindow()} onClick={() => onSelect('move-to-new-window')}>
-          {appCopy.workspace.sidebar.contextMenus.moveToNewWindow}
-        </ChatMenuItem>
-      )}
-      <MenuDivider />
-      <ChatRestAndMarkItems
-        where={where}
-        starred={starred}
-        color={currentColor}
-        settle={settle}
-        working={working}
-        snooze={snoozed ? 'wake' : sleeps ? { disabled: !canSnooze } : null}
-        autoSettle={remote && !remoteMarks ? null : autoSettle}
-        autoCompact={remote && !remoteManage?.autoCompact ? null : autoCompact}
-        between={
-          <>
-            {/* A chat whose agent has Studio babysitting its pull request reads as
-                working until it is woken; this ends the watch and leaves the chat
-                as it is. Settle ends the watch too, with the chat. */}
-            {watchedPullRequestNumber !== null ? (
-              <ChatMenuItem
-                tooltip={tips.stopWatching(watchedPullRequestNumber, where)}
-                onClick={() => onSelect('stop-watching')}
-              >
-                {appCopy.workspace.sidebar.contextMenus.stopWatching}
-                {watchedPullRequestNumber}
-              </ChatMenuItem>
-            ) : null}
-            {/* A run's chat is where a person notices a schedule doing too much:
-                this stops its next runs from here, and leaves this chat (and any
-                run still going) as it is. */}
-            {schedule ? (
-              <ChatMenuItem tooltip={tips.schedule(schedule.paused)} onClick={() => onSelect('toggle-schedule-pause')}>
-                {schedule.paused ? 'Resume this schedule' : 'Pause this schedule'}
-              </ChatMenuItem>
-            ) : null}
-          </>
-        }
-        onSelect={onSelect}
-        onPickColor={onPickColor}
-      />
-      {typeActions.length > 0 ? (
-        <>
-          <MenuDivider />
-          {typeActions.map((action) => (
-            <ChatMenuItem
-              key={action.id}
-              variant={action.variant}
-              tooltip={tips.typeAction(action.label)}
-              onClick={() => onSelect(`type-action:${action.id}`)}
-            >
-              {action.label}
-            </ChatMenuItem>
-          ))}
-        </>
-      ) : null}
-      {canDelete && settled && (!remote || remoteDelete) ? (
-        <>
-          <MenuDivider />
-          <ChatMenuItem variant="danger" tooltip={tips.deleteSettled(where)} onClick={() => onSelect('delete-settled')}>
-            {appCopy.workspace.sidebar.contextMenus.deleteChat}
-          </ChatMenuItem>
-        </>
-      ) : null}
-    </ContextMenu>
-  )
-}
-
-export type RemoteConversationMenuAction =
+export type EnvironmentChatMenuAction =
   | 'open'
   | 'mark-unread'
   | 'copy-link'
   | 'move-to-new-window'
   | 'move-to-main-window'
   | ChatMarkAction
-  // ── A paired desktop's chat management ──
   | 'rename'
   | 'toggle-auto-compact'
   | 'stop-watching'
   | 'new-chat'
+  // ── This computer's chat, as the window holds it ──
+  | 'regenerate-title'
+  | 'reveal'
+  | 'toggle-schedule-pause'
+  | 'delete-settled'
+  | `type-action:${string}`
 
-// A chat on a paired machine that no window here holds: the same menu a
-// local row has, each item asking that machine, which keeps the chat. Its rest
+/**
+ * What a chat of this computer's menu adds, from the window's record of it:
+ * its folder on this disk (Reveal, New chat in its project), its title
+ * regenerated from what was said, the schedule that started it, its
+ * workspace type's own actions, and Delete once it is settled.
+ */
+export type LocalChatMenuExtras = {
+  /** The window's record of the chat, as its row draws it (`localChatRows`). */
+  workspace: Workspace
+  moduleOverrides: Parameters<typeof resolveEnabledWorkspaceType>[1]
+  /** The schedule here that started the chat, and whether it is paused; null for every other chat. */
+  schedule: { paused: boolean } | null
+  /** The window can delete settled chats (a confirm dialog and the delete are there). */
+  canDelete: boolean
+}
+
+// A chat's menu, by its address, on any machine: this computer's (`local`), a
+// paired desktop's, an SSH machine's, a WSL distribution's. Each item asks
+// the Studio that keeps the chat. Generic menu chrome (surface, clamped
+// positioning, items, dividers, swatch row, dismissal, focus handling) lives
+// in the ui/ContextMenu primitive; only the chat's actions are here.
+//
+// This computer's chat adds what the window holds of it (`LocalChatMenuExtras`).
+// Another machine's: its rest
 // (`conversation-lifecycle`), its marks and sleep (`chat-lifecycle`) and its read
 // state (`chat-lifecycle`) are offered where the machine takes them; an
 // older machine's chat offers what it can, as a local menu hides what does
@@ -575,7 +320,7 @@ export type RemoteConversationMenuAction =
 // chat there, opening New chat on that machine and project. Left out because
 // they are about a workspace here, which this row does not have until it is
 // opened: the workspace type's own actions, and Close workspace.
-export function RemoteConversationContextMenu({
+export function EnvironmentChatContextMenu({
   x,
   y,
   title,
@@ -595,6 +340,7 @@ export function RemoteConversationContextMenu({
   autoSettle,
   now,
   working,
+  local = null,
   onClose,
   onSelect,
   onPickColor,
@@ -603,6 +349,8 @@ export function RemoteConversationContextMenu({
   y: number
   title: string
   machineName: string
+  /** A chat of this computer's: what the window holds of it. */
+  local?: LocalChatMenuExtras | null
   /** The machine keeps its chats' rest, so it can be asked to settle this one. */
   canSettle: boolean
   /** The machine takes the row menu's Star, Highlight color, Snooze and Auto-settle (`chat-lifecycle`). */
@@ -618,7 +366,7 @@ export function RemoteConversationContextMenu({
   /** Its agent finished something nobody has been marked as missing, and the machine takes Mark unread. */
   canMarkUnread: boolean
   isDetachedWindow: boolean
-  /** The chat's link, by its address on its machine (`chatLinkOfRemoteChat`); null while that machine's id is not known. */
+  /** The chat's link, by its address on its environment; null while that environment's id is not known. */
   chatLink: string | null
   starred: boolean
   color: HighlightColor | null
@@ -629,17 +377,37 @@ export function RemoteConversationContextMenu({
   /** Its agent is working, so Settle and Snooze wait, as they do on a local row. */
   working: boolean
   onClose: () => void
-  onSelect: (action: RemoteConversationMenuAction) => void
+  onSelect: (action: EnvironmentChatMenuAction) => void
   onPickColor: (color: HighlightColor) => void
 }) {
   const canCopyLink = clientSupports('deep-links') && chatLink !== null
   const snoozed = isSnoozedWorkspace({ snoozedUntil }, now)
-  const where: ChatMenuPlace = { kind: 'remote', machineName, marks, ...(manage ? { manage } : {}) }
+  const where: ChatMenuPlace = local
+    ? { kind: 'local' }
+    : { kind: 'environment', machineName, marks, ...(manage ? { manage } : {}) }
+  const workspace = local?.workspace ?? null
+  const settled = workspace ? isSettledWorkspace(workspace) : false
+  // New chat is about the project the row files under, which a pruned worktree
+  // does not touch; Reveal is about THIS row's folder, so a missing one takes
+  // it away (and says why).
+  const newChatTarget = workspace ? newChatProjectTarget(workspace) : null
+  const folderPathExists = Boolean(workspace?.folderPath) && !workspace?.folderMissing
+  const revealUnavailable = Boolean(workspace?.folderPath) && workspace?.folderMissing === true
+  const typeActions = local ? workspaceTypeRowActions(local.workspace, local.moduleOverrides) : []
+  const snooze = snoozed
+    ? ('wake' as const)
+    : settled
+      ? null
+      : { disabled: workspace ? !canSnoozeWorkspace(workspace) : false }
   return (
     <ContextMenu
       x={x}
       y={y}
-      ariaLabel={appCopy.workspace.sidebar.contextMenus.chatActionsOn(title, machineName)}
+      ariaLabel={
+        local
+          ? appCopy.workspace.sidebar.contextMenus.workspaceActions(title)
+          : appCopy.workspace.sidebar.contextMenus.chatActionsOn(title, machineName)
+      }
       onClose={onClose}
       surfaceClassName="min-w-[240px]"
     >
@@ -651,25 +419,60 @@ export function RemoteConversationContextMenu({
           {appCopy.workspace.sidebar.contextMenus.markUnread}
         </ChatMenuItem>
       ) : null}
-      {manage?.rename ? (
-        <ChatMenuItem tooltip={tips.rename(where)} onClick={() => onSelect('rename')}>
+      {local || manage?.rename ? (
+        <ChatMenuItem
+          tooltip={tips.rename(where)}
+          onClick={() => onSelect('rename')}
+          shortcut={local ? 'F2' : undefined}
+        >
           {appCopy.workspace.sidebar.contextMenus.rename}
         </ChatMenuItem>
       ) : null}
-      {canNewChat ? (
+      {workspace && canRegenerateTitleOf(workspace) ? (
+        <ChatMenuItem tooltip={tips.regenerateTitle()} onClick={() => onSelect('regenerate-title')}>
+          {appCopy.workspace.sidebar.contextMenus.regenerateTitle}
+        </ChatMenuItem>
+      ) : null}
+      {local ? (
+        newChatTarget !== null ? (
+          <ChatMenuItem
+            tooltip={tips.newChat(isProjectlessChatsRoot(newChatTarget))}
+            onClick={() => onSelect('new-chat')}
+          >
+            {isProjectlessChatsRoot(newChatTarget) ? 'New chat without a project' : 'New chat in project'}
+          </ChatMenuItem>
+        ) : null
+      ) : canNewChat ? (
         <ChatMenuItem tooltip={tips.newChat(false, where)} onClick={() => onSelect('new-chat')}>
           {appCopy.workspace.sidebar.contextMenus.newChatInProject}
         </ChatMenuItem>
       ) : null}
-      {/* Off, and saying why: the folder is on the other machine's disk. */}
-      <ChatMenuItem
-        disabled
-        hint={appCopy.workspace.sidebar.contextMenus.on(machineName)}
-        tooltip={tips.revealUnavailable(where)}
-        onClick={() => undefined}
-      >
-        {appCopy.workspace.sidebar.contextMenus.revealFolder}
-      </ChatMenuItem>
+      {local ? (
+        folderPathExists ? (
+          <ChatMenuItem tooltip={tips.reveal()} onClick={() => onSelect('reveal')}>
+            {appCopy.workspace.sidebar.contextMenus.revealFolder}
+          </ChatMenuItem>
+        ) : revealUnavailable ? (
+          <ChatMenuItem
+            disabled
+            hint={appCopy.workspace.sidebar.contextMenus.missing}
+            tooltip={tips.revealUnavailable(where)}
+            onClick={() => undefined}
+          >
+            {appCopy.workspace.sidebar.contextMenus.revealFolder}
+          </ChatMenuItem>
+        ) : null
+      ) : (
+        // Off, and saying why: the folder is on the other machine's disk.
+        <ChatMenuItem
+          disabled
+          hint={appCopy.workspace.sidebar.contextMenus.on(machineName)}
+          tooltip={tips.revealUnavailable(where)}
+          onClick={() => undefined}
+        >
+          {appCopy.workspace.sidebar.contextMenus.revealFolder}
+        </ChatMenuItem>
+      )}
       {canCopyLink ? (
         <ChatMenuItem tooltip={tips.copyLink(where)} onClick={() => onSelect('copy-link')}>
           {appCopy.workspace.sidebar.contextMenus.copyLinkToChat}
@@ -693,24 +496,39 @@ export function RemoteConversationContextMenu({
               where={where}
               starred={starred}
               color={color}
-              settle={canSettle ? 'settle' : null}
+              settle={settled ? 'unsettle' : canSettle ? 'settle' : null}
               working={working}
-              snooze={snoozed ? 'wake' : { disabled: false }}
+              snooze={snooze}
               autoSettle={autoSettle}
               // Auto compact is the rule of the machine that runs the chat,
               // switched there where that machine takes it from here.
-              autoCompact={manage?.autoCompact ? autoCompact : null}
+              autoCompact={local || manage?.autoCompact ? autoCompact : null}
               between={
-                // The watch is the machine's, ended there; the chat stays as it is.
-                watchedPullRequestNumber !== null ? (
-                  <ChatMenuItem
-                    tooltip={tips.stopWatching(watchedPullRequestNumber, where)}
-                    onClick={() => onSelect('stop-watching')}
-                  >
-                    {appCopy.workspace.sidebar.contextMenus.stopWatching}
-                    {watchedPullRequestNumber}
-                  </ChatMenuItem>
-                ) : null
+                <>
+                  {/* A chat whose agent has its pull request watched reads as
+                      working until it is woken; this ends the watch, there, and
+                      leaves the chat as it is. Settle ends the watch too. */}
+                  {watchedPullRequestNumber !== null ? (
+                    <ChatMenuItem
+                      tooltip={tips.stopWatching(watchedPullRequestNumber, where)}
+                      onClick={() => onSelect('stop-watching')}
+                    >
+                      {appCopy.workspace.sidebar.contextMenus.stopWatching}
+                      {watchedPullRequestNumber}
+                    </ChatMenuItem>
+                  ) : null}
+                  {/* A run's chat is where a person notices a schedule doing
+                      too much: this stops its next runs from here, and leaves
+                      this chat (and any run still going) as it is. */}
+                  {local?.schedule ? (
+                    <ChatMenuItem
+                      tooltip={tips.schedule(local.schedule.paused)}
+                      onClick={() => onSelect('toggle-schedule-pause')}
+                    >
+                      {local.schedule.paused ? 'Resume this schedule' : 'Pause this schedule'}
+                    </ChatMenuItem>
+                  ) : null}
+                </>
               }
               onSelect={onSelect}
               onPickColor={onPickColor}
@@ -725,6 +543,29 @@ export function RemoteConversationContextMenu({
               {appCopy.workspace.sidebar.contextMenus.settle}
             </ChatMenuItem>
           )}
+        </>
+      ) : null}
+      {typeActions.length > 0 ? (
+        <>
+          <MenuDivider />
+          {typeActions.map((action) => (
+            <ChatMenuItem
+              key={action.id}
+              variant={action.variant}
+              tooltip={tips.typeAction(action.label)}
+              onClick={() => onSelect(`type-action:${action.id}`)}
+            >
+              {action.label}
+            </ChatMenuItem>
+          ))}
+        </>
+      ) : null}
+      {local?.canDelete && settled ? (
+        <>
+          <MenuDivider />
+          <ChatMenuItem variant="danger" tooltip={tips.deleteSettled(where)} onClick={() => onSelect('delete-settled')}>
+            {appCopy.workspace.sidebar.contextMenus.deleteChat}
+          </ChatMenuItem>
         </>
       ) : null}
     </ContextMenu>

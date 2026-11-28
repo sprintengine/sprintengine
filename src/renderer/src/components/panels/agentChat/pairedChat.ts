@@ -10,7 +10,7 @@ import type { MeshConversationKey } from '../../../../../shared/tailnet-mesh'
 import { randomId } from '../../../../../shared/random-id'
 import { environmentChatSourceFor } from '../../../studio/environmentChats'
 import { pairedTarget } from '../../../studio/environmentStudio'
-import { changePairedChat } from '../../../studio/pairedChats'
+import { changeEnvironmentChat } from '../../../studio/environmentChatRecords'
 import type { ChatEnvironment, ConversationTransport, ConversationTransportCapabilities } from './conversationTransport'
 import { environmentConversationTransport } from './environmentChat'
 import { studioPullRequestHost } from './pullRequestHost'
@@ -288,7 +288,7 @@ export function createPairedChatTransport(input: {
     },
     // The pull request's, on that machine's Studio; one that cannot take it says so in words.
     unwatchPullRequest: async (asked) => {
-      const answer = await changePairedChat({ id: key.connectionId, machineName }, key.workspaceId, {
+      const answer = await changeEnvironmentChat(pairedTarget({ id: key.connectionId, machineName }), key.workspaceId, {
         kind: 'unwatch-pull-request',
         agentId: key.agentId,
         url: asked.url,

@@ -80,11 +80,16 @@ import { createHostRegistry, installHostRegistry } from '../../main/hosts/host-r
 import { createAgentLaunchSettingsStore } from '../../main/launch-settings-store'
 import { setWorktreeBranchPrefixReader } from '../../main/worktree-branch-prefix'
 import { readDiscoveredCliModelCatalogs } from '../../main/model-discovery/service'
-import { listPluginRegistryEntries } from '../../main/plugin-registry-instance'
+import { getPluginRegistry, listPluginRegistryEntries } from '../../main/plugin-registry-instance'
 import { powerActivity } from '../../main/power-activity'
 import { getSharedCredentialStore } from '../../main/secret-store'
 import { createWorkspaceRegistryService } from '../../main/workspace-registry-service'
 import { createWorkspaceRegistryStore } from '../../main/workspace-registry-store'
+import { readRepositoryIdentity } from '../../main/repository-identity'
+import { createStudioWorkspaceList } from '../workspaces/studio-workspace-list'
+import { createStudioWorkspaceReads } from '../workspaces/studio-workspace-reads'
+import { createStudioCliRuntimes } from './studio-cli-runtimes'
+import { createWorkspaceExtensionsReader } from './workspace-extensions-reader'
 import { createWorkspaceSyncService } from '../../main/workspace-sync-service'
 import { startWorkspaceStoreMigration } from '../../main/workspace-store-migration'
 import { invalidateCliAvailabilityOnHost, knownCliAvailability } from '../../main/cli-availability'
@@ -131,7 +136,9 @@ import { createWslMachineAccess, followCliPathsChanged } from '../wsl/wsl-machin
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { openDataDirDatabase, takeDataDir } from './take-data-dir'
-import { chatKey, moveChatStatements } from '../db/chat-logs'
+import { chatKey } from '../db/chat-logs'
+import { setHandoverExportsAside, sweepDataFolder } from './data-folder-sweep'
+import { beginChatMoveStatements, endChatMove, settleInterruptedChatMoves, undoChatMoveStatements } from './chat-moves'
 import { createSnapshotStorage } from '../db/snapshot-storage'
 import { conversationStorageSegment } from '../../main/conversation-index'
 import { workspaceStorePath } from '../../main/workspace-store'
@@ -142,7 +149,6 @@ import { createStudioScheduledAgents } from './studio-scheduled-agents'
 import { keptImagesIn } from '../../main/scheduled-agents/prompt-images'
 import { createEnvironmentReadiness } from '../environment/environment-readiness'
 import { sharedGhRunner } from '../../main/github/gh'
-import { createPullRequestChatFolders } from '../pull-requests/pull-request-chat-folders'
 import { createStudioScheduledMessages, studioHeldMessages, studioScheduledSends } from './studio-scheduled-messages'
 import { AGENT_COMPACT_ORIGIN, createStudioAutoCompact, sendStudioCompaction } from './studio-auto-compact'
 import { createConversationSelfCompact } from '../../main/automation/conversation-self-compact'
@@ -287,6 +293,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // Opened once the data is in this build's format, before any store is
   // built; refused, in words, when it is damaged or cannot be kept there.
   const database = openDataDirDatabase(dataDir, dataDirLock)
+  // The last run's hand-over exports, put aside before this run can write any (data-folder-sweep.ts).
+  if (dataDirLock) setHandoverExportsAside(dataDir)
   // Extensions' approvals are read by the folder's path wherever they are checked.
   const stopKeepingApprovals = keepExtensionApprovalsIn(dataDir, database)
 
@@ -482,6 +490,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // core's in every mode, beside the agents that work in the slots.
   const worktrees = createStudioWorktreePool({
     platform,
+    database,
     workspaceRegistry,
     workspaceSyncService,
     // Read when a step asks, long after `conversations` below is set.
@@ -561,10 +570,27 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // The turns the last run left open end now, in their chats' logs, rather
   // than when someone next opens each chat; never by a process running
   // without its lock. (A server this one took over has exited by now.)
+  // First, a chat move a crash cut short is finished (chat-moves.ts), so the
+  // history read after it is under the project its record names.
   if (dataDirLock)
-    void conversationRuntime.recoverInterruptedTurns().catch((error: unknown) => {
-      console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
+    void settleInterruptedChatMoves({
+      database,
+      folderOf: (workspaceId) => workspaceRegistry.getRecord(workspaceId)?.folderPath?.trim() || null,
+      moveFolder: moveConversationStorage,
+      log: (message) => {
+        void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Conversation move', message })
+      },
     })
+      .catch((error: unknown) => {
+        console.warn(
+          '[studio-core] chat moves cut short could not be read:',
+          error instanceof Error ? error.message : error,
+        )
+      })
+      .then(() => conversationRuntime.recoverInterruptedTurns())
+      .catch((error: unknown) => {
+        console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
+      })
   // Every chat's history from before the database, imported in the
   // background one chat at a time, so the first start opens at once and a
   // chat opened meanwhile is imported as it is opened (owner decision
@@ -835,6 +861,13 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     imagesRoot: join(dataDir, FIRST_MESSAGE_IMAGES_DIRNAME),
     warn: (message) => void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'New chats', message }),
   })
+  // What nothing points at any more, removed in the background once per start.
+  if (dataDirLock)
+    void sweepDataFolder({
+      dataDir,
+      firstMessages,
+      log: (message) => void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Data folder', message }),
+    })
   const conversationLaunchService = createConversationLaunchService({
     firstMessages,
     extensionHooks,
@@ -949,20 +982,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // (`pull_request.watch`) wakes its chat through the same send a resume
   // after a usage limit takes, marked as Studio's (studio-pull-request-wakes.ts).
   const pullRequests = createPullRequestDomain({
-    dataDir,
+    database,
     conversations,
     wakes: studioPullRequestWakes({
       conversations,
       workspaceRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
       workspaceRemoved: (workspaceId) => isWorkspaceTombstoned(workspaceRegistry.getTombstones(), workspaceId),
-      // A WSL distribution's server and an SSH machine's hold no record of
-      // their chats: a watched one's folder is kept here for its wakes.
-      chatFolders: createPullRequestChatFolders({
-        dataDir,
-        log: (message) => {
-          void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Pull request watch', message })
-        },
-      }),
       // Called only once a wake goes, long after the core is composed.
       createHost: (hostOptions) => createConversationHost(hostOptions),
       log: (message) => {
@@ -1190,7 +1215,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       workspaceSyncService.renameWorkspace(workspaceId, name, true, actor, Date.now()),
     isWorking: chatWorking,
     // A window's own Settle and Snooze: an agent at work, not one waiting on the person.
-    isBusy: (workspaceId) => settlement.isBusy(workspaceId),
     onlyTurnOf: onlyOwnTurn,
     messageWaiting: messageWaitingIn,
     log: (message) => {
@@ -1233,20 +1257,32 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       for (const session of live) await conversations.stopSession({ sessionId: session.sessionId })
       await conversationRuntime.flushTranscripts()
     },
-    // The chat's rows go with its store folder: renamed to the new store's in one transaction, then its files.
+    // The chat's rows go with its store folder: renamed to the new store's in
+    // one transaction that notes the move, then its files; the note goes once
+    // the record is written (chat-moves.ts).
     moveStorage: async (workspaceId, fromFolder, toFolder) => {
       const segment = conversationStorageSegment(workspaceId)
-      const from = chatKey(workspaceStorePath(fromFolder, 'conversations', segment))
-      const to = chatKey(workspaceStorePath(toFolder, 'conversations', segment))
-      if (from === to) return
+      const move = {
+        workspaceId,
+        fromFolder,
+        toFolder,
+        fromKey: chatKey(workspaceStorePath(fromFolder, 'conversations', segment)),
+        toKey: chatKey(workspaceStorePath(toFolder, 'conversations', segment)),
+      }
+      if (move.fromKey === move.toKey) return
       // A store that already holds rows of this chat refuses the rename (its keys), and nothing moves.
-      await database.batch(moveChatStatements(from, to))
+      await database.batch(beginChatMoveStatements(move))
       try {
         await moveConversationStorage(workspaceId, fromFolder, toFolder)
       } catch (error) {
-        await database.batch(moveChatStatements(to, from))
+        await database.batch(undoChatMoveStatements(move))
         throw error
       }
+    },
+    // Once the record with the new folder is committed, not merely asked for.
+    moveSettled: async (workspaceId) => {
+      await workspaceSyncService.whenWritten()
+      await endChatMove(database, workspaceId)
     },
     log: (message) => {
       void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Conversation move', message })
@@ -1928,6 +1964,44 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     hosts,
     workspaceRegistry,
     workspaceSyncService,
+    /**
+     * The chats this Studio holds, as `workspaces.list` and the gateway's
+     * `workspace.list` answer them: from its own records, in every mode.
+     */
+    workspaceList: createStudioWorkspaceList({
+      snapshot: () => workspaceSyncService.getSnapshot(),
+      readRepositoryIdentity: (folderPath) => readRepositoryIdentity(folderPath),
+      projectUsage: () => agentLaunchSettings.get().projectUsage,
+    }),
+    /**
+     * A project's checkout and what a chat in it can use, as
+     * `workspaces.checkout` / `workspaces.extensions` and the gateway's
+     * `workspace.checkout` / `workspace.extensions` answer them: read where
+     * the folder is, in every mode.
+     */
+    workspaceReads: createStudioWorkspaceReads({
+      snapshot: () => workspaceSyncService.getSnapshot(),
+      readExtensions: createWorkspaceExtensionsReader({
+        listWorkspaceSkills: (input) => agents.skills.workspaceSkills.listWorkspaceSkills(input),
+        agentCapabilities: (input) => agents.skills.agentCapabilities.resolve(input),
+        listSources: () => agents.skills.skills.listSources(),
+      }),
+    }),
+    /**
+     * The agent CLIs this Studio runs, as `cliRuntimes.list` and the gateway's
+     * `cli.runtime.list` answer them: its plugins, with what its own model
+     * picker offers for each, in every mode.
+     */
+    cliRuntimes: createStudioCliRuntimes({
+      listPlugins: () => getPluginRegistry().loaded(),
+      // The model picker's sources, read where the picker's are: the
+      // discovery cache under this Studio's data, and the person's own ids.
+      readCliModelSources: async () => ({
+        discovered: await readDiscoveredCliModelCatalogs().catch(() => ({})),
+        userModels: (cli) => agentLaunchSettings.get().cliRuntimes[cli]?.models,
+        removedModels: (cli) => agentLaunchSettings.get().cliRuntimes[cli]?.removedModels,
+      }),
+    }),
     conversations,
     conversationOwner,
     subagents,

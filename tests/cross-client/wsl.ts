@@ -25,6 +25,17 @@ import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER, type GateClient } from './client'
 import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
+import {
+  agentTidyReadsBack,
+  listedAtItsAddress,
+  markReadsBack,
+  settleReadsBack,
+  staleSettleRefused,
+  type ListReach,
+} from './list'
+import { agentCreatesThere, desktopAgentReaching, type DesktopAgent } from './agent-by-address'
+import { linkTo, openedByLink } from './open'
+import { agentDiscoveredThere, discoveredThere } from './discover'
 
 // A WSL distribution, as far as a machine without WSL can show one: `sh`
 // stands in for `wsl.exe`, in a home of the distribution's own with the pinned
@@ -159,15 +170,15 @@ async function agentSession(socketPath: string) {
   })
   let id = 0
   return {
-    /** The answer, or null when none comes within a second (a connect that binds answers none). */
-    call: (method: string, params: Record<string, unknown> = {}) =>
+    /** The answer, or null when none comes within `ms` (a connect that binds answers none). */
+    call: (method: string, params: Record<string, unknown> = {}, ms = 1_000) =>
       Promise.race([
         new Promise<Record<string, any>>((resolve) => {
           const next = ++id
           waiting.set(next, resolve)
           socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: next, method, params })}\n`)
         }),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1_000)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
       ]),
     close: () => socket.end(),
   }
@@ -270,6 +281,15 @@ export async function runWslLeg(input: {
     return routeStudioClient(await windowClient, ROUTE)
   }
   const parts = createStudioConversationParts(windowStudio)
+  // An agent on the desktop, its gateway reaching the machine on the window's client (agent-by-address.ts).
+  const byDesktopAgent = async (work: (agent: DesktopAgent) => Promise<void>) => {
+    const agent = await desktopAgentReaching({ who: DISTRO, route: ROUTE, client: windowStudio })
+    try {
+      await work(agent)
+    } finally {
+      await agent.close()
+    }
+  }
   // The chat as the window names it: its folder spelled as Windows opens it.
   const key = { workspaceRoot: spelling.fromMachine(repo), workspaceId: 'w-wsl', agentId: 'wsl-chat' }
   const feed = new Feed('wsl')
@@ -314,6 +334,8 @@ export async function runWslLeg(input: {
       sessionId = await newChatThere({ leg: 'wsl', label: DISTRO, client, parts, key })
       stopFollowing = followChat(parts, key, feed)
       await feed.until((each) => each.syncs > 0, 'the chat followed', 30_000)
+      // An agent on the desktop starts one in the same project by the machine's environment id.
+      await byDesktopAgent((agent) => agentCreatesThere(agent, key.workspaceId))
     })
 
     const first = 'turn in WSL'
@@ -466,6 +488,49 @@ export async function runWslLeg(input: {
         await third.sent
         if (!(await bound({ workspaceId: key.workspaceId, agentId: 'wsl-terminal-2' }, live.token, third.token)))
           throw new Error('wsl: the restarted server was not told the live launch token')
+      }
+    })
+
+    // list: the window, the client every desktop reaches the distribution by, sees the
+    // chat at its address with its row's facts; a star and a settle asked
+    // there read back in its list.
+    await matrix.run('wsl', 'list', async () => {
+      const window: ListReach = { who: 'wsl', ask: async (work) => work(await windowStudio()) }
+      await listedAtItsAddress([window], key.workspaceId)
+      await markReadsBack(window, [window], key.workspaceId)
+      await staleSettleRefused(window, [window], key.workspaceId)
+      await settleReadsBack(window, [window], key.workspaceId)
+      // An agent on the desktop unstars and brings it back by its address: the machine's record moves.
+      await byDesktopAgent((agent) => agentTidyReadsBack(agent, [window], key.workspaceId))
+    })
+
+    // open: the window is handed the chat's link and opens it on the Studio it names.
+    await matrix.run('wsl', 'open', async () => {
+      const window: ListReach = { who: 'wsl', ask: async (work) => work(await windowStudio()) }
+      await openedByLink('wsl', [window], await linkTo(window, key.workspaceId, key.agentId))
+    })
+
+    // discover: the window reads what New chat offers there of the
+    // distribution's own Studio, the project's checkout read by its git.
+    // An agent in the distribution asks its own Studio's gateway the same,
+    // and hears the distribution's answer, not the desktop's.
+    await matrix.run('wsl', 'discover', async () => {
+      await discoveredThere('wsl', await windowStudio(), key.workspaceId, { git: true })
+      const connection = manager.current(DISTRO)
+      if (!connection) throw new Error('wsl: the server is not running')
+      const { socketPath } = JSON.parse(
+        readFileSync(join(connection.dataDir, 'sprintengine-studio-mcp-info.json'), 'utf8'),
+      ) as { socketPath: string }
+      const session = await agentSession(socketPath)
+      try {
+        await agentDiscoveredThere(
+          'wsl',
+          (name, args) => session.call('tools/call', { name, arguments: args }, 15_000),
+          key.workspaceId,
+          { git: true },
+        )
+      } finally {
+        session.close()
       }
     })
 

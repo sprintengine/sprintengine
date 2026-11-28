@@ -154,11 +154,16 @@ test('a chat opened here from a paired machine wears the marks its machine lists
     }),
     'conversation.visit': () => ({ lastVisitedAt: Date.now() }),
   })
+  // The window follows the machine it is paired with (`useFollowWindowEnvironments`).
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
 
   const React = await import('react')
   const { act } = React
   const { createRoot } = await import('react-dom/client')
   const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+  // This computer's chats are the rows its own Studio lists.
+  const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
   const { useWorkspaceStore } = await import('../../store/workspaceStore')
   useWorkspaceStore.setState({ chatListView: 'projects', recordWorkspaceVisit: () => undefined } as never)
 
@@ -239,16 +244,33 @@ test('a chat opened here from a paired machine wears the marks its machine lists
   }
   const render = async (): Promise<void> => {
     act(() => {
+      serveWindowChats(window.api, props.workspaces)
       root.render(React.createElement(WorkspaceSidebar, props))
     })
     await settle()
   }
+  // A record here of a chat over there is not a row: the chat's own row, at
+  // its address, is (before the machine has said its id, its route and the
+  // chat's id). Each is named here by the record that holds it; the stopped
+  // chat, which no record here holds, by a name of its own.
+  const addressOf: Record<string, string> = {
+    'w-approval': 'tailnet:c1:rw1',
+    'w-working': 'tailnet:c1:rw2',
+    'w-done': 'tailnet:c1:rw3',
+    'w-stopped': 'tailnet:c1:rw4',
+    'w-renamed': 'tailnet:c1:rw5',
+  }
+  const recordOf = new Map(Object.entries(addressOf).map(([id, key]) => [key, id]))
   const rowOf = (id: string) =>
-    container.querySelector<HTMLElement>(`[role="treeitem"][data-workspace-id="${id}"]`) ?? undefined
+    container.querySelector<HTMLElement>(
+      addressOf[id]
+        ? `[role="treeitem"][data-remote-conversation="${addressOf[id]}"]`
+        : `[role="treeitem"][data-workspace-id="${id}"]`,
+    ) ?? undefined
   const idsIn = (scope: Element | null) =>
-    [...(scope?.querySelectorAll<HTMLElement>('[role="treeitem"][data-workspace-id]') ?? [])].map(
-      (row) => row.dataset.workspaceId,
-    )
+    [...(scope?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [])]
+      .map((row) => row.dataset.workspaceId ?? recordOf.get(row.dataset.remoteConversation ?? ''))
+      .filter((id) => id !== undefined)
 
   try {
     await render()
@@ -268,8 +290,8 @@ test('a chat opened here from a paired machine wears the marks its machine lists
     assert.ok(list, 'the by-status list is drawn')
     assert.deepEqual(
       idsIn(list).filter((id) => id !== 'w-working'),
-      ['w-approval', 'w-done', 'w1', 'w-renamed'],
-      'waiting first, then the unseen finish, then the newer idle chat',
+      ['w-approval', 'w-stopped', 'w-done', 'w1', 'w-renamed'],
+      'waiting first (a failed turn waits on the person too), then the unseen finish, then the newer idle chat',
     )
     const titles = [...list.querySelectorAll<HTMLElement>('[role="treeitem"]')].map((row) => row.textContent ?? '')
     const stopped = titles.findIndex((text) => text.includes('Stopped by an error'))
@@ -301,6 +323,7 @@ test('a chat opened here from a paired machine wears the marks its machine lists
     // The chat in front is sorted with the rest, and not lost in a closed fold.
     const front = { ...props, activeWorkspaceId: 'w-working' } as SidebarProps
     act(() => {
+      serveWindowChats(window.api, front.workspaces)
       root.render(React.createElement(WorkspaceSidebar, front))
     })
     await settle()
@@ -321,5 +344,6 @@ test('a chat opened here from a paired machine wears the marks its machine lists
       root.unmount()
     })
     useWorkspaceStore.setState({ chatListView: 'projects' } as never)
+    followEnvironmentChats([])
   }
 })

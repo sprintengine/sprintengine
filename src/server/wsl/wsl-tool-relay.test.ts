@@ -195,7 +195,7 @@ test('in process, a WSL server is offered all six of the shell’s toolsets, tho
     assert.ok(wire.includes(name), name)
 })
 
-test('the Windows side’s own families go too, but for the conversation the WSL server serves and remote control', async () => {
+test('the Windows side’s own families go too, but for those the WSL server serves of its own machine and remote control', async () => {
   const parts = desktopToolParts()
   const review: McpToolRegistration = {
     name: 'review_list_pending',
@@ -207,28 +207,22 @@ test('the Windows side’s own families go too, but for the conversation the WSL
     [],
     [...parts.core, ...parts.automation, ...parts.extension, ...parts.tailnet, review],
   )
+  // Not `workspace` or `cli`: the WSL server answers those about its own
+  // machine, its workspaces and the CLIs it runs.
   assert.deepEqual(offers.map((offer) => offer.name).sort(), [
     'agent',
     'backlog',
-    'cli',
     'extension',
     'marketplace',
     'review',
     'schedule',
     'terminal',
-    'workspace',
   ])
   const extension = offers.find((offer) => offer.name === 'extension')!
   assert.deepEqual(
     extension.tools.map((tool) => tool.name).sort(),
     ['list', 'status'],
     'what runs on Windows is read from WSL; making an extension project on its disk is not offered there',
-  )
-  const cli = offers.find((offer) => offer.name === 'cli')!
-  assert.deepEqual(
-    cli.tools.map((tool) => tool.name),
-    ['runtime_list'],
-    'a second dot crosses as an underscore: an agent reads cli_runtime_list either way',
   )
   const reviews = offers.find((offer) => offer.name === 'review')!
   assert.deepEqual(
@@ -254,7 +248,7 @@ test("a call to one of the Windows side's own tools runs its handler as the WSL 
   })
   const { offers, calls } = await relayed(
     [definition('browser', 'navigate')],
-    [own('editor.open'), own('workspace.create'), own('cli.runtime.list')],
+    [own('editor.open'), own('schedule.run.now'), own('workspace.create'), own('cli.runtime.list')],
   )
   const handler = (toolset: string, tool: string) =>
     offers.find((offer) => offer.name === toolset)!.tools.find((entry) => entry.name === tool)!.handler
@@ -265,13 +259,15 @@ test("a call to one of the Windows side's own tools runs its handler as the WSL 
     args: { files: [{ path: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo\\a.ts' }] },
     metadata: { kind: 'studio-agent', workspaceId: 'ws-1', agentId: 'a1', cliId: 'claude-code' },
   })
-  await handler('workspace', 'create')({ folderPath: '/mnt/c/Users/dev/repo' }, agentCall('workspace', 'create'))
-  assert.deepEqual(seen[1].args, { folderPath: 'C:\\Users\\dev\\repo' })
-  const refused = await handler('workspace', 'create')({ folderPath: '~/repo' }, agentCall('workspace', 'create'))
-  assert.match(JSON.stringify(refused), /invalid_path/u)
-  await handler('cli', 'runtime_list')({}, agentCall('cli', 'runtime_list'))
-  assert.equal(seen.at(-1)?.name, 'cli.runtime.list', 'the call reaches the tool by its own name')
+  // A second dot crosses as an underscore, and the call reaches the tool by its own name.
+  await handler('schedule', 'run_now')({}, agentCall('schedule', 'run_now'))
+  assert.equal(seen.at(-1)?.name, 'schedule.run.now', 'the call reaches the tool by its own name')
   assert.equal(calls.length, 0, 'none of them went through the registry, which holds only the shell’s')
+  assert.deepEqual(
+    offers.map((offer) => offer.name).filter((name) => name === 'workspace' || name === 'cli'),
+    [],
+    'a WSL agent’s workspaces and CLIs are its own machine’s, never relayed from Windows',
+  )
 })
 
 test("an editor call's Linux paths open on Windows, and a ~ path is refused in words", () => {

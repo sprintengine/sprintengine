@@ -50,6 +50,8 @@ import { ModulesSettingsTab } from './ModulesSettingsTab'
 import { ProviderSettingsTab } from './ProviderSettingsTab'
 import { MachinesSettingsTab } from './MachinesSettingsTab'
 import { SettledChatsSettingsTab } from './SettledChatsSettingsTab'
+import { requestEnvironmentChatOpen } from '../workspace/remoteBand/environmentChatOpenRequest'
+import type { RemoteSessionOpenSpec } from '../workspace/remoteBand/remoteSessionsModel'
 import { WorktreesSettingsTab } from './WorktreesSettingsTab'
 import { ArtifactsSettingsTab } from './ArtifactsSettingsTab'
 import { AgentClisSection, AgentsMachineSwitcher, useAgentCliRuns } from './AgentClisSection'
@@ -688,6 +690,15 @@ export default function SettingsPanel({
       onClose()
     },
     [setActiveWorkspace, onClose],
+  )
+  // Another environment's settled chat opens where it is, by the opener the
+  // sidebar's rows use (a window event: Settings has no path to it).
+  const openSettledEnvironmentChat = useCallback(
+    (spec: RemoteSessionOpenSpec) => {
+      requestEnvironmentChatOpen(spec)
+      onClose()
+    },
+    [onClose],
   )
   const cliRuntimes = useWorkspaceStore((s) => s.appSettings.cliRuntimes)
   const pluginCatalogEntries = useWorkspaceStore((s) => s.pluginCatalogEntries)
@@ -1598,7 +1609,9 @@ export default function SettingsPanel({
 
       {activeSettingsTab === 'shortcuts' ? <KeyboardShortcutsTab /> : null}
 
-      {activeSettingsTab === 'settled-chats' ? <SettledChatsSettingsTab onOpenChat={openSettledChat} /> : null}
+      {activeSettingsTab === 'settled-chats' ? (
+        <SettledChatsSettingsTab onOpenChat={openSettledChat} onOpenEnvironmentChat={openSettledEnvironmentChat} />
+      ) : null}
 
       {activeSettingsTab === 'worktrees' ? <WorktreesSettingsTab onOpenChat={openSettledChat} /> : null}
 

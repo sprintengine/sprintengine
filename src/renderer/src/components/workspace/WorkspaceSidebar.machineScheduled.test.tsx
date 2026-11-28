@@ -123,6 +123,33 @@ test('WorkspaceSidebar.machineScheduled', async () => {
             ],
             pausedAll: null,
           },
+    // The box lists its chat, of which this window keeps a copy (below).
+    'workspaces.list': (_params, connectionId) => ({
+      workspaces:
+        connectionId === 'ssh:m1'
+          ? [{ id: 'w-box', name: 'On the box', mode: 'standard', folderPath: '/home/dev/proj', repository: null }]
+          : [],
+    }),
+    'conversation.list': (_params, connectionId) => ({
+      conversations:
+        connectionId === 'ssh:m1'
+          ? [
+              {
+                workspaceId: 'w-box',
+                agentId: 'agent-1',
+                title: 'Agent one',
+                chatTitle: 'On the box',
+                phase: 'completed',
+                updatedAt: createdAt,
+                createdAt,
+                providerId: 'claude-agent',
+                modelId: 'opus',
+                turnCount: 1,
+                lastSeq: 2,
+              },
+            ]
+          : [],
+    }),
     'schedules.runNow': () => ({ workspaceId: 'run-1' }),
     'schedules.pauseAll': (params) => ({ pausedAll: { since: createdAt, until: params.until } }),
   })
@@ -132,6 +159,8 @@ test('WorkspaceSidebar.machineScheduled', async () => {
   const { act } = React
   const { createRoot } = await import('react-dom/client')
   const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+  // This computer's chats are the rows its own Studio lists.
+  const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
   const { useWorkspaceStore } = await import('../../store/workspaceStore')
   useWorkspaceStore.setState({ chatListView: 'projects' })
   type SidebarProps = Parameters<typeof WorkspaceSidebar>[0]
@@ -150,7 +179,8 @@ test('WorkspaceSidebar.machineScheduled', async () => {
   followEnvironmentChats([{ route: 'ssh:m1', name: 'dev@build-box' }])
 
   const noop = () => {}
-  const opened: Array<[string, string]> = []
+  const opened: Array<{ route: string | null; id: string }> = []
+  const newChatFolders: string[] = []
   const props = {
     workspaces,
     workspaceWindowId: 'win1',
@@ -166,10 +196,10 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     onMoveWorkspaceToMainWindow: noop,
     onForgetFolder: noop,
     onNewChat: noop,
-    onNewChatInFolder: noop,
+    onNewChatInFolder: (folder: string) => newChatFolders.push(folder),
     onRevealFolder: noop,
-    onOpenScheduledAgent: noop,
-    onOpenRemoteScheduledAgent: (route: string, id: string) => opened.push([route, id]),
+    // One opener for every machine's schedules, by the machine's route.
+    onOpenScheduledAgent: (agent: { route: string | null; id: string }) => opened.push(agent),
     onSetSidebarCollapsed: noop,
     sidebarWidth: 260,
     onSetSidebarWidth: noop,
@@ -198,6 +228,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
 
   try {
     act(() => {
+      serveWindowChats(window.api, props.workspaces)
       root.render(React.createElement(WorkspaceSidebar, props))
     })
     await settle()
@@ -285,7 +316,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     await settle()
     assert.ok(opened.length > 0, 'it opens')
     assert.ok(
-      opened.every(([route, id]) => route === 'ssh:m1' && id === 'sa-box'),
+      opened.every(({ route, id }) => route === 'ssh:m1' && id === 'sa-box'),
       'opened on its machine, by its route',
     )
 
@@ -368,6 +399,24 @@ test('WorkspaceSidebar.machineScheduled', async () => {
       scheduledRows().some((row) => row.dataset.scheduledAgent === 'sa-box'),
       'and its schedules are listed from that read',
     )
+
+    // The box's chat is its row by address, not the copy's; New chat in
+    // project opens in the copy's folder there, as the copy's own row did.
+    const chatRow = [...container.querySelectorAll<HTMLElement>('[data-remote-conversation]')].find((candidate) =>
+      (candidate.textContent ?? '').includes('On the box'),
+    )
+    assert.ok(chatRow, 'the box’s chat is a row')
+    act(() => {
+      chatRow.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }))
+    })
+    const newChat = [...dom.window.document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')].find(
+      (item) => (item.textContent ?? '').trim().startsWith('New chat in project'),
+    )
+    assert.ok(newChat, 'its menu offers New chat in project')
+    act(() => {
+      newChat.click()
+    })
+    assert.deepEqual(newChatFolders, ['ssh://m1/home/dev/proj'])
   } finally {
     act(() => {
       root.unmount()

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { createStudioWorkspaceList } from '../server/workspaces/studio-workspace-list'
+import { createWorkspaceTools, type WorkspaceToolsDeps } from '../server/workspaces/workspace-tools'
 import { test } from 'vitest'
 
 import type { TerminalSessionSnapshot } from '../shared/electron-api'
@@ -136,7 +138,18 @@ function host() {
     resolveAgentPermissionPreset: () => null,
     sleep: async () => {},
   }
-  const tools = createAutomationTools(backends as AutomationBackends)
+  // `workspace.list`: every Studio's own tool, over the core's list.
+  const workspaceDeps: Partial<WorkspaceToolsDeps> = {
+    getWorkspaceSyncSnapshot: () => workspaceSync.getSnapshot(),
+    listWorkspaces: createStudioWorkspaceList({
+      snapshot: () => workspaceSync.getSnapshot(),
+      readRepositoryIdentity: async () => null,
+    }).list,
+  }
+  const tools = [
+    ...createAutomationTools(backends as AutomationBackends),
+    ...createWorkspaceTools(workspaceDeps as WorkspaceToolsDeps),
+  ]
 
   return { registry, workspaceSync, announced, sessions, kills, registration, launchService, tools, workspaceId }
 }

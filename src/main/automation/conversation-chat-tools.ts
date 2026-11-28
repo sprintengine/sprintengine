@@ -19,12 +19,20 @@ import {
 } from '../../shared/conversation/phase'
 import type { ConversationCommand } from '../../../packages/conversation-protocol/src/public'
 import type { ConversationGatewayCommandResult } from '../../server/core/conversation-host'
+import { parseChatLink } from '../../../packages/studio-protocol/src/chat-link'
+import { parseChatAddress } from '../../../packages/studio-protocol/src/environment'
 import { launchPermissionCeiling, refuseDrivingLooserChat, type AgentPermissionResolver } from './launch-permission-cap'
 
 // One chat's agent driving another chat on this machine: sending it a message,
 // reading what was said in it, waiting on it, and stopping it. The person does
 // the same by hand, moving between chats; an agent orchestrating several
 // pieces of work needs it without a person in between.
+//
+// A chat is named by its address or its link, wherever it is: this Studio's
+// own, or one on an SSH machine or a WSL distribution this computer reaches,
+// asked of that environment's Studio (`find`); or, on this machine, by its
+// workspace id. A paired desktop's chat is not reached from here: the server
+// that runs these tools holds no owner connection to a paired desktop.
 //
 // A send goes through the chat's normal send path, the one a paired device's
 // send takes (src/server/core/conversation-host.ts): it resumes a chat at rest, holds
@@ -62,34 +70,52 @@ const ID = /^[\w.:-]{1,200}$/
 const WAIT_CONDITIONS = ['idle', 'needs_input', 'finished'] as const
 type WaitCondition = (typeof WAIT_CONDITIONS)[number]
 
-/** What the tools need of this machine's chats. */
+/**
+ * A chat a tool names: the environment that holds it (null for this Studio's
+ * own) and its id there, the one its address and its link carry.
+ */
+export type ChatRef = { environmentId: string | null; chatId: string }
+
+/** A chat, found on the environment that holds it. */
+export type FoundChat = {
+  /** The route of the environment that holds it, or null for this Studio's own. */
+  route: string | null
+  workspaceId: string
+  /** Its chat agents. */
+  agents: string[]
+  /** Its name, as its row shows it. */
+  title: string | null
+  /** One agent's folder-qualified key there, or null when the chat has no folder. */
+  keyOf(agentId: string): ConversationKey | null
+}
+
+/** One agent's conversation, where it lives: every call on it goes to that environment. */
+export type ChatTarget = { route: string | null; key: ConversationKey }
+
+/** What the tools need of the chats this machine holds or reaches. */
 export type ConversationChatControl = {
-  /** The chat agents a workspace holds, or null for a workspace this machine does not have. */
-  chatAgentsOf(workspaceId: string): string[] | null
-  /** The chat's folder-qualified key, or null when it has no folder here. */
-  resolveKey(workspaceId: string, agentId: string): ConversationKey | null
-  /** The chat's name, as its sidebar row shows it. */
-  chatTitle(workspaceId: string): string | undefined
   /**
-   * The chat's live (or resting) session, if it has one. Asked of the
-   * environment that holds the chat, so it may be answered later.
+   * The chat a ref names, asked of the environment that holds it: this
+   * Studio's own, or another this computer reaches. Refused in words for one
+   * not there, or on an environment it cannot reach.
    */
-  session(
-    workspaceId: string,
-    agentId: string,
-  ): ConversationSessionSummary | undefined | Promise<ConversationSessionSummary | undefined>
+  find(chat: ChatRef): Promise<{ ok: true; chat: FoundChat } | { ok: false; code: string; message: string }>
+  /** The name of a chat this Studio holds, as its sidebar row shows it: the caller's own. */
+  chatTitle(workspaceId: string): string | undefined
+  /** The chat's live (or resting) session, if it has one, asked of the environment that holds it. */
+  session(target: ChatTarget): ConversationSessionSummary | undefined | Promise<ConversationSessionSummary | undefined>
   /** The preset the chat runs on now, or would resume on. */
-  permissionOf(key: ConversationKey): ConversationPermissionPreset | Promise<ConversationPermissionPreset>
+  permissionOf(target: ChatTarget): ConversationPermissionPreset | Promise<ConversationPermissionPreset>
   /** Carry out one command as a paired device's would be: resuming, holding, steering. */
   command(
-    key: ConversationKey,
+    target: ChatTarget,
     clientId: string,
     commandId: string,
     command: ConversationCommand,
   ): Promise<ConversationGatewayCommandResult>
   /** The newest `turns` turns, or the ones that end just before `before`. */
   readPage(
-    key: ConversationKey,
+    target: ChatTarget,
     page: { before?: number; turns: number },
   ): Promise<
     { ok: true; events: ConversationEvent[]; hasMore: boolean; before: number | null } | { ok: false; message: string }
@@ -116,45 +142,87 @@ export type ConversationChatToolsDeps = {
   }) => Promise<{ ok: true; message: string } | { ok: false; message: string }> | null
 }
 
-type Target = { key: ConversationKey; workspaceId: string; agentId: string }
+type Target = ChatTarget & { workspaceId: string; agentId: string; title: string | null }
 
-function targetSchema(): Record<string, unknown> {
+/** The `chat` and `workspaceId` members every tool that names one chat takes (`chatRefOf` reads them). */
+export function chatRefSchema(): Record<string, unknown> {
   return {
-    workspaceId: { type: 'string', description: "The chat's workspace id, from workspace.list." },
-    agentId: {
+    chat: {
       type: 'string',
-      description: "Which of the workspace's chat agents; may be left out when the workspace has only one.",
+      description:
+        "The chat's address, `<environmentId>:<chatId>`, or its link, `sprintengine://chat/<environmentId>/<chatId>` " +
+        '(what dragging a chat into the composer writes). It may be on this machine or on an SSH machine or WSL ' +
+        'distribution this computer reaches. Give this or `workspaceId`.',
+    },
+    workspaceId: {
+      type: 'string',
+      description: 'A chat on this machine, by its workspace id from workspace.list. Give this or `chat`.',
     },
   }
 }
 
-function resolveTarget(
+function targetSchema(): Record<string, unknown> {
+  return {
+    ...chatRefSchema(),
+    agentId: {
+      type: 'string',
+      description: "Which of the chat's agents; may be left out when it has only one, or when a link names one.",
+    },
+  }
+}
+
+/** The chat the arguments name, by `chat` (an address or a link) or by `workspaceId` (one on this machine). */
+export function chatRefOf(
+  args: Record<string, unknown>,
+): { ok: true; ref: ChatRef; agentId: string | null } | { ok: false; code: string; message: string } {
+  const invalid = (message: string) => ({ ok: false as const, code: 'invalid_arguments', message })
+  if (args.chat !== undefined && args.workspaceId !== undefined)
+    return invalid('Name the chat by "chat" or by "workspaceId", not both.')
+  if (args.chat !== undefined) {
+    const chat = typeof args.chat === 'string' ? args.chat.trim() : ''
+    const link = parseChatLink(chat)
+    if (link)
+      return { ok: true, ref: { environmentId: link.environmentId, chatId: link.chatId }, agentId: link.agentId }
+    const address = parseChatAddress(chat)
+    if (address) return { ok: true, ref: address, agentId: null }
+    return invalid(
+      '"chat" must be a chat\'s address (<environmentId>:<chatId>) or its link (sprintengine://chat/<environmentId>/<chatId>).',
+    )
+  }
+  const workspaceId = typeof args.workspaceId === 'string' ? args.workspaceId.trim() : ''
+  if (!ID.test(workspaceId)) return invalid('"chat" or "workspaceId" is required.')
+  return { ok: true, ref: { environmentId: null, chatId: workspaceId }, agentId: null }
+}
+
+async function resolveTarget(
   chats: ConversationChatControl,
   args: Record<string, unknown>,
-): { ok: true; target: Target } | { ok: false; code: string; message: string } {
-  const workspaceId = typeof args.workspaceId === 'string' ? args.workspaceId.trim() : ''
-  if (!ID.test(workspaceId)) return { ok: false, code: 'invalid_arguments', message: '"workspaceId" is required.' }
+): Promise<{ ok: true; target: Target } | { ok: false; code: string; message: string }> {
+  const named = chatRefOf(args)
+  if (!named.ok) return named
   if (args.agentId !== undefined && (typeof args.agentId !== 'string' || !ID.test(args.agentId.trim())))
     return { ok: false, code: 'invalid_arguments', message: '"agentId" must be an agent id when provided.' }
-  const agents = chats.chatAgentsOf(workspaceId)
-  if (!agents) return { ok: false, code: 'unknown_workspace', message: `No chat "${workspaceId}" on this machine.` }
-  let agentId = typeof args.agentId === 'string' ? args.agentId.trim() : undefined
+  const found = await chats.find(named.ref)
+  if (!found.ok) return found
+  const { chat } = found
+  const { workspaceId, agents } = chat
+  let agentId = typeof args.agentId === 'string' ? args.agentId.trim() : (named.agentId ?? undefined)
   if (agentId === undefined) {
     if (agents.length === 0)
-      return { ok: false, code: 'unknown_agent', message: `Workspace "${workspaceId}" has no chat agent.` }
+      return { ok: false, code: 'unknown_agent', message: `Chat "${workspaceId}" has no chat agent.` }
     if (agents.length > 1)
       return {
         ok: false,
         code: 'ambiguous',
-        message: `Workspace "${workspaceId}" has ${agents.length} chat agents (${agents.join(', ')}); name one as "agentId".`,
+        message: `Chat "${workspaceId}" has ${agents.length} chat agents (${agents.join(', ')}); name one as "agentId".`,
       }
     agentId = agents[0]!
   } else if (!agents.includes(agentId)) {
-    return { ok: false, code: 'unknown_agent', message: `Workspace "${workspaceId}" has no chat agent "${agentId}".` }
+    return { ok: false, code: 'unknown_agent', message: `Chat "${workspaceId}" has no chat agent "${agentId}".` }
   }
-  const key = chats.resolveKey(workspaceId, agentId)
-  if (!key) return { ok: false, code: 'unavailable', message: 'The chat has no folder on this machine.' }
-  return { ok: true, target: { key, workspaceId, agentId } }
+  const key = chat.keyOf(agentId)
+  if (!key) return { ok: false, code: 'unavailable', message: 'The chat has no folder there.' }
+  return { ok: true, target: { route: chat.route, key, workspaceId, agentId, title: chat.title } }
 }
 
 /** Whether the call comes from the agent of the chat it names: it cannot wait on or message its own turn. */
@@ -163,7 +231,8 @@ function isCallersOwnChat(context: McpConnectionContext | undefined, target: Tar
   return (
     metadata?.kind === 'studio-agent' &&
     metadata.agentId === target.agentId &&
-    metadata.workspaceId === target.workspaceId
+    metadata.workspaceId === target.workspaceId &&
+    target.route === null
   )
 }
 
@@ -233,7 +302,7 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
     {
       name: 'conversation.send',
       description:
-        "Send a message to another chat on this machine, as if it were typed into that chat's composer. " +
+        "Send a message to another chat, on this machine or one it reaches, as if it were typed into that chat's composer. " +
         '`mode` "queue" (the default) sends it now when the chat is not in a turn, and otherwise holds it here ' +
         'and sends it the moment the turn ends (kept across a restart). "steer" delivers it into the running ' +
         "turn where the chat's CLI takes a message mid-turn, and is queued otherwise. A chat at rest is resumed " +
@@ -248,7 +317,7 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
           message: { type: 'string', description: `The message, at most ${CHAT_SEND_MAX_CHARS} characters.` },
           mode: { type: 'string', enum: ['queue', 'steer'], description: 'How a message to a chat mid-turn goes.' },
         },
-        required: ['workspaceId', 'message'],
+        required: ['message'],
         additionalProperties: false,
       },
       handler: async (args, context) => {
@@ -258,13 +327,13 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
           return toolError('invalid_arguments', `"message" must be 1 to ${CHAT_SEND_MAX_CHARS} characters.`)
         if (args.mode !== undefined && args.mode !== 'queue' && args.mode !== 'steer')
           return toolError('invalid_arguments', '"mode" must be "queue" or "steer".')
-        const resolved = resolveTarget(chats, args)
+        const resolved = await resolveTarget(chats, args)
         if (!resolved.ok) return toolError(resolved.code, resolved.message)
         const { target } = resolved
         if (isCallersOwnChat(context, target))
           return toolError('own_chat', 'This is your own chat; a message to it would wait on the turn sending it.')
         const ceiling = launchPermissionCeiling(context, deps.resolveAgentPermissionPreset)
-        const refused = refuseDrivingLooserChat(await chats.permissionOf(target.key), ceiling)
+        const refused = refuseDrivingLooserChat(await chats.permissionOf(target), ceiling)
         if (refused) return toolError(refused.code, refused.message)
         let message = headedMessage(chats, context, args.message)
         const hooked = deps.promptHook?.({
@@ -278,11 +347,11 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
           if (!decided.ok) return toolError('refused_by_extension', decided.message)
           message = decided.message
         }
-        const working = chatStateOf(await chats.session(target.workspaceId, target.agentId))
+        const working = chatStateOf(await chats.session(target))
         const steer = args.mode === 'steer'
         const sentAt = (chats.now ?? Date.now)()
         const send = (hold: boolean) =>
-          chats.command(target.key, clientIdOf(context), randomUUID(), {
+          chats.command(target, clientIdOf(context), randomUUID(), {
             kind: 'send',
             message,
             ...(steer ? { steer: true as const } : hold ? { queue: true as const } : {}),
@@ -315,15 +384,14 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
     {
       name: 'conversation.read',
       description:
-        "Read what was said in a chat on this machine: the person's messages and the agent's replies as Export " +
+        "Read what was said in a chat, on this machine or one it reaches: the person's messages and the agent's replies as Export " +
         'chat writes them (no tool calls or their output), oldest first, each with `from` ("person" or ' +
         '"agent") and `at`. The newest `turns` turns by default; pass the answer\'s `before` back to page to ' +
         'earlier ones while `hasMore` is true. Inside `maxChars`, the newest messages are kept whole, one that ' +
         'does not fit is cut to its end (`cut`), and older ones are counted in `omitted`; ask for fewer turns ' +
         'to see them. `state` says whether the chat is working or waiting on a person. A chat link in a message ' +
-        '(`sprintengine://chat/<environmentId>/<id>`, what dragging a chat into the composer writes; older ones ' +
-        'are `sprintengine://chat/<id>`) names a chat: its last <id> is the `workspaceId`, here when the chat is ' +
-        'on this machine. Changes nothing.',
+        '(`sprintengine://chat/<environmentId>/<id>`, what dragging a chat into the composer writes) is passed ' +
+        'as `chat` as it is. Changes nothing.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -342,7 +410,6 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
             description: `How much text at most, ${CHAT_READ_DEFAULT_CHARS} by default.`,
           },
         },
-        required: ['workspaceId'],
         additionalProperties: false,
       },
       handler: async (args) => {
@@ -355,10 +422,10 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
         if (maxChars === null)
           return toolError('invalid_arguments', `"maxChars" must be 500 to ${CHAT_READ_MAX_CHARS}.`)
         if (before === null) return toolError('invalid_arguments', '"before" must be a cursor from an earlier read.')
-        const resolved = resolveTarget(chats, args)
+        const resolved = await resolveTarget(chats, args)
         if (!resolved.ok) return toolError(resolved.code, resolved.message)
         const { target } = resolved
-        const page = await chats.readPage(target.key, { turns, ...(before >= 0 ? { before } : {}) })
+        const page = await chats.readPage(target, { turns, ...(before >= 0 ? { before } : {}) })
         if (!page.ok) return toolError('unavailable', page.message)
         // Loaded with the read: the export's Markdown parser is not part of
         // every process that serves these tools (the server bundle's start).
@@ -368,8 +435,8 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
           ok: true,
           workspaceId: target.workspaceId,
           agentId: target.agentId,
-          title: chats.chatTitle(target.workspaceId) ?? null,
-          state: chatStateOf(await chats.session(target.workspaceId, target.agentId)),
+          title: target.title,
+          state: chatStateOf(await chats.session(target)),
           messages,
           omitted,
           hasMore: page.hasMore,
@@ -380,7 +447,7 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
     {
       name: 'conversation.wait',
       description:
-        'Wait on a chat on this machine until it reaches one of `until`: "idle" (not in a turn: it finished, ' +
+        'Wait on a chat, on this machine or one it reaches, until it reaches one of `until`: "idle" (not in a turn: it finished, ' +
         'failed or is at rest), "needs_input" (stopped on an approval or a question for the person), or ' +
         '"finished" (a turn ended at or after `since`, the `sentAt` conversation.send answered; the call\'s ' +
         'own start when omitted). Defaults to ["idle", "needs_input"]. Answers at once when the chat is ' +
@@ -400,7 +467,6 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
           since: { type: 'integer', minimum: 0, description: 'For "finished": epoch ms a turn must end at or after.' },
           timeoutMs: { type: 'integer', minimum: 0, maximum: CHAT_WAIT_MAX_MS },
         },
-        required: ['workspaceId'],
         additionalProperties: false,
       },
       handler: async (args, context) => {
@@ -422,13 +488,13 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
         const started = now()
         const since = boundedInteger(args.since, started, 0, Number.MAX_SAFE_INTEGER)
         if (since === null) return toolError('invalid_arguments', '"since" must be epoch milliseconds.')
-        const resolved = resolveTarget(chats, args)
+        const resolved = await resolveTarget(chats, args)
         if (!resolved.ok) return toolError(resolved.code, resolved.message)
         const { target } = resolved
         if (isCallersOwnChat(context, target))
           return toolError('own_chat', 'This is your own chat; it cannot finish while you wait on it.')
         for (;;) {
-          const summary = await chats.session(target.workspaceId, target.agentId)
+          const summary = await chats.session(target)
           const state = chatStateOf(summary)
           const reached = waitReached(until, state, since)
           const elapsed = now() - started
@@ -449,24 +515,23 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
     {
       name: 'conversation.interrupt',
       description:
-        'Stop the turn a chat on this machine is running, as its Stop button does. The chat keeps what was ' +
+        'Stop the turn a chat, on this machine or one it reaches, is running, as its Stop button does. The chat keeps what was ' +
         "said and takes its next message as usual; a message queued for the turn's end then goes. A chat not " +
         'in a turn is left alone, with `interrupted: false`.',
       inputSchema: {
         type: 'object',
         properties: targetSchema(),
-        required: ['workspaceId'],
         additionalProperties: false,
       },
       handler: async (args, context) => {
         const chats = deps.chats
         if (!chats) return unavailable()
-        const resolved = resolveTarget(chats, args)
+        const resolved = await resolveTarget(chats, args)
         if (!resolved.ok) return toolError(resolved.code, resolved.message)
         const { target } = resolved
         if (isCallersOwnChat(context, target))
           return toolError('own_chat', 'This is your own chat; end your turn instead.')
-        const state = chatStateOf(await chats.session(target.workspaceId, target.agentId))
+        const state = chatStateOf(await chats.session(target))
         if (!state.working && !state.needsInput)
           return toolSuccess({
             ok: true,
@@ -475,7 +540,7 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
             interrupted: false,
             state,
           })
-        const result = await chats.command(target.key, clientIdOf(context), randomUUID(), { kind: 'interrupt' })
+        const result = await chats.command(target, clientIdOf(context), randomUUID(), { kind: 'interrupt' })
         if (!result.ok) return toolError(result.code ?? 'refused', result.message ?? 'The chat was not stopped.')
         return toolSuccess({ ok: true, workspaceId: target.workspaceId, agentId: target.agentId, interrupted: true })
       },

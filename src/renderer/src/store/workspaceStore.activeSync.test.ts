@@ -255,7 +255,8 @@ test('workspaceStore.activeSync', async () => {
   // ── CASE 6 ────────────────────────────────────────────────────────────────
   // Registry-domain user edits are asked of main. Each carries an
   // `editedAt` stamped HERE, at the gesture, because main's per-field
-  // last-write-wins ordering must not depend on IPC latency.
+  // last-write-wins ordering must not depend on IPC latency. A rename is the
+  // chat's, asked of its Studio by `conversation.rename`, not a registry command.
   seedTwoWindows()
   await new Promise<void>((resolve) => setTimeout(resolve, 10))
   const beforeEdits = dispatchCalls.length
@@ -269,22 +270,16 @@ test('workspaceStore.activeSync', async () => {
   const registryCommands = dispatchCalls.slice(beforeEdits) as Array<{ type: string; payload: Record<string, unknown> }>
   assert.deepEqual(
     registryCommands.map((command) => command.type),
-    ['workspace.rename', 'workspace.update_layout', 'workspace.remove'],
+    ['workspace.update_layout', 'workspace.remove'],
     'each user-editable fact is its own command, so two windows editing different fields never contend',
   )
 
-  const rename = registryCommands[0]!
-  assert.equal(rename.payload.name, 'Typed by hand')
-  assert.equal(rename.payload.titleLocked, true, 'the lock travels with the name or auto-titling overwrites the winner')
   assert.ok(
-    typeof rename.payload.editedAt === 'number' && (rename.payload.editedAt as number) >= stampedAfter,
-    'the rename is stamped at the gesture, not on arrival in main',
+    typeof registryCommands[0]!.payload.editedAt === 'number' &&
+      (registryCommands[0]!.payload.editedAt as number) >= stampedAfter,
+    'the layout command is stamped at the gesture — layout is renderer-authored, main-persisted',
   )
-  assert.ok(
-    typeof registryCommands[1]!.payload.editedAt === 'number',
-    'the layout command is stamped too — layout is renderer-authored, main-persisted',
-  )
-  assert.equal(registryCommands[2]!.payload.workspaceId, 'wsA2')
+  assert.equal(registryCommands[1]!.payload.workspaceId, 'wsA2')
 
   // The optimistic apply still happened locally; main's answer reconciles it.
   assert.equal(useWorkspaceStore.getState().workspaces.find((w) => w.id === 'wsA1')?.name, 'Typed by hand')

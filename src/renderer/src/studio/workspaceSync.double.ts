@@ -23,7 +23,6 @@ function blank(): Api {
     workspaceSyncGetSnapshot: () => notStubbed('workspaceSyncGetSnapshot'),
     workspaceSyncGetEventsAfter: () => notStubbed('workspaceSyncGetEventsAfter'),
     onWorkspaceSyncEvent: () => () => undefined,
-    workspaceLifecycle: () => notStubbed('workspaceLifecycle'),
     workspaceMarkUnread: () => notStubbed('workspaceMarkUnread'),
     setSettledChatsSettings: () => notStubbed('setSettledChatsSettings'),
     setModuleRunStates: () => notStubbed('setModuleRunStates'),

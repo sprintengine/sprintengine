@@ -4,8 +4,8 @@ import type { MeshApprovalRulesResult } from '../../../../shared/tailnet-mesh'
 import { GhostButton, InlineNotice, SettingCard, SettingRow, Spinner } from '../ui'
 import { windowChatServices } from '../panels/agentChat/windowChat'
 import { SettingsSectionTitle } from './SettingsAtoms'
-import { pairedApprovalRules, revokePairedApprovalRule } from '../../studio/pairedChats'
-import { environmentStudioAvailable } from '../../studio/environmentStudio'
+import { environmentApprovalRules, revokeEnvironmentApprovalRule } from '../../studio/environmentChatRecords'
+import { environmentStudioAvailable, pairedTarget } from '../../studio/environmentStudio'
 import { tailnetApi } from '../../studio/tailnet'
 import { copy } from '../../../../shared/copy'
 
@@ -101,7 +101,9 @@ function PairedMachineApprovalRules() {
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string>()
   const read = useCallback(async (connection: { id: string; machineName: string }): Promise<MachineRules> => {
-    const answer = await pairedApprovalRules({ id: connection.id, machineName: connection.machineName })
+    const answer = await environmentApprovalRules(
+      pairedTarget({ id: connection.id, machineName: connection.machineName }),
+    )
     return { connectionId: connection.id, machineName: connection.machineName, answer }
   }, [])
   const load = useCallback(async () => {
@@ -116,8 +118,8 @@ function PairedMachineApprovalRules() {
     setBusy(`${machine.connectionId}:${ruleId}`)
     try {
       setError(undefined)
-      const result = await revokePairedApprovalRule(
-        { id: machine.connectionId, machineName: machine.machineName },
+      const result = await revokeEnvironmentApprovalRule(
+        pairedTarget({ id: machine.connectionId, machineName: machine.machineName }),
         ruleId,
       )
       if (!result.ok) throw new Error(result.message)

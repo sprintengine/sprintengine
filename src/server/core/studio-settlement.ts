@@ -199,15 +199,6 @@ export function createStudioSettlement(deps: StudioSettlementDeps) {
   }
 
   return {
-    /**
-     * Whether an agent in the workspace is at work, leaving out one stopped on
-     * the person's answer: what a window's Settle and Snooze are held to.
-     */
-    isBusy(workspaceId: string): boolean {
-      const record = deps.registry.getRecord(workspaceId)
-      return record ? live()(record).busy : false
-    },
-
     /** The windows' module run states, by workspace: a full reading that replaces the last. */
     setModuleRunStates(states: unknown): void {
       if (typeof states !== 'object' || states === null) return

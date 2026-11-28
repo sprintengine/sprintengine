@@ -1,4 +1,6 @@
 import { testDatabaseAt } from '../../../../tests/studio-database'
+import { createStudioWorkspaceList } from '../../../server/workspaces/studio-workspace-list'
+import { createStudioWorkspaceReads } from '../../../server/workspaces/studio-workspace-reads'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
@@ -7,7 +9,7 @@ import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
 import { authorizeStudioAccess } from '../../../../packages/studio-protocol/src/permissions'
-import { launchWhereItLives } from '../../../server/core/environment-chat-calls'
+import { chatEnvironments } from '../../../server/core/environment-chat-calls'
 import { createFileViewTools } from '../../../server/file-views/file-view-tools'
 import { createLocalServerTools } from '../../../server/local-servers/local-server-tools'
 import { createPullRequestTools } from '../../../server/pull-requests/pull-request-tools'
@@ -20,6 +22,8 @@ import { readBacklogItem } from '../../backlog-service'
 import type { ConversationLaunchRequest } from '../../conversation-launch-service'
 import { createWorktreePoolTools } from '../../worktree-pool/worktree-pool-tools'
 import { createAutomationTools, type AutomationBackends } from '../automation-tools'
+import { createWorkspaceTools, type WorkspaceToolsDeps } from '../../../server/workspaces/workspace-tools'
+import { createCliRuntimeTools } from '../../../server/core/cli-runtime-tools'
 import { createBrowserTools } from '../browser-tools'
 import { createCanvasTools } from '../canvas-tools'
 import { createConversationChatTools } from '../conversation-chat-tools'
@@ -205,6 +209,8 @@ function builtInTools(): McpToolRegistration[] {
   const unused = new Proxy({}, { get: () => () => undefined }) as never
   const factories: Array<(deps: never) => McpToolRegistration[]> = [
     createAutomationTools,
+    createWorkspaceTools,
+    createCliRuntimeTools,
     createEditorTools,
     createBrowserTools,
     createVisualTools,
@@ -317,7 +323,18 @@ async function startListener() {
       getWorkspaceSyncSnapshot: () => snapshot,
       listTerminalSessions: () => [],
       readRepositoryIdentity: async () => null,
+      listWorkspaces: createStudioWorkspaceList({ snapshot: () => snapshot, readRepositoryIdentity: async () => null })
+        .list,
+      ...(({ checkout, extensions }) => ({ workspaceCheckout: checkout, workspaceExtensions: extensions }))(
+        createStudioWorkspaceReads({
+          snapshot: () => snapshot,
+          readCheckout: async () => ({ git: false, branch: null, defaultBranch: null, branches: [], worktrees: [] }),
+          readExtensions: async () => ({ skills: [], servers: [] }),
+        }),
+      ),
       resolveAgentPermissionPreset: () => null,
+      deviceMayName: async (folder: string) => folder === project || folder.startsWith(`${project}/`),
+      studioDataDirs: () => [],
       createWorkspace: (input: { folderPath?: string }) => {
         created.push(input.folderPath)
         return {
@@ -332,7 +349,7 @@ async function startListener() {
       readBacklogItem,
     },
     { get: (target, key) => (key in target ? target[key as keyof typeof target] : undefined) },
-  ) as unknown as AutomationBackends
+  ) as unknown as AutomationBackends & WorkspaceToolsDeps
   // The in-app browser pane: anything a tool asks of it is recorded.
   const paneReached: string[] = []
   const pane = new Proxy(
@@ -348,12 +365,14 @@ async function startListener() {
   )
   const tools: McpToolRegistration[] = [
     ...createAutomationTools(backends),
+    ...createWorkspaceTools(backends),
     ...createBrowserTools({ manager: pane, control: pane, recorder: pane, hasWorkspace: () => true } as never),
     ...createConversationTools({
-      launch: launchWhereItLives(clients, recordOf, async (request) => {
+      launch: async (request) => {
         launchedHere.push(request)
         return { ok: false, code: 'launched_here', message: 'launched on this machine' }
-      }),
+      },
+      environments: chatEnvironments({ clients, ownEnvironmentId: () => 'env-here', routesOf: null, recordOf }),
       resolveAgentPermissionPreset: () => null,
       lifecycle: {} as never,
       moveChat: async (workspaceId, folder) => {

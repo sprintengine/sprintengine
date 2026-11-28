@@ -54,7 +54,6 @@ function harness(records: Array<Partial<WorkspaceRegistryRecord>>, options: { kn
     },
     rewindVisit: () => assert.fail('not here'),
     isWorking: () => false,
-    isBusy: (workspaceId) => settlement.isBusy(workspaceId),
     now: () => clock,
   })
   const settlement = createStudioSettlement({
@@ -213,17 +212,6 @@ test('a chat whose agent starts working wakes on the chat event, and on the term
   ])
   await h.flush()
   assert.equal(h.row('term').settledAt ?? null, null, 'woken by the terminal list')
-})
-
-test('a window’s Settle is held to busy: a chat waiting on a question may be settled, one at work may not', () => {
-  const h = harness([{ id: 'asking' }, { id: 'working' }])
-  h.setChats([
-    { sessionId: 'a', workspaceId: 'asking', agentId: 'agent-1', status: 'active', phase: 'waiting_for_input' },
-    { sessionId: 'b', workspaceId: 'working', agentId: 'agent-1', status: 'active', phase: 'running' },
-  ])
-  assert.equal(h.settlement.isBusy('asking'), false)
-  assert.equal(h.settlement.isBusy('working'), true)
-  assert.equal(h.settlement.isBusy('nobody'), false)
 })
 
 test('a module chat settles on the run state a window pushed, and never on a guess', async () => {

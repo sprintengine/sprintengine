@@ -5,10 +5,8 @@ import type { Workspace } from '../../../../../shared/workspace'
 import {
   buildFolderGroups,
   folderDisplayName,
-  groupKeyOf,
   newChatProjectTarget,
-  remoteFolderGroupKey,
-  remoteGroupDisplayName,
+  projectKeyOf,
   remoteProjectFolder,
   remoteProjectName,
   resolveGroups,
@@ -27,7 +25,7 @@ test('the chats started without a project share one "No project" header', () => 
     chat('c', `${ROOT}/2026-10-11-plan-a-trip-0a1b2c3d`),
   ]
   // As the sidebar builds them: keys and headers resolved first.
-  const resolved = resolveGroups(rows, new Map())
+  const resolved = resolveGroups(rows)
   const groups = buildFolderGroups(rows, (workspace) => resolved.keys.get(workspace.id) ?? '', resolved.headers)
   assert.deepEqual(
     groups.map((group) => [group.displayName, group.fullPath, group.workspaces.map((workspace) => workspace.id)]),
@@ -46,68 +44,50 @@ test('New chat from a chat without a project starts another one, not a chat in i
 
 const MINI_ROOT = '/Users/me/.sprintengine/chats'
 
-function remoteChat(id: string, workspaceRoot: string | null): Workspace {
-  return {
-    ...chat(id, null),
-    remoteOrigin: { connectionId: 'conn-mini', machineName: 'mac-mini', workspaceId: `r-${id}`, workspaceRoot },
-  } as unknown as Workspace
-}
+// Which header a chat files under, whichever environment it is on (`projectKeyOf`).
+const key = (
+  environmentId: string,
+  projectFolder: string | null,
+  over: { repository?: string; projectless?: boolean } = {},
+  local: { byRepository?: Map<string, string>; projectlessKey?: string | null } = {},
+) =>
+  projectKeyOf(
+    {
+      environmentId,
+      projectFolder,
+      repository: over.repository ? ({ canonicalKey: over.repository } as never) : null,
+      projectless: over.projectless === true,
+    },
+    { byRepository: local.byRepository ?? new Map(), projectlessKey: local.projectlessKey ?? null },
+  )
 
-function sshChat(id: string, folderPath: string): Workspace {
-  return { ...chat(id, folderPath), environment: { id: 'ssh-build-box', label: 'build-box' } } as unknown as Workspace
-}
-
-function sidebarGroups(rows: Workspace[]) {
-  const resolved = resolveGroups(rows, new Map())
-  const groups = buildFolderGroups(rows, (workspace) => resolved.keys.get(workspace.id) ?? '', resolved.headers)
-  return groups.map((group) => [group.displayName, group.workspaces.map((workspace) => workspace.id)])
-}
-
-test('chats started without a project on other machines share one "No project" header', () => {
-  const rows = [
-    remoteChat('a', `${MINI_ROOT}/2026-10-10-convert-pngs-3f9a2c1d`),
-    remoteChat('b', `${MINI_ROOT}/2026-10-11-plan-a-trip-0a1b2c3d`),
-    sshChat('c', '/home/dev/.sprintengine/chats/2026-10-11-tidy-logs-9e8d7c6b'),
-    remoteChat('d', '/Users/me/app'),
-  ]
-  assert.deepEqual(sidebarGroups(rows), [
-    ['No project', ['a', 'b', 'c']],
-    ['app', ['d']],
-  ])
+test('one repository on this computer, an SSH machine and a paired desktop is one header', () => {
+  const repo = 'github.com/acme/demo-app'
+  const local = { byRepository: new Map([[repo, '/users/dev/demo-app']]) }
+  assert.equal(key('env-box', '/home/dev/demo-app', { repository: repo }, local), '/users/dev/demo-app')
+  assert.equal(key('env-mini', '/Users/me/demo', { repository: repo }, local), '/users/dev/demo-app')
+  // With no clone here, the repository is still one header across machines.
+  assert.equal(key('env-box', '/a', { repository: repo }), key('env-mini', '/b', { repository: repo }))
 })
 
-test("chats started without a project elsewhere join this window's own No project header", () => {
-  const rows = [
-    remoteChat('a', `${MINI_ROOT}/2026-10-10-convert-pngs-3f9a2c1d`),
-    chat('b', `${ROOT}/2026-10-10-hello-ab12cd34`),
-    sshChat('c', '/home/dev/.sprintengine/chats/2026-10-11-tidy-logs-9e8d7c6b'),
-  ]
-  const resolved = resolveGroups(rows, new Map())
+test('a folder with no repository is a header per environment: the same path on two machines is two folders', () => {
+  assert.notEqual(key('env-box', '/Users/dev/app'), key('env-mini', '/Users/dev/app'))
+  assert.equal(key('env-box', '/Users/dev/app'), key('env-box', '/Users/dev/app/'))
+})
+
+test('chats started without a project on every machine share one "No project" header', () => {
+  assert.equal(key('env-box', `${MINI_ROOT}/x`, { projectless: true }), key('env-mini', null, { projectless: true }))
+  const rows = [chat('b', `${ROOT}/2026-10-10-hello-ab12cd34`), chat('d', '/Users/me/app')]
+  const resolved = resolveGroups(rows)
   assert.equal(resolved.projectlessKey, resolved.keys.get('b'))
-  const groups = buildFolderGroups(rows, (workspace) => resolved.keys.get(workspace.id) ?? '', resolved.headers)
-  assert.deepEqual(
-    groups.map((group) => [group.displayName, group.fullPath, group.remote, group.workspaces.map((row) => row.id)]),
-    [['No project', ROOT, null, ['a', 'b', 'c']]],
-    "the header is this disk's root, so its New chat starts here",
+  assert.equal(
+    key('env-box', `${MINI_ROOT}/x`, { projectless: true }, { projectlessKey: resolved.projectlessKey }),
+    resolved.keys.get('b'),
+    "they join this window's own No project header, so its New chat starts here",
   )
 })
 
-test('a folder a remote chat made inside its own chat folder is still that chat', () => {
-  // Only a chat's own folder, a direct child of the root, is "No project".
-  assert.deepEqual(sidebarGroups([remoteChat('a', `${MINI_ROOT}/2026-10-10-site-1a2b3c4d/web`)]), [['web', ['a']]])
-})
-
-// A pool slot is named after its project (`demo-app-04`), so it reads as one. The
-// local rows and New chat's picker have always been told the difference; every
-// path a paired machine's chat takes to a name or a key has to be told it too.
 const SLOT = '/Users/dev/.sprintengine-worktrees/demo-app/demo-app-04'
-
-function openedFrom(id: string, workspaceRoot: string | null, repository: unknown = null): Workspace {
-  return {
-    ...chat(id, null),
-    remoteOrigin: { connectionId: 'c1', machineName: 'mac-mini', workspaceId: id, workspaceRoot, repository },
-  } as unknown as Workspace
-}
 
 test('a chat in a pool slot on a paired machine is named for its project', () => {
   assert.equal(remoteProjectName(SLOT, 'mac-mini'), 'demo-app')
@@ -117,7 +97,6 @@ test('a chat in a pool slot on a paired machine is named for its project', () =>
     'demo-app',
     'on a Windows machine too',
   )
-  assert.equal(remoteGroupDisplayName(openedFrom('a', SLOT)), 'demo-app', 'a row opened here too')
   assert.equal(remoteProjectFolder(SLOT), '/Users/dev/demo-app')
 })
 
@@ -134,24 +113,6 @@ test('a folder on a paired machine that is not an app-made worktree keeps its ow
 })
 
 test('the slots of a project with no repository share one header with its checkout', () => {
-  const rows = [
-    openedFrom('a', SLOT),
-    openedFrom('b', '/Users/dev/.sprintengine-worktrees/demo-app/demo-app-07'),
-    openedFrom('c', '/Users/dev/demo-app'),
-  ]
-  assert.deepEqual(new Set(rows.map(groupKeyOf)).size, 1)
-  assert.equal(groupKeyOf(rows[0]!), remoteFolderGroupKey('c1', SLOT), 'an opened row and a listed one key alike')
-  const groups = buildFolderGroups(rows)
-  assert.deepEqual(
-    groups.map((group) => [group.displayName, group.workspaces.length]),
-    [['demo-app', 3]],
-  )
-})
-
-test('a worktree on an SSH machine files under its project', () => {
-  const environment = { id: 'env1', label: 'build-box' }
-  const worktree = { ...chat('a', SLOT), environment } as unknown as Workspace
-  const checkout = { ...chat('b', '/Users/dev/demo-app'), environment } as unknown as Workspace
-  assert.equal(groupKeyOf(worktree), groupKeyOf(checkout))
-  assert.equal(remoteGroupDisplayName(worktree), 'demo-app')
+  const folders = [SLOT, '/Users/dev/.sprintengine-worktrees/demo-app/demo-app-07', '/Users/dev/demo-app']
+  assert.equal(new Set(folders.map((folder) => key('env-mini', remoteProjectFolder(folder)))).size, 1)
 })

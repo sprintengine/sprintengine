@@ -72,7 +72,9 @@ export function createStudioChatLifecycleHandlers<A extends Asking>(
     'conversation.markUnread': (params, asking) =>
       change('conversation.markUnread', asking, params, (done, id, owner) => done.markUnread(id, owner)),
     'conversation.snooze': (params, asking) =>
-      change('conversation.snooze', asking, params, (done, id, owner) => done.snooze(id, params.until, owner)),
+      change('conversation.snooze', asking, params, (done, id, owner) =>
+        done.snooze(id, params.until, owner, params.seen),
+      ),
     'conversation.highlight': ({ starred, color, ...params }, asking) =>
       change('conversation.highlight', asking, params, (done, id, owner) =>
         done.highlight(

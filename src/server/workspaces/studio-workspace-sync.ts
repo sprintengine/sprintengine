@@ -2,7 +2,6 @@ import type {
   StudioWorkspaceBackupPayload,
   StudioWorkspaceBackupReadResult,
   StudioWorkspaceBackupWriteResult,
-  StudioWorkspaceLifecycleResult,
   StudioWorkspaceRegistryHydrateResult,
   StudioWorkspaceSyncCommandResult,
   StudioWorkspaceSyncEvent,
@@ -11,13 +10,11 @@ import type {
 import { createProjectlessChatFolder, ensureProjectlessChatsRoot } from '../../main/projectless-chat-folders'
 import { createWorkspaceBackupService } from '../../main/workspace-backup'
 import type { WorkspaceRegistryHydratePayload } from '../../main/workspace-registry-service'
-import { parseWorkspaceLifecycleRequest } from '../../shared/workspace-lifecycle'
 import type { StudioCore } from '../core/studio-core'
 
 // The desktop's own windows' workspace registry as the protocol serves it
 // (`workspaceSync.*`, `workspaceRegistry.*`, `workspaceBackup.*`,
-// `projectlessChats.*`): the core's registry and its change bus, the rest
-// decisions its lifecycle makes on a window's reading, the sweep's inputs only
+// `projectlessChats.*`): the core's registry and its change bus, the sweep's inputs only
 // a window knows, the window's backup of its own copy, and the folders a chat
 // with no project runs in. Who may ask is the router's (an owner's alone);
 // what a command says is checked by the registry, as it always was.
@@ -26,7 +23,6 @@ export type StudioWorkspaceSync = {
   snapshot(): StudioWorkspaceSyncSnapshot
   eventsAfter(sequence: number): StudioWorkspaceSyncEvent[]
   dispatch(command: Record<string, unknown>, windowId: string): Promise<StudioWorkspaceSyncCommandResult>
-  lifecycle(request: Record<string, unknown>): Promise<StudioWorkspaceLifecycleResult>
   setSettledChatsSettings(settings: Record<string, unknown>): void
   setModuleRunStates(states: Record<string, unknown>): void
   needsHydration(): boolean
@@ -43,7 +39,6 @@ type Core = Pick<
   StudioCore,
   | 'workspaceSyncService'
   | 'workspaceRegistry'
-  | 'conversationLifecycle'
   | 'settledChatsSettings'
   | 'settlement'
   | 'platform'
@@ -52,14 +47,8 @@ type Core = Pick<
 
 export function createStudioWorkspaceSync(core: Core): StudioWorkspaceSync {
   const sync = core.workspaceSyncService
-  // A window's own stored copy, written beside the registry it backs up; at
-  // most one registry serialization every ten seconds, the newest written
-  // when the interval ends.
-  const backup = createWorkspaceBackupService({
-    resolveUserDataDir: () => core.platform.paths.dataDir(),
-    readRegistry: () => core.workspaceRegistry.getState(),
-    minRegistryIntervalMs: 10_000,
-  })
+  // A window's backup of the settings it keeps in its own storage.
+  const backup = createWorkspaceBackupService({ resolveUserDataDir: () => core.platform.paths.dataDir() })
   const listeners = new Set<(event: StudioWorkspaceSyncEvent) => void>()
   let unsubscribe: (() => void) | null = null
   const asEvent = (event: unknown) => event as StudioWorkspaceSyncEvent
@@ -85,13 +74,6 @@ export function createStudioWorkspaceSync(core: Core): StudioWorkspaceSync {
       // started; any other change on the registry's own short write delay.
       if (result.ok) await (command.type === 'workspace.created' ? sync.flush() : sync.whenWritten())
       return result as unknown as StudioWorkspaceSyncCommandResult
-    },
-    async lifecycle(request) {
-      const parsed = parseWorkspaceLifecycleRequest(request)
-      if (!parsed) return { ok: false, code: 'invalid_arguments', message: 'That is not a change to a chat’s rest.' }
-      const forwarded = await core.environmentReplicas?.lifecycle(request)
-      if (forwarded) return forwarded
-      return core.conversationLifecycle.fromWindow(parsed) as StudioWorkspaceLifecycleResult
     },
     setSettledChatsSettings: (settings) => core.settledChatsSettings.set(settings),
     setModuleRunStates: (states) => core.settlement.setModuleRunStates(states),

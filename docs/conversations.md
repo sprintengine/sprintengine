@@ -851,7 +851,22 @@ Every change on the protocol carries a command id: a retry is answered with
 the first answer and written once, so a settle retried after an Undo does not
 settle the chat again.
 
-- **`conversation.settle`** `{ workspaceId, settled? }` (default `true`)
+An agent's lifecycle tools name the chat as `conversation.send` does: by
+`chat`, its address (`<environmentId>:<chatId>`) or link, or by `workspaceId`
+for a chat on this machine. A chat on an SSH machine or in a WSL distribution
+is changed there, by the methods above on that machine's own Studio, so the
+machine's record of it moves and every list reads it back; a paired desktop's
+chat is refused in words. The agent's `conversation.create` takes
+`environment` (an environment id, or a chat's address or link there) beside
+`workspaceId` or `noProject`, and starts the chat on that machine's Studio
+with its `conversation.create`. A `plan` or `ask` chat goes with its `mode`,
+which that machine's launch holds on the chat as it does for its own creates;
+a machine whose Studio is too old to take a mode (no `new-chat-mode`) is
+refused `unsupported_mode`, never started writable. Until the copies of
+those machines' chats go, a copy's `workspaceId` reaches its machine the same
+way.
+
+- **`conversation.settle`** `{ chat | workspaceId, settled? }` (default `true`)
   writes the same patch as the row menu's Settle, or with `false` its
   Un-settle, and answers `{ ok: true, workspaceId, settledAt }` (`null` when
   the chat is in the list). It is refused as `working` while anything in the
@@ -861,7 +876,7 @@ settle the chat again.
   have; settling a settled chat again changes nothing. The desktop then does
   what its own Settle does: the chat's agents stop, and a window that has it
   in front moves on to the next chat.
-- **`conversation.visit`** `{ workspaceId, visitedAt? }` moves the chat's
+- **`conversation.visit`** `{ chat | workspaceId, visitedAt? }` moves the chat's
   `lastVisitedAt` forward to `visitedAt` (now when omitted, and never past the
   desktop's now) and answers `{ ok: true, workspaceId, lastVisitedAt }`. A
   `visitedAt` no later than the chat's `visitRewoundAt` is a reading taken
@@ -881,7 +896,7 @@ settle the chat again.
   desktop following a paired machine's chat draws the same "New" divider,
   read from that machine's `lastVisitedAt` as its list gave it before the
   opening's first visit.
-- **`conversation.mark_unread`** `{ workspaceId }` (2026-10-07;
+- **`conversation.mark_unread`** `{ chat | workspaceId }` (2026-10-07;
   `conversation.markUnread` on the Studio protocol) moves the chat's `lastVisitedAt`
   **back**, to its latest finish less a millisecond, and answers
   `{ ok: true, workspaceId, lastVisitedAt }`. Its finish reads as unseen again
@@ -1039,9 +1054,11 @@ chat's workspace, every change under a command id and answered once:
   the plan says why not. There is no undo. A chat already gone answers
   `gone: true` to both, so a delete sent twice does no harm. The plan is a
   read on `conversation:read`; the delete needs `conversation:operate` and is
-  audited. A paired desktop offers Delete on a settled chat it opened from
-  here, asks the plan, says it in its confirmation, and once this desktop has
-  deleted the chat removes its own record of it.
+  audited. Another desktop's Settings ▸ Settled chats lists this desktop's
+  settled chats from `workspaces.list` (`settledAt`), asks the plan, says it
+  in one confirmation with whatever else was picked, and deletes the chat
+  here; nothing of it is kept on that desktop. An SSH machine's and a WSL
+  distribution's settled chats are deleted the same way, on their own Studio.
 - **`conversation.searchChats`** `{ query }` finds what was said in the
   desktop's chats as its own palette does: the chats its sidebar lists, most
   recently spoken in first, each through the runtime's transcript search. It
@@ -1049,11 +1066,12 @@ chat's workspace, every change under a command id and answered once:
   each hit an `agentId`, the `seq` of its message, a `snippet` and who said it
   (`from`), at most 50 chats and 20 hits each, and `truncated` once it stopped
   early, at that limit or after eight seconds. A query is 2 to 200
-  characters. It is a read, on `conversation:read`. A paired desktop's palette
-  asks each machine that serves it beside its own search, lists one row per
-  chat with the machine's name, and opens a row as the chat's sidebar row
-  opens it, landing on the matching message as a match in one of its own
-  chats does.
+  characters. It is a read, on `conversation:read`. A desktop's palette asks
+  every environment this way, its own Studio first, then each paired desktop,
+  SSH machine and WSL distribution it follows that serves it and is connected
+  now. It lists one row per chat, another environment's with its name, and
+  opens a row as the chat's sidebar row opens it, landing on the matching
+  message.
 - **`conversation.approvalRules`** `{}` and
   **`conversation.revokeApprovalRule`** `{ commandId, ruleId }`
   (`approval-rules`) are the "always allow" rules the desktop's chats run
@@ -1085,9 +1103,10 @@ The state is a read on `conversation:read`; the other four need
 ### Following from another desktop
 
 A Studio desktop paired to this one follows its conversations with the same
-pairing and grant a phone uses. The sidebar's
-Remote band lists each chat on the paired machine as its own row, with the
-presence its phase says: running, needs approval, or done. Opening one makes a
+pairing and grant a phone uses. The sidebar lists each chat on the paired
+machine as a row of its project, by its address, as it does every followed SSH
+machine's and WSL distribution's, with the presence its phase says: running,
+needs approval, or done. Opening one this desktop does not hold yet makes a
 solo workspace whose pane is the regular chat view, following the conversation
 over the tailnet, with the machine on the tab and above the transcript.
 New chat starts one there too: with Chat agent picked, the machine dropdown
@@ -1404,8 +1423,8 @@ chat beneath stays mounted and hidden, since a queued message lives in its view.
    without a reset), and verify an offline send appears once after
    acknowledgement. Narrow the device to read-only in Settings and confirm the
    next command is refused.
-7. Pair a second Studio desktop with conversation access. Open a chat from its
-   Remote band, send, approve and stop from there; switch its model between
+7. Pair a second Studio desktop with conversation access. Open one of its chats
+   from its row in the sidebar, send, approve and stop from there; switch its model between
    turns and mid-reply (the notice says the switch applies from the next
    turn), and confirm the host's own chip follows; drop Wi-Fi mid-reply and
    rejoin (no reset, no repeated text); quit and relaunch it (the transcript is

@@ -9,6 +9,8 @@ import { join } from 'node:path'
 
 import { test } from 'vitest'
 
+import { testDatabaseAt } from '../../../tests/studio-database'
+
 import type { PullRequestStateRead } from '../../main/github/branch-pull-request'
 import type { GitHubQuotaReading } from '../../main/github/github-quota'
 import type { FingerprintBatchRead } from '../../main/github/pull-request-fingerprint'
@@ -93,7 +95,7 @@ async function setUp(extra: Partial<PullRequestRecordOptions> = {}) {
   let batchAnswer: ((urls: string[]) => FingerprintBatchRead) | null = null
   let quota: GitHubQuotaReading | null = null
   const options: PullRequestRecordOptions = {
-    userDataDir,
+    database: testDatabaseAt(userDataDir),
     reads: {
       readPullRequestState: async (url) => {
         stateReads.push(url)

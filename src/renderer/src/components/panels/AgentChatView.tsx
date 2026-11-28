@@ -11,7 +11,6 @@
 // AgentChatView.test.ts so the streaming/approval/interrupt/failure states have
 // node-level coverage without rendering.
 
-import { pairedConnectionOf } from '../../studio/environmentStudio'
 import { parseMachinePath } from '../../../../shared/machine-paths'
 import { isWslHostId, workspaceHostIdOf, wslHostId } from '../../../../shared/execution-host'
 import { withoutStudioNoticePrefix } from '../../../../shared/studio-notice'
@@ -124,7 +123,15 @@ import { isClippedEvent, useConversationSession } from './agentChat/useConversat
 import { useListedSession } from './agentChat/useListedSession'
 import { useChatViewActive } from './agentChat/chatViewActivity'
 import { prefersReducedMotion } from './agentChat/reducedMotion'
-import { localConversationTransport, useConversationTransport } from './agentChat/conversationTransport'
+import {
+  ConversationTransportProvider,
+  localConversationTransport,
+  useConversationTransport,
+} from './agentChat/conversationTransport'
+import { useEnvironmentConversationTransport } from './agentChat/environmentChat'
+import { useListedChat, type ListedChatInput } from './agentChat/listedChat'
+import type { PaneChat } from './agentChat/paneChat'
+import { ChatViewErrorBoundary } from './agentChat/ChatViewErrorBoundary'
 import type { ChatCommandSource } from './agentChat/chatServices'
 import { chatSignInProviderId, openCliSignInTerminal, wslSignInRuntimes } from './agentChat/cliSignIn'
 import { useLocalChatBinding, type ChatBinding } from './agentChat/chatBinding'
@@ -229,7 +236,7 @@ import {
   readImageAttachment,
 } from './agentChat/imageAttachments'
 import { ConversationPendingDock, coversComposer, type ApprovalModeSwitch } from './agentChat/pendingDock'
-import { SubagentStatusWords, useStudioSubagents } from './agentChat/chatSubagents'
+import { studioSubagentsOf, SubagentStatusWords, useStudioSubagents } from './agentChat/chatSubagents'
 import { SubagentRequests } from './agentChat/subagentRequests'
 import {
   SubagentBlockedBar,
@@ -440,7 +447,37 @@ function composerErrorMessage(error: ComposerActionError | null): string | null 
 // No mode of the CLI's own: what a chat whose runtime names none offers.
 const NO_MODES: readonly string[] = []
 
-export default function AgentChatView({ workspaceId, agentId }: Props) {
+/**
+ * The one chat pane, for every chat by where it lives (`PaneChat`): this
+ * computer's, an SSH machine's, a WSL distribution's and a paired desktop's.
+ * It runs on the transport of the chat's environment. Its agents are read off
+ * the record this window keeps of the chat, or, for a chat it keeps none of,
+ * off its environment's list (`useListedChat`).
+ */
+export default function AgentChatView({ workspaceId, agentId, chat }: Props & { chat: PaneChat }) {
+  if (chat.listed && chat.environment)
+    return (
+      <ListedChatView
+        workspaceId={workspaceId}
+        agentId={agentId}
+        chat={{ ...chat, environment: chat.environment, listed: chat.listed }}
+      />
+    )
+  return <RecordChatView workspaceId={workspaceId} agentId={agentId} environment={chat.environment} />
+}
+
+/** A chat whose record this window keeps, over its environment's transport (this window's own Studio's for null). */
+function RecordChatView({
+  workspaceId,
+  agentId,
+  environment,
+}: Props & { environment: PaneChat['environment'] }): React.JSX.Element {
+  const transport = useEnvironmentConversationTransport(environment)
+  const view = <RecordChat workspaceId={workspaceId} agentId={agentId} />
+  return transport ? <ConversationTransportProvider value={transport}>{view}</ConversationTransportProvider> : view
+}
+
+function RecordChat({ workspaceId, agentId }: Props) {
   const binding = useLocalChatBinding(workspaceId, agentId)
   if (!binding)
     return (
@@ -464,6 +501,60 @@ export default function AgentChatView({ workspaceId, agentId }: Props) {
         agentId={agentId}
         binding={binding}
       />
+    </SubagentChatHost>
+  )
+}
+
+/** A chat this window keeps no record of, over its environment's transport, and its sub-agents there. */
+function ListedChatView(input: ListedChatInput): React.JSX.Element {
+  const { workspaceId, agentId, chat, subagent } = input
+  const listed = useListedChat(input)
+  const { machineName, subagents } = listed
+  const chatKey = `${chat.environment.route}:${chat.chatId}:${agentId}`
+  const view = (
+    <ConversationTransportProvider value={listed.transport}>
+      <ChatViewErrorBoundary chatKey={chatKey}>
+        <ConversationChatBody key={chatKey} workspaceId={workspaceId} agentId={agentId} binding={listed.binding} />
+      </ChatViewErrorBoundary>
+    </ConversationTransportProvider>
+  )
+  if (subagent) return view
+  return (
+    <SubagentChatHost
+      workspaceId={workspaceId}
+      rootAgentId={agentId}
+      rootName={listed.displayTitle}
+      chatName={(id) => subagents.find((row) => row.agentId === id)?.title}
+      renderChat={({ agentId: childId, parentAgentId, parentName, crumbs, onCrumb, onBack }) => {
+        const row = subagents.find((candidate) => candidate.agentId === childId)
+        if (!row)
+          return (
+            <SubagentGone words={appCopy.panels.agentChatView.noLongerListsThisSubagent(machineName)} onBack={onBack} />
+          )
+        const [shown] = studioSubagentsOf([row])
+        return (
+          <>
+            <SubagentViewHeader
+              crumbs={crumbs}
+              name={row.title}
+              facts={subagentFacts(cliForConversationProvider(row.providerId), row.modelId)}
+              status={shown ? <SubagentStatusWords subagent={shown} /> : undefined}
+              onCrumb={onCrumb}
+            />
+            <SubagentEndNotice error={row.error ?? null} />
+            <div className="min-h-0 flex-1">
+              <ListedChatView
+                workspaceId={workspaceId}
+                agentId={childId}
+                chat={{ ...chat, listed: { ...chat.listed, title: row.title } }}
+                subagent={{ row, parentAgentId, parentName, onGoToParent: onBack }}
+              />
+            </div>
+          </>
+        )
+      }}
+    >
+      {view}
     </SubagentChatHost>
   )
 }
@@ -3380,20 +3471,21 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     ((shellReach.dragPaths && workspaceRunsHere(binding.workspace)) ||
       (clientSupports('drag-paths') && transport.capabilities.attachFiles))
 
-  // The inventory is the window's own Studio's, except for a paired desktop's
-  // chat, which that machine lists for the chat's project there.
-  const pairedConnection = pairedConnectionOf(environment.route)
-  const pairedWorkspaceId = pairedConnection ? (hostSession?.workspaceId ?? null) : null
+  // The inventory is the window's own Studio's, for the chat's folder on any
+  // machine it reaches by path, except for a chat with no folder here (one
+  // its environment lists), which that environment lists for the chat's
+  // project there.
+  const listedWorkspaceId = environment.route && !workspaceRoot ? (hostSession?.workspaceId ?? null) : null
   const pairedSkills = useMemo(
     () =>
-      pairedConnection && pairedWorkspaceId
+      environment.route && listedWorkspaceId
         ? {
-            route: environment.route!,
-            workspaceId: pairedWorkspaceId,
+            route: environment.route,
+            workspaceId: listedWorkspaceId,
             ...(environment.label ? { machineName: environment.label } : {}),
           }
         : null,
-    [pairedConnection, pairedWorkspaceId, environment.route, environment.label],
+    [listedWorkspaceId, environment.route, environment.label],
   )
   const skillInventory = useWorkspaceSkills(workspaceRoot, null, supportsSkills && !pairedSkills)
   // Held from render to render, as the "+" menu that takes them is memoized:
@@ -3722,7 +3814,14 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     )
       await ensureSession()
     if (!conversation?.providerId) throw new Error('This chat cannot be forked here.')
-    await forkChat({ transport, key: chatKey, providerId: conversation.providerId, name: agent.name, target })
+    await forkChat({
+      transport,
+      key: chatKey,
+      providerId: conversation.providerId,
+      name: agent.name,
+      target,
+      ...(binding.openFork ? { open: binding.openFork } : {}),
+    })
   }
   const forkFromHere = useCallback((target: ForkFromHereTarget) => forkRef.current(target), [])
   const onFork =

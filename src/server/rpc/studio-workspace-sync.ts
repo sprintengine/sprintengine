@@ -76,8 +76,6 @@ export function createStudioWorkspaceSyncHandlers<A extends Asking>(
           return refused(UNKNOWN_FOLDER)
         return ok(await sync!.dispatch(command, windowId))
       }),
-    'workspaceSync.lifecycle': ({ commandId, request }, asking) =>
-      write('workspaceSync.lifecycle', asking, commandId, async () => ok(await sync!.lifecycle(request))),
     'workspaceSync.setSettledChatsSettings': ({ commandId, settings }, asking) =>
       write('workspaceSync.setSettledChatsSettings', asking, commandId, async () => {
         if (!asking.context.browser) sync!.setSettledChatsSettings(settings)

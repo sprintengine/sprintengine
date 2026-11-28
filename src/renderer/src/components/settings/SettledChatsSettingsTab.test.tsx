@@ -68,7 +68,10 @@ async function render(): Promise<void> {
   await act(async () =>
     root.render(
       <ConfirmDialogProvider>
-        <SettledChatsSettingsTab onOpenChat={(id) => opened.push(id)} />
+        <SettledChatsSettingsTab
+          onOpenChat={(id) => opened.push(id)}
+          onOpenEnvironmentChat={(spec) => opened.push(`${spec.route}/${spec.chatId}`)}
+        />
       </ConfirmDialogProvider>,
     ),
   )
@@ -97,42 +100,62 @@ test('Un-settle puts a chat back, and Open leaves Settings for it', async () => 
   expect(opened).toEqual(['w3'])
 })
 
-test('a chat opened from a paired machine is brought back there first, then here', async () => {
+test("a paired machine's settled chat is listed from that machine, brought back there and opened where it is", async () => {
   let answer: (value: { settledAt: null }) => void = () => {}
-  const workspaces = fixtures.state.workspaces as Array<Record<string, unknown>>
-  workspaces[1] = {
-    ...workspaces[1],
-    remoteOrigin: {
-      connectionId: 'c1',
-      machineName: 'mac-mini',
-      workspaceId: 'remote-w2',
-      workspaceName: 'Fix the login banner',
-      workspaceRoot: '/Users/dev/app',
-      sessionId: 'remote-w2:agent-1',
-    },
-  }
+  let lists = 0
   const previous = (window as { api?: unknown }).api
   const api = {}
   ;(window as { api?: unknown }).api = api
   // That machine's Studio, as this window's own client of it reaches it.
   const studio = fakePairedStudios(api, {
+    'workspaces.list': () => {
+      lists += 1
+      return {
+        workspaces: [
+          {
+            id: 'rw2',
+            name: 'Fix the dock icon',
+            mode: 'standard',
+            folderPath: '/Users/dev/app',
+            settledAt: now - 2 * DAY,
+          },
+          { id: 'rw3', name: 'Still there', mode: 'standard', folderPath: '/Users/dev/app', settledAt: null },
+        ],
+      }
+    },
+    'conversation.list': () => ({ conversations: [] }),
     'conversation.settle': () =>
       new Promise((resolve) => {
         answer = resolve
       }),
   })
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
   try {
+    followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
     await render()
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+    expect(rows().map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Tidy the release notes'),
+      expect.stringContaining('Fix the dock icon'),
+      expect.stringContaining('Fix the login banner'),
+    ])
+    expect(rows()[1]!.textContent).toContain('app')
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Open Fix the dock icon"]')?.click())
+    expect(opened).toEqual(['tailnet:c1/rw2'])
+    const before = lists
     await act(async () =>
-      host.querySelector<HTMLButtonElement>('button[aria-label="Un-settle Fix the login banner"]')?.click(),
+      host.querySelector<HTMLButtonElement>('button[aria-label="Un-settle Fix the dock icon"]')?.click(),
     )
     expect(studio.writes()).toEqual([
-      { connectionId: 'c1', method: 'conversation.settle', params: { workspaceId: 'remote-w2', settled: false } },
+      { connectionId: 'c1', method: 'conversation.settle', params: { workspaceId: 'rw2', settled: false } },
     ])
+    // Nothing of it is kept here to bring back.
     expect(unsettled).toEqual([])
     await act(async () => answer({ settledAt: null }))
-    expect(unsettled).toEqual(['w2'])
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+    expect(lists).toBeGreaterThan(before)
   } finally {
+    followEnvironmentChats([])
     ;(window as { api?: unknown }).api = previous
   }
 })
@@ -150,7 +173,7 @@ test('the list keeps its identity through a write to another workspace', async (
   const select = createSettledChatsSelector()
   const workspaces = fixtures.state.workspaces as Parameters<typeof select>[0]
   const first = select(workspaces)
-  expect(first.map((chat) => chat.id)).toEqual(['w3', 'w2'])
+  expect(first.map((chat) => chat.key)).toEqual(['w3', 'w2'])
   // The chat still going turns over; nothing settled moved.
   const busier = [{ ...workspaces[0]!, lastTurnEndedAt: now } as (typeof workspaces)[number], ...workspaces.slice(1)]
   expect(select(busier)).toBe(first)

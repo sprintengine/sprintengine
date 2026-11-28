@@ -21,7 +21,7 @@ import { STUDIO_WORKSPACE_SYNC_CAPABILITY } from './handshake.js'
 // module chat's run state.
 //
 // Beside the registry: the one-time hydration from a window's own stored copy
-// (`workspaceRegistry.*`), the window's backup of that copy
+// (`workspaceRegistry.*`), the window's backup of its own settings
 // (`workspaceBackup.*`), and the folders a chat started without a project runs
 // in (`projectlessChats.*`).
 //
@@ -59,11 +59,6 @@ export type StudioWorkspaceSyncCommandResult =
   | { ok: true; event: StudioWorkspaceSyncEvent; snapshot?: StudioWorkspaceSyncSnapshot }
   | { ok: false; reason: string; message: string; snapshot?: StudioWorkspaceSyncSnapshot }
 
-/** A rest gesture's answer: the reading main committed, or why not with the chat as it stands. */
-export type StudioWorkspaceLifecycleResult =
-  | { ok: true; workspaceId: string; committed: unknown }
-  | { ok: false; code: string; message: string; current?: unknown }
-
 /** Main's answer to a window's one-time hydration offer. */
 export type StudioWorkspaceRegistryHydrateResult = {
   changed: boolean
@@ -73,7 +68,7 @@ export type StudioWorkspaceRegistryHydrateResult = {
   droppedRecordIds?: string[]
 }
 
-/** The window's backup of its stored copy. */
+/** The window's backup of its own settings. */
 export type StudioWorkspaceBackupPayload = { version: number; writtenAt: string; data: unknown }
 export type StudioWorkspaceBackupReadResult =
   | { ok: true; payload: StudioWorkspaceBackupPayload }
@@ -89,8 +84,6 @@ export type StudioWorkspaceSyncMethodMap = {
     params: Commanded<{ windowId: string; command: Fields }>
     result: StudioWorkspaceSyncCommandResult
   }
-  /** A window's Settle, Un-settle, Snooze or Wake now, on the reading of the chat it made it on. */
-  'workspaceSync.lifecycle': { params: Commanded<{ request: Fields }>; result: StudioWorkspaceLifecycleResult }
   /** The window's Settled chats settings, which main's rest sweep reads. */
   'workspaceSync.setSettledChatsSettings': {
     params: Commanded<{ settings: Fields }>
@@ -167,10 +160,6 @@ export const STUDIO_WORKSPACE_SYNC_METHODS: StudioMethodTable<StudioWorkspaceSyn
         return refuse('"command" is one registry change, with its "type".')
       return studioParams({ windowId: value.windowId, command: value.command })
     }),
-  },
-  'workspaceSync.lifecycle': {
-    ...writing,
-    params: commanded(record('request', '"request" is the chat, its gesture and the reading it was made on.')),
   },
   'workspaceSync.setSettledChatsSettings': {
     ...writing,

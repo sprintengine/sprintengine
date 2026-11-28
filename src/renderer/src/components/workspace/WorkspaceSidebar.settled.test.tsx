@@ -105,6 +105,8 @@ test('WorkspaceSidebar.settled', async () => {
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     type SidebarProps = Parameters<typeof WorkspaceSidebar>[0]
     type Workspace = SidebarProps['workspaces'][number]
 
@@ -188,6 +190,7 @@ test('WorkspaceSidebar.settled', async () => {
 
     const render = async (next: SidebarProps): Promise<void> => {
       act(() => {
+        serveWindowChats(window.api, next.workspaces)
         root.render(React.createElement(WorkspaceSidebar, next))
       })
       await settle()
@@ -348,9 +351,9 @@ test('WorkspaceSidebar.settled', async () => {
       assert.deepEqual(deletes, ['w2'], 'choosing it asks to delete that chat')
       assert.equal(dom.window.document.querySelector('[role="menu"]'), null, 'and closes the menu')
 
-      // A row born on a paired machine whose machine keeps no rest settles
-      // here alone (`settleOpenedRemote`), so it wears the tick like any other
-      // row rather than the ✕ it kept before Close went.
+      // A record here of a chat on a paired machine is not a row of its own,
+      // so it wears no tick here: the chat's own row, drawn from its machine's
+      // list, settles it there (WorkspaceSidebar.remoteRow.test.tsx).
       await render({
         ...props,
         workspaces: [
@@ -368,11 +371,8 @@ test('WorkspaceSidebar.settled', async () => {
         ],
         activityByWorkspaceId: { w1: 'idle', w4: 'idle' },
       } as unknown as SidebarProps)
-      assert.ok(actionLabel('Settle Delta'), 'a remote-band row offers Settle in its seat')
-      assert.equal(actionLabel('Close Delta'), null, 'and no Close')
-      const remoteMenu = await openMenuOn('Delta')
-      assert.ok(remoteMenu.includes('Settle'), `and in its menu (got ${remoteMenu.join(' | ')})`)
-      assert.equal(remoteMenu.includes('Close workspace'), false)
+      assert.equal(actionLabel('Settle Delta'), null, 'the record is not a row')
+      assert.ok(actionLabel('Settle Alpha'), 'and the chat here still is')
 
       // A chat-agent row has no pty, and settling it still ends its agent's
       // process: the live chat is suspended, the stopped one left alone, and

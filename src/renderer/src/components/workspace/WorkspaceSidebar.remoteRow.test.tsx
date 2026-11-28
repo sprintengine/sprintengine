@@ -130,7 +130,15 @@ test('WorkspaceSidebar.remoteRow', async () => {
     'conversation.list': () => ({ conversations: listed }),
     'workspaces.list': () => ({
       workspaces: [
-        { id: 'rw1', name: 'home-compute', mode: 'standard', folderPath: '/Users/dev/home-compute', repository: null },
+        {
+          id: 'rw1',
+          name: 'home-compute',
+          mode: 'standard',
+          folderPath: '/Users/dev/home-compute',
+          repository: null,
+          // Once settled there, its list says so, and the row stays gone.
+          settledAt: settles.length > 0 ? 1 : null,
+        },
         { id: 'rw2', name: 'multicode', mode: 'standard', folderPath: '/Users/dev/multicode', repository: null },
       ],
     }),
@@ -139,12 +147,17 @@ test('WorkspaceSidebar.remoteRow', async () => {
       return { settledAt: 1 }
     },
   })
+  // The window follows the machine it is paired with (`useFollowWindowEnvironments`).
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
 
   async function main(): Promise<void> {
     const React = await import('react')
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     const { useWorkspaceStore } = await import('../../store/workspaceStore')
     // The flat stream first, the rail's default shape and the one where the
     // row's clock and actions ride the project line instead of the agent's.
@@ -197,6 +210,7 @@ test('WorkspaceSidebar.remoteRow', async () => {
     // left mounted after a failed assertion would hang the run.
     try {
       act(() => {
+        serveWindowChats(window.api, props.workspaces)
         root.render(React.createElement(WorkspaceSidebar, props))
       })
       await settle()
@@ -263,11 +277,12 @@ test('WorkspaceSidebar.remoteRow', async () => {
       })
       await settle()
       assert.deepEqual(settles, [{ connectionId: 'c1', workspaceId: 'rw1' }], 'the machine is asked to settle it')
-      assert.equal(rowOf('How is this project?'), undefined, 'and the row goes at once, as a local Settle moves one')
+      assert.ok(!rowOf('How is this project?'), 'and the row goes at once, as a local Settle moves one')
     } finally {
       act(() => {
         root.unmount()
       })
+      followEnvironmentChats([])
     }
   }
 

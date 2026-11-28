@@ -151,10 +151,9 @@ import { confirmNewChatWith, type NewChatExtension } from './manager/newChatConf
 import { obtainNewChatWorktree, prepareNewChatWorktree, takeReadyNewChatWorktree } from '../../utils/newChatWorktree'
 import type { AgentState } from '../../../../shared/agent-state'
 import { openChatLink } from './manager/chatLinkOpener'
-import { remoteChatLinkTargets, remoteChatOnConnection } from './remoteBand/remoteChatLinks'
+import { chatsAtAddress, environmentChatsNow } from './remoteBand/environmentChatsNow'
 import { environmentIdsOf, environmentRouteOfMeshConnection } from '../../../../shared/environment-keys'
 import { currentEnvironments } from '../../hooks/useEnvironments'
-import { registerRemoteChatOpener } from './remoteBand/remoteChatSearch'
 import { setAppCommandRunner } from '../../commands/appCommandRunner'
 import { runCommandForWorker, runReplaceable } from '../../modules/extension-replacements'
 import {
@@ -175,6 +174,7 @@ import { SidebarRevealFrame, SidebarRevealZones, useFineHover, useSidebarHoverRe
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useNarrowViewport } from '../../hooks/useNarrowViewport'
 import {
+  remoteConversationTitle,
   remoteWorkspaceName,
   type RemoteSessionOpenSpec,
   type RemoteWindowPlace,
@@ -182,7 +182,11 @@ import {
 import { useSurfaceView } from './surfaceView'
 import type { NewAgentPanelMode, RemoteNewChatLaunch } from './agentComposer/NewAgentPanel'
 import { useScheduledAgents } from '../../store/scheduledAgentsStore'
-import { remoteScheduledAgentNow, useRemoteScheduledAgent } from './sidebar/useRemoteScheduledAgents'
+import {
+  remoteScheduledAgentNow,
+  useRemoteScheduledAgent,
+  type ScheduledAgentRef,
+} from './sidebar/useRemoteScheduledAgents'
 import { formatRunTimes } from './agentComposer/schedule/scheduleEditor'
 import { scheduledAgentScheduleWords, type ScheduledAgentView } from '../../../../shared/scheduled-agents'
 import { scheduledAgentRuns } from '../../utils/scheduledAgentRuns'
@@ -296,6 +300,7 @@ import {
 // deferred chunk.
 import { paletteScopeForCommand, type PaletteScope } from '../commandPaletteSearch'
 import { subscribePaletteOpenRequest, type PaletteAgentTarget } from '../palette/paletteOpenRequest'
+import { subscribeEnvironmentChatOpenRequest } from './remoteBand/environmentChatOpenRequest'
 import { isGlobalShortcutSuppressedTarget, isTerminalKeyTarget } from '../../utils/keyboard'
 import { controlTabContextItemOf, controlTabContextOf, cycleFocusedControlTabScope } from '../../utils/controlTab'
 import { useExtensionsDrawerRows } from './extensionsDrawerRows'
@@ -489,15 +494,14 @@ export default function WorkspaceManager() {
   useFollowWindowEnvironments()
   const dialog = useConfirmDialog()
   // The row menu's Delete chat… on a settled chat, the same flow Settings ▸ Settled chats runs.
-  const { deleteChats: deleteSettledChats, deleteThere: deleteSettledChatThere } = useDeleteSettledChats()
+  const { deleteChats: deleteSettledChats } = useDeleteSettledChats()
   const sidebarDeleteSettledChat = useCallback(
-    (workspaceId: string) => void deleteSettledChats([workspaceId]),
+    (workspaceId: string) => {
+      const workspace = useWorkspaceStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
+      const title = workspace ? remoteConversationTitle(workspace) : 'this chat'
+      void deleteSettledChats([{ key: workspaceId, chatId: workspaceId, title, environment: null }])
+    },
     [deleteSettledChats],
-  )
-  // …and on a paired machine's settled chat, where that machine deletes its chats from here.
-  const sidebarDeleteSettledChatThere = useCallback(
-    (workspaceId: string) => void deleteSettledChatThere(workspaceId),
-    [deleteSettledChatThere],
   )
   const workspaceWindowId = useMemo(() => getWorkspaceWindowIdFromLocation(), [])
   // Dock-back from the external editor window: the window owning that workspace's
@@ -3145,6 +3149,11 @@ export default function WorkspaceManager() {
     [editingRemote],
   )
   const remoteEditingRead = useRemoteScheduledAgent(editingRemoteRef)
+  // The one the door is editing, whichever machine it runs on, drawn selected.
+  const openScheduledAgent = useMemo<ScheduledAgentRef | null>(
+    () => (editingScheduledAgentId ? { route: null, id: editingScheduledAgentId } : editingRemoteRef),
+    [editingScheduledAgentId, editingRemoteRef],
+  )
   const remoteEditingGone = editingRemoteRef !== null && remoteEditingRead.machine !== null && !remoteEditingRead.agent
   useEffect(() => {
     if (remoteEditingGone) setNewChatPanelState(null)
@@ -3941,16 +3950,16 @@ export default function WorkspaceManager() {
     return true
   }
 
-  // A chat on a paired machine, opened from the sidebar's Remote band
-  // (remote-sessions-in-the-sidebar): the row that already is that chat is
-  // focused; any other becomes a solo workspace whose lone pane follows it —
-  // the same shape a chat started over there takes, minus the create.
-  // Provenance is stamped with the session id so the band recognises the row
-  // next time it reads the machine.
-  // `place` is the row menu's Move to New Window or Move to Main Window: the
-  // chat opens in that window, as a local chat is moved to it.
-  // Answers the workspace here whose pane follows the chat, or null when none
-  // could be made.
+  // A chat on another environment, opened from its row by its address
+  // (design-environments PR 3): the record here that holds it is focused.
+  // Until windows arrange chats by address, a chat with none is held by one:
+  // a paired desktop's becomes a solo workspace whose lone pane follows it,
+  // stamped with its session id so its row finds it next time; an SSH
+  // machine's or a WSL distribution's is opened once this desktop's copy of
+  // its records holds it. `place` is the row menu's Move to New Window or
+  // Move to Main Window: the chat opens in that window, as a local chat is
+  // moved to it. Answers the workspace here that holds the chat, or null when
+  // none could be opened yet.
   const openRemoteSession = useCallback(
     (spec: RemoteSessionOpenSpec, place?: RemoteWindowPlace): string | null => {
       if (spec.attachedWorkspaceId) {
@@ -3963,11 +3972,38 @@ export default function WorkspaceManager() {
         return spec.attachedWorkspaceId
       }
       if (!place) setNewChatPanelState(null)
-      if (!SOLO_CHAT_TEMPLATE) {
+      const { connectionId, agent } = spec
+      if (!connectionId) {
+        const chatId = spec.chatId
+        void openEnvironmentChatWhenListed({
+          chatId,
+          toastId: `environment-chat:${spec.route}:${chatId}`,
+          title: spec.title,
+          machineName: spec.machineName,
+          closePanel: () => undefined,
+          started: () => undefined,
+          openHere: () => {
+            const state = useWorkspaceStore.getState()
+            if (!state.workspaces.some((workspace) => workspace.id === chatId)) return false
+            if (place === 'new-window') void moveWorkspaceToNewWindow(chatId)
+            else if (place === 'main-window') moveWorkspaceToPrimaryWindow(chatId)
+            else {
+              const holder = state.workspaceWindows.find((entry) => entry.workspaceIds.includes(chatId))
+              if (holder && holder.id !== workspaceWindowId) moveWorkspaceToWindow(chatId, workspaceWindowId, holder.id)
+              setActiveWorkspaceForWindow(workspaceWindowId, chatId)
+            }
+            return true
+          },
+        })
+        return null
+      }
+      if (!SOLO_CHAT_TEMPLATE || !agent) {
         showToast({
           tone: 'error',
           title: appCopy.workspace.workspaceManager.couldnTOpenFrom(spec.title, spec.machineName),
-          description: appCopy.workspace.workspaceManager.theSoloLayoutTemplateIs2,
+          description: agent
+            ? appCopy.workspace.workspaceManager.theSoloLayoutTemplateIs2
+            : appCopy.workspace.workspaceManager.noAgentListedThere(spec.machineName),
         })
         return null
       }
@@ -3977,15 +4013,15 @@ export default function WorkspaceManager() {
         // in front of every remote row, so a sidebar of chats read as a sidebar
         // of strangers. The agent's name survives where it belongs: the tab, and
         // its line's mark on the row.
-        name: remoteWorkspaceName(spec.title, spec.workspaceName),
+        name: remoteWorkspaceName(agent.title, spec.workspaceName),
         folderPath: null,
         remoteOrigin: {
-          connectionId: spec.connectionId,
+          connectionId,
           machineName: spec.machineName,
-          workspaceId: spec.conversation.workspaceId,
+          workspaceId: spec.chatId,
           workspaceName: spec.workspaceName ?? '',
           workspaceRoot: spec.workspaceRoot,
-          sessionId: spec.sessionId,
+          sessionId: agent.sessionId,
           repository: spec.repository,
           // A chat has no checkout of its own, and the list does not say which
           // branch its workspace is on; this device never moves it either way.
@@ -3996,13 +4032,13 @@ export default function WorkspaceManager() {
         ...(place === 'new-window' ? { activate: false as const } : {}),
         // It opens in the chat view, following the conversation over there.
         seedAgent: {
-          tabName: spec.title,
+          tabName: agent.title,
           meshConversation: {
-            connectionId: spec.connectionId,
+            connectionId,
             machineName: spec.machineName,
-            remoteWorkspaceId: spec.conversation.workspaceId,
-            remoteAgentId: spec.conversation.agentId,
-            title: spec.title,
+            remoteWorkspaceId: spec.chatId,
+            remoteAgentId: agent.agentId,
+            title: agent.title,
           },
         },
       })
@@ -4013,12 +4049,16 @@ export default function WorkspaceManager() {
       addWorkspace,
       moveWorkspaceToNewWindow,
       moveWorkspaceToPrimaryWindow,
+      moveWorkspaceToWindow,
       primaryWorkspaceWindowId,
       setActiveWorkspaceForWindow,
       setNewChatPanelState,
       workspaceWindowId,
     ],
   )
+  // Settings ▸ Settled chats' Open on another environment's chat: Settings
+  // has no path to this opener, so it asks by a window event.
+  useEffect(() => subscribeEnvironmentChatOpenRequest((spec) => void openRemoteSession(spec)), [openRemoteSession])
 
   // A chat agent started on another environment (remote-sessions-ux /
   // new-chat-on-a-remote-machine, design-environments PR 2), whatever kind of
@@ -4997,46 +5037,35 @@ export default function WorkspaceManager() {
       prev ? { ...prev, mode: 'scheduled', editingScheduledAgentId: null, editingRemoteScheduledAgent: null } : prev,
     )
   })
-  // A scheduled agent's row in the Scheduled section: the panel, editing it.
-  // Never through the parked chat draft, which is the person's next chat and
-  // not this.
-  const sidebarOpenScheduledAgent = useStableCallback((id: string) => {
-    const agent = scheduledAgents.find((candidate) => candidate.id === id)
-    if (!agent) return
+  // A scheduled agent's row in the Scheduled section, whichever machine it
+  // runs on: the panel, editing it there. Never through the parked chat
+  // draft, which is the person's next chat and not this. This computer's is
+  // read from this window's list, another machine's as the section last read
+  // it (until this computer's Studio is read like any other environment's).
+  const sidebarOpenScheduledAgent = useStableCallback(({ route, id }: ScheduledAgentRef) => {
+    const local = route === null ? scheduledAgents.find((candidate) => candidate.id === id) : undefined
+    const found = route === null ? null : remoteScheduledAgentNow(route, id)
+    if (!local && !found) return
     closeGlobalSurface()
     closeModalSurface()
     setNotificationsOpen(false)
     setSidebarSection('home')
     setNewChatPanelState({
-      folderPath: agent.folderPath,
-      folderLabel: newChatFolderLabel(agent.folderPath),
+      folderPath: local?.folderPath ?? null,
+      folderLabel: local ? newChatFolderLabel(local.folderPath) : null,
       connector: null,
       forcedSelection: null,
       mode: 'scheduled',
-      editingScheduledAgentId: id,
-    })
-  })
-  // Another machine's, from its row in the same section: the same panel,
-  // editing it on that machine (a paired desktop's on its project there).
-  const sidebarOpenRemoteScheduledAgent = useStableCallback((route: string, id: string) => {
-    const found = remoteScheduledAgentNow(route, id)
-    if (!found) return
-    closeGlobalSurface()
-    closeModalSurface()
-    setNotificationsOpen(false)
-    setSidebarSection('home')
-    setNewChatPanelState({
-      folderPath: null,
-      folderLabel: null,
-      connector: null,
-      forcedSelection: null,
-      mode: 'scheduled',
-      editingRemoteScheduledAgent: {
-        route,
-        connectionId: found.machine.connectionId,
-        machineName: found.machine.machineName,
-        agent: found.agent,
-      },
+      ...(local
+        ? { editingScheduledAgentId: id }
+        : {
+            editingRemoteScheduledAgent: {
+              route: route!,
+              connectionId: found!.machine.connectionId,
+              machineName: found!.machine.machineName,
+              agent: found!.agent,
+            },
+          }),
     })
   })
   // A kept draft from the sidebar's Drafts: made this window's, and New chat
@@ -5127,8 +5156,10 @@ export default function WorkspaceManager() {
                 ids?.ofRoute(environmentRouteOfMeshConnection(workspace.remoteOrigin.connectionId)) ===
                   address.environmentId,
             )?.id ?? null,
+          // Another environment's chat, as its row in the environments' rows
+          // opens it (`environmentChatsNow.ts`).
           remoteChats: (wanted) =>
-            remoteChatLinkTargets(wanted).map((target) => ({
+            chatsAtAddress(environmentChatsNow(state.workspaces), wanted).map((target) => ({
               environmentId: target.environmentId,
               machineName: target.machineName,
               open: () => void openRemoteSession(target.spec),
@@ -5153,23 +5184,6 @@ export default function WorkspaceManager() {
       unsubscribe?.()
     }
   }, [workspaceWindowId, moveWorkspaceToWindow, sidebarSelectWorkspace, openRemoteSession])
-  // A match the palette found in a paired machine's chat opens it here as
-  // its sidebar row opens it, on the agent the match is in
-  // (`remoteChatSearch.ts`).
-  useEffect(
-    () =>
-      registerRemoteChatOpener((target) => {
-        const spec = remoteChatOnConnection(target.connectionId, target.workspaceId)
-        if (!spec) return null
-        if (spec.attachedWorkspaceId || spec.conversation.agentId === target.agentId) return openRemoteSession(spec)
-        return openRemoteSession({
-          ...spec,
-          conversation: { workspaceId: target.workspaceId, agentId: target.agentId },
-          sessionId: meshConversationSessionId(target.workspaceId, target.agentId),
-        })
-      }),
-    [openRemoteSession],
-  )
   const sidebarMoveToNewWindow = useStableCallback(
     (id: WorkspaceId, placement: Parameters<typeof moveWorkspaceToNewWindow>[1]) =>
       void moveWorkspaceToNewWindow(id, placement),
@@ -5376,9 +5390,7 @@ export default function WorkspaceManager() {
               onNewChat={sidebarNewChat}
               onNewScheduledAgent={sidebarNewScheduledAgent}
               onOpenScheduledAgent={sidebarOpenScheduledAgent}
-              openScheduledAgentId={newChatPanelState?.editingScheduledAgentId ?? null}
-              onOpenRemoteScheduledAgent={sidebarOpenRemoteScheduledAgent}
-              openRemoteScheduledAgent={editingRemoteRef}
+              openScheduledAgent={openScheduledAgent}
               onOpenDraft={sidebarOpenDraft}
               onDeleteDraft={sidebarDeleteDraft}
               openDraftId={
@@ -5394,7 +5406,6 @@ export default function WorkspaceManager() {
               onNewChatOnMachine={sidebarNewChatOnMachine}
               onRevealFolder={sidebarRevealFolder}
               onDeleteSettledChat={sidebarDeleteSettledChat}
-              onDeleteSettledChatThere={sidebarDeleteSettledChatThere}
               onSetSidebarCollapsed={setSidebarCollapsed}
               sidebarWidth={sidebarWidth}
               onSetSidebarWidth={setSidebarWidth}
@@ -5856,6 +5867,7 @@ export default function WorkspaceManager() {
             }}
             onRunCommand={runPersonCommand}
             onOpenRemoteConnections={() => openSettings(false, 'remote')}
+            onOpenEnvironmentChat={sidebarOpenRemoteSession}
             workspaceWindowId={workspaceWindowId}
             workspaces={visibleWorkspaces}
             activeWorkspaceId={windowActiveWorkspaceId}

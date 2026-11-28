@@ -3,6 +3,7 @@ import type {
   StudioChatDeleted,
   StudioChatDeletePlan,
   StudioChatSearchAnswer,
+  StudioChatSeen,
 } from '../../../packages/studio-protocol/src/public'
 import type { ConversationLifecycle, ConversationLifecycleFailure } from '../../main/automation/conversation-lifecycle'
 import { deepRedactLocalPaths } from '../../main/mobile/control/path-safety'
@@ -44,6 +45,7 @@ export type StudioChatLifecycleDomain = {
     workspaceId: string,
     until: number | null,
     byOwner: boolean,
+    seen?: StudioChatSeen,
   ): Answer<{ snoozedUntil: number | null }, Writing | 'conflict'>
   highlight(
     workspaceId: string,
@@ -137,8 +139,8 @@ export function createStudioChatLifecycleDomain(deps: StudioChatLifecycleDeps): 
       answered(await deps.lifecycle.markUnread(workspaceId, actor(byOwner)), (done) => ({
         lastVisitedAt: done.lastVisitedAt,
       })) as StudioChatLifecycleAnswer<{ lastVisitedAt: number }, Writing | 'conflict'>,
-    snooze: async (workspaceId, until, byOwner) =>
-      answered(deps.lifecycle.snooze(workspaceId, until, actor(byOwner)), (done) => ({
+    snooze: async (workspaceId, until, byOwner, seen) =>
+      answered(deps.lifecycle.snooze(workspaceId, until, actor(byOwner), seen ? { seen } : undefined), (done) => ({
         snoozedUntil: done.snoozedUntil,
       })) as StudioChatLifecycleAnswer<{ snoozedUntil: number | null }, Writing | 'conflict'>,
     highlight: async (workspaceId, change, byOwner) =>

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
@@ -8,10 +8,13 @@ import {
   acquireInstanceLock,
   createPoolStore,
   normalizePoolSettings,
+  parsePoolRecord,
   POOL_LOCK_FILE,
   POOL_RECORD_VERSION,
   RESERVED_PATHS_MAX,
 } from './pool-store'
+
+import { testDatabaseAt } from '../../../tests/studio-database'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -94,8 +97,6 @@ test('the idle period defaults to two hours and is kept to whole minutes between
 })
 
 test('a record keeps a slot parked for its chat and the paths kept for chats; a mark no state can have is dropped', async () => {
-  const dir = await container()
-  const store = createPoolStore(dir)
   const keeper = { branch: 'agent/chat', agentId: null, workspaceId: null, since: 1 }
   const slot = (id: string, state: string) => ({
     id,
@@ -120,9 +121,7 @@ test('a record keeps a slot parked for its chat and the paths kept for chats; a 
     branch: `agent/chat-${n}`,
     path: `/Users/dev/.sprintengine-worktrees/app/app-${n + 10}`,
   }))
-  await mkdir(store.dir, { recursive: true })
-  await writeFile(
-    join(store.dir, 'pool-0123456789abcdef.json'),
+  const record = parsePoolRecord(
     JSON.stringify({
       version: POOL_RECORD_VERSION,
       poolId: '0123456789abcdef',
@@ -132,7 +131,6 @@ test('a record keeps a slot parked for its chat and the paths kept for chats; a 
       reservedPaths: [...reserved, { path: '/Users/dev/broken' }],
     }),
   )
-  const [{ record }] = await store.readAll()
   assert.ok(record)
   assert.deepEqual(record.slots[0]?.parked, keeper, 'an idle slot stays kept for its chat')
   assert.equal(record.slots[1]?.parked, null, 'a leased slot is kept for no one')
@@ -144,8 +142,7 @@ test('a record keeps a slot parked for its chat and the paths kept for chats; a 
   )
 
   // A record an older build wrote has none.
-  await writeFile(
-    join(store.dir, 'pool-0123456789abcdef.json'),
+  const older = parsePoolRecord(
     JSON.stringify({
       version: POOL_RECORD_VERSION,
       poolId: '0123456789abcdef',
@@ -154,6 +151,33 @@ test('a record keeps a slot parked for its chat and the paths kept for chats; a 
       slots: [],
     }),
   )
-  const [{ record: older }] = await store.readAll()
   assert.deepEqual(older?.reservedPaths, [])
+})
+
+test('records are kept a row per pool: a restart reads each back, and one that does not read is null', async () => {
+  const dir = await container()
+  const database = testDatabaseAt(dir)
+  const store = createPoolStore({ dataDir: dir, database })
+  const record = {
+    version: POOL_RECORD_VERSION,
+    poolId: '0123456789abcdef',
+    repoRoot: '/Users/dev/app',
+    commonDir: '/Users/dev/app/.git',
+    hostId: 'local',
+    defaultRef: null,
+    lastFetchAt: null,
+    lastLeaseAt: null,
+    createdAt: 1,
+    slots: [],
+    releasedPaths: [],
+    reservedPaths: [],
+  }
+  await store.write(record)
+  await store.write({ ...record, lastLeaseAt: 2 })
+  await database.run("INSERT INTO pool_records (pool_id, body) VALUES ('fedcba9876543210', '{ torn')")
+  const again = createPoolStore({ dataDir: dir, database })
+  assert.deepEqual(await again.readAll(), [
+    { poolId: '0123456789abcdef', record: { ...record, lastLeaseAt: 2 } },
+    { poolId: 'fedcba9876543210', record: null },
+  ])
 })
