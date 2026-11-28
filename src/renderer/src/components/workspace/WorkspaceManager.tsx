@@ -181,7 +181,11 @@ import {
 import { useSurfaceView } from './surfaceView'
 import type { NewAgentPanelMode, RemoteNewChatLaunch } from './agentComposer/NewAgentPanel'
 import { useScheduledAgents } from '../../store/scheduledAgentsStore'
-import { remoteScheduledAgentNow, useRemoteScheduledAgent } from './sidebar/useRemoteScheduledAgents'
+import {
+  remoteScheduledAgentNow,
+  useRemoteScheduledAgent,
+  type ScheduledAgentRef,
+} from './sidebar/useRemoteScheduledAgents'
 import { formatRunTimes } from './agentComposer/schedule/scheduleEditor'
 import { scheduledAgentScheduleWords, type ScheduledAgentView } from '../../../../shared/scheduled-agents'
 import { scheduledAgentRuns } from '../../utils/scheduledAgentRuns'
@@ -3139,6 +3143,11 @@ export default function WorkspaceManager() {
     [editingRemote],
   )
   const remoteEditingRead = useRemoteScheduledAgent(editingRemoteRef)
+  // The one the door is editing, whichever machine it runs on, drawn selected.
+  const openScheduledAgent = useMemo<ScheduledAgentRef | null>(
+    () => (editingScheduledAgentId ? { route: null, id: editingScheduledAgentId } : editingRemoteRef),
+    [editingScheduledAgentId, editingRemoteRef],
+  )
   const remoteEditingGone = editingRemoteRef !== null && remoteEditingRead.machine !== null && !remoteEditingRead.agent
   useEffect(() => {
     if (remoteEditingGone) setNewChatPanelState(null)
@@ -5019,46 +5028,35 @@ export default function WorkspaceManager() {
       prev ? { ...prev, mode: 'scheduled', editingScheduledAgentId: null, editingRemoteScheduledAgent: null } : prev,
     )
   })
-  // A scheduled agent's row in the Scheduled section: the panel, editing it.
-  // Never through the parked chat draft, which is the person's next chat and
-  // not this.
-  const sidebarOpenScheduledAgent = useStableCallback((id: string) => {
-    const agent = scheduledAgents.find((candidate) => candidate.id === id)
-    if (!agent) return
+  // A scheduled agent's row in the Scheduled section, whichever machine it
+  // runs on: the panel, editing it there. Never through the parked chat
+  // draft, which is the person's next chat and not this. This computer's is
+  // read from this window's list, another machine's as the section last read
+  // it (until this computer's Studio is read like any other environment's).
+  const sidebarOpenScheduledAgent = useStableCallback(({ route, id }: ScheduledAgentRef) => {
+    const local = route === null ? scheduledAgents.find((candidate) => candidate.id === id) : undefined
+    const found = route === null ? null : remoteScheduledAgentNow(route, id)
+    if (!local && !found) return
     closeGlobalSurface()
     closeModalSurface()
     setNotificationsOpen(false)
     setSidebarSection('home')
     setNewChatPanelState({
-      folderPath: agent.folderPath,
-      folderLabel: newChatFolderLabel(agent.folderPath),
+      folderPath: local?.folderPath ?? null,
+      folderLabel: local ? newChatFolderLabel(local.folderPath) : null,
       connector: null,
       forcedSelection: null,
       mode: 'scheduled',
-      editingScheduledAgentId: id,
-    })
-  })
-  // Another machine's, from its row in the same section: the same panel,
-  // editing it on that machine (a paired desktop's on its project there).
-  const sidebarOpenRemoteScheduledAgent = useStableCallback((route: string, id: string) => {
-    const found = remoteScheduledAgentNow(route, id)
-    if (!found) return
-    closeGlobalSurface()
-    closeModalSurface()
-    setNotificationsOpen(false)
-    setSidebarSection('home')
-    setNewChatPanelState({
-      folderPath: null,
-      folderLabel: null,
-      connector: null,
-      forcedSelection: null,
-      mode: 'scheduled',
-      editingRemoteScheduledAgent: {
-        route,
-        connectionId: found.machine.connectionId,
-        machineName: found.machine.machineName,
-        agent: found.agent,
-      },
+      ...(local
+        ? { editingScheduledAgentId: id }
+        : {
+            editingRemoteScheduledAgent: {
+              route: route!,
+              connectionId: found!.machine.connectionId,
+              machineName: found!.machine.machineName,
+              agent: found!.agent,
+            },
+          }),
     })
   })
   // A kept draft from the sidebar's Drafts: made this window's, and New chat
@@ -5383,9 +5381,7 @@ export default function WorkspaceManager() {
               onNewChat={sidebarNewChat}
               onNewScheduledAgent={sidebarNewScheduledAgent}
               onOpenScheduledAgent={sidebarOpenScheduledAgent}
-              openScheduledAgentId={newChatPanelState?.editingScheduledAgentId ?? null}
-              onOpenRemoteScheduledAgent={sidebarOpenRemoteScheduledAgent}
-              openRemoteScheduledAgent={editingRemoteRef}
+              openScheduledAgent={openScheduledAgent}
               onOpenDraft={sidebarOpenDraft}
               onDeleteDraft={sidebarDeleteDraft}
               openDraftId={

@@ -173,6 +173,7 @@ import {
   remoteScheduleActionWords,
   useRemoteScheduledAgents,
   type RemoteScheduledMachine,
+  type ScheduledAgentRef,
 } from './sidebar/useRemoteScheduledAgents'
 import {
   PauseAllScheduledAgentsControl,
@@ -354,14 +355,11 @@ type WorkspaceSidebarProps = {
   // Open New chat switched to Scheduled agent: the clock beside New chat.
   // Absent, there is no clock (a host with no scheduling).
   onNewScheduledAgent?: () => void
-  // Open a scheduled agent's card: New chat, editing it.
-  onOpenScheduledAgent?: (id: string) => void
+  // Open any machine's scheduled agent: New chat, editing it on the machine
+  // it runs on (`route` null for this computer's).
+  onOpenScheduledAgent?: (agent: ScheduledAgentRef) => void
   // The scheduled agent the door in this window is editing, drawn selected.
-  openScheduledAgentId?: string | null
-  // Open a paired machine's scheduled agent: the same editor, saving there.
-  onOpenRemoteScheduledAgent?: (route: string, id: string) => void
-  // The paired machine's scheduled agent the door is editing, drawn selected.
-  openRemoteScheduledAgent?: { route: string; id: string } | null
+  openScheduledAgent?: ScheduledAgentRef | null
   // Reopen a kept New chat draft, and throw one away. Absent, no Drafts section.
   onOpenDraft?: (id: string) => void
   onDeleteDraft?: (id: string) => void
@@ -469,9 +467,7 @@ function WorkspaceSidebar({
   onNewChat,
   onNewScheduledAgent,
   onOpenScheduledAgent,
-  openScheduledAgentId = null,
-  onOpenRemoteScheduledAgent,
-  openRemoteScheduledAgent = null,
+  openScheduledAgent = null,
   onOpenDraft,
   onDeleteDraft,
   openDraftId = null,
@@ -3464,9 +3460,9 @@ function WorkspaceSidebar({
                   now={now}
                   project={flatProjectOfScheduled(agent)}
                   runInProgress={scheduledAgentRunInProgress(agent, activityByWorkspaceId)}
-                  selected={openScheduledAgentId === agent.id}
+                  selected={openScheduledAgent?.route === null && openScheduledAgent.id === agent.id}
                   pausedAll={scheduledPausedAll !== null}
-                  onOpen={() => onOpenScheduledAgent?.(agent.id)}
+                  onOpen={() => onOpenScheduledAgent?.({ route: null, id: agent.id })}
                   onClose={() => closeScheduledAgent(agent)}
                   onTogglePause={() => void setScheduledAgentPaused(agent, agent.pausedAt === undefined)}
                   onRunNow={() => runScheduledAgentNow(agent)}
@@ -3493,15 +3489,15 @@ function WorkspaceSidebar({
                     machine={{ ref: machine.machine, name: machine.machineName }}
                     runInProgress={null}
                     selected={
-                      openRemoteScheduledAgent?.route === machine.route && openRemoteScheduledAgent.id === agent.id
+                      openScheduledAgent?.route === machine.route && openScheduledAgent.id === agent.id
                     }
                     pausedAll={machine.pausedAll !== null}
                     {...(machine.operable
                       ? {
                           // Opens in New chat's editor, which saves it on the
                           // machine it runs on, addressed by its route.
-                          ...(onOpenRemoteScheduledAgent
-                            ? { onOpen: () => onOpenRemoteScheduledAgent(machine.route, agent.id) }
+                          ...(onOpenScheduledAgent
+                            ? { onOpen: () => onOpenScheduledAgent({ route: machine.route, id: agent.id }) }
                             : {}),
                           onClose: () => actOnRemoteScheduled(machine, agent, 'delete'),
                           onTogglePause: () =>
