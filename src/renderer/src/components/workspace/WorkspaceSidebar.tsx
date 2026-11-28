@@ -1853,16 +1853,30 @@ function WorkspaceSidebar({
     if (unseenDoneIds.has(workspace.id) || unreadOnLeaveRef.current.has(workspace.id)) return false
     return latestFinishOf(workspace, conversationsByWorkspaceId.get(workspace.id) ?? NO_CONVERSATIONS) !== null
   }
-  // New chat in project on a paired desktop's project: opened on that
-  // machine, where this device may start a chat there (`conversation.create`
-  // on `conversation:operate`). The project is the one the chat stands in.
-  const remoteNewChatTargetOf = (
-    conversation: RemoteConversation | undefined,
-  ): { connectionId: string; workspaceId: string } | null => {
-    const connectionId = conversation?.connectionId
-    if (!onNewChatOnMachine || !connectionId || !conversation) return null
-    const source = environmentSources.find((candidate) => candidate.route === conversation.route)
-    return source?.entry.access === 'operate' ? { connectionId, workspaceId: conversation.workspaceId } : null
+  // New chat in project on another environment's chat: a paired desktop's
+  // opens on that machine, where this device may start a chat there
+  // (`conversation.create` on `conversation:operate`), in the project the chat
+  // stands in. An SSH machine's or a WSL distribution's opens in its copy's
+  // folder here, as that copy's own row did, until windows arrange chats by
+  // address.
+  type RemoteNewChat = { machine: { connectionId: string; workspaceId: string } } | { folder: string }
+  const remoteNewChatTargetOf = (conversation: RemoteConversation | undefined): RemoteNewChat | null => {
+    if (!conversation) return null
+    const connectionId = conversation.connectionId
+    if (connectionId) {
+      if (!onNewChatOnMachine) return null
+      const source = environmentSources.find((candidate) => candidate.route === conversation.route)
+      return source?.entry.access === 'operate'
+        ? { machine: { connectionId, workspaceId: conversation.workspaceId } }
+        : null
+    }
+    const copy = conversation.attachedWorkspaceId ? workspaceById.get(conversation.attachedWorkspaceId) : undefined
+    const folder = copy?.environment ? newChatProjectTarget(copy) : null
+    return folder ? { folder } : null
+  }
+  const startRemoteNewChat = (target: RemoteNewChat) => {
+    if ('machine' in target) onNewChatOnMachine?.(target.machine)
+    else onNewChatInFolder(target.folder)
   }
   // A header founded by another environment's chats: the first of them names the project there.
   const remoteNewChatOfGroup = (group: FolderGroup | undefined) =>
@@ -4520,7 +4534,7 @@ function WorkspaceSidebar({
                   if (action === 'rename') setRenamingRemote({ key: conversation.key, value: conversation.title })
                   else if (action === 'new-chat') {
                     const project = remoteNewChatTargetOf(conversation)
-                    if (project) onNewChatOnMachine?.(project)
+                    if (project) startRemoteNewChat(project)
                   } else if (action === 'stop-watching') {
                     const watched = remoteWatchedPullRequest(conversation)
                     if (watched)
@@ -4569,7 +4583,7 @@ function WorkspaceSidebar({
             setFolderMenu(null)
             if (!group) return
             const remoteNewChat = remoteNewChatOfGroup(group)
-            if (action === 'new-chat' && remoteNewChat) onNewChatOnMachine?.(remoteNewChat)
+            if (action === 'new-chat' && remoteNewChat) startRemoteNewChat(remoteNewChat)
             else if (action === 'new-chat' && group.fullPath && !group.missing) {
               onNewChatInFolder(group.fullPath)
             }
