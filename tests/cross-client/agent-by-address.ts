@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { StudioClient } from '../../packages/client-runtime/src/public'
 import type { McpConnectionContext, McpToolResult } from '../../src/shared/modules/mcp-tools'
 import { createNodeStudioPlatform, resetStudioPlatform } from '../../src/server/platform/platform'
-import { createStudioCore } from '../../src/server/core/studio-core'
+import { createStudioCore, type StudioCore } from '../../src/server/core/studio-core'
 import { createStudioGateway } from '../../src/server/core/studio-gateway'
 
 // An agent on the desktop naming a chat on an SSH machine or a WSL
@@ -35,19 +35,28 @@ export async function desktopAgentReaching(input: {
 }): Promise<DesktopAgent> {
   const environmentId = (await input.client()).welcome.environment.id
   const dataDir = await mkdtemp(join(tmpdir(), `gate-desktop-agent-${input.who}-`))
+  const clients: NonNullable<StudioCore['environmentClients']> = {
+    clientFor: async (route) =>
+      route === input.route
+        ? { ok: true, client: await input.client(), name: input.who }
+        : { ok: false, code: 'unavailable', message: `${route} is not reached in the gate.` },
+    onConnected: () => () => undefined,
+    // The window's client already spells the machine's paths for this computer.
+    spellingOf: () => null,
+  }
   const core = createStudioCore(createNodeStudioPlatform({ dataDir, packaged: false, version: '0.0.0-gate' }), {
     role: 'server',
-    environmentClients: {
-      clientFor: async (route) =>
-        route === input.route
-          ? { ok: true, client: await input.client(), name: input.who }
-          : { ok: false, code: 'unavailable', message: `${route} is not reached in the gate.` },
-      onConnected: () => () => undefined,
+  })
+  // The desktop's clients of its machines, as its core combines them: a WSL
+  // distribution's are its own supervisor's on Windows, which the gate wires
+  // itself (main.ts says so), so the gateway is handed the window's client of
+  // either machine.
+  const gateway = createStudioGateway(
+    { ...core, environmentClients: clients },
+    {
+      environmentRoutes: async (id) => (id === environmentId ? [input.route] : []),
     },
-  })
-  const gateway = createStudioGateway(core, {
-    environmentRoutes: async (id) => (id === environmentId ? [input.route] : []),
-  })
+  )
   return {
     who: input.who,
     environmentId,
