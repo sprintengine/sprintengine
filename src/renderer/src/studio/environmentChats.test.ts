@@ -6,6 +6,7 @@ import type { ConversationSessionSummary } from '../../../shared/conversation-ru
 import { withEnvironmentSessions } from '../hooks/conversationSessionsStore'
 import {
   createEnvironmentChatSource,
+  environmentTargetsToFollow,
   followEnvironmentChats,
   followedEnvironmentChats,
   type EnvironmentChatSource,
@@ -220,4 +221,24 @@ test('a client that cannot be held is a refusal its caller hears, never an excep
     asked = source.client()
   })
   await assert.rejects(asked!, /reading 'api'/u)
+})
+
+test('every environment the list holds is followed by its best route, other than the window’s own Studio', () => {
+  const targets = environmentTargetsToFollow([
+    { displayName: 'This Mac', routes: [{ kind: 'local' }] },
+    { displayName: 'build-box', routes: [{ kind: 'ssh', machine: 'build-box' }] },
+    { displayName: 'Ubuntu', routes: [{ kind: 'wsl', distro: 'Ubuntu' }] },
+    {
+      displayName: 'mac-mini',
+      routes: [
+        { kind: 'tailnet', connection: 'conn-mini' },
+        { kind: 'ssh', machine: 'mac-mini' },
+      ],
+    },
+  ])
+  assert.deepEqual(targets, [
+    { route: 'ssh:build-box', name: 'build-box' },
+    { route: 'wsl:Ubuntu', name: 'Ubuntu' },
+    { route: 'tailnet:conn-mini', name: 'mac-mini' },
+  ])
 })

@@ -12,6 +12,7 @@ import {
   CONVERSATION_PROTOCOL_MIN_SUPPORTED,
   CONVERSATION_PROTOCOL_VERSION,
   STUDIO_CAPABILITIES,
+  STUDIO_CHAT_ROWS_CAPABILITY,
   STUDIO_CHAT_CAPABILITIES,
   STUDIO_SESSION_FILE_UPLOADS_CAPABILITY,
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,
@@ -340,7 +341,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_LOCAL_SERVERS_CAPABILITY || options.localServers !== undefined) &&
         (capability !== STUDIO_PROCESSES_CAPABILITY || options.processes !== undefined) &&
         (capability !== STUDIO_BROWSER_TABS_CAPABILITY || options.browserTabs !== undefined) &&
-        (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
+        ((capability !== STUDIO_WORKSPACES_CAPABILITY && capability !== STUDIO_CHAT_ROWS_CAPABILITY) ||
+          options.discovery !== undefined) &&
         ((capability !== STUDIO_EXTENSION_HOST_CAPABILITY && capability !== STUDIO_EXTENSION_EDITORS_CAPABILITY) ||
           options.modules !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_READINESS_CAPABILITY || options.readiness !== undefined) &&

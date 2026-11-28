@@ -43,6 +43,15 @@ export const STUDIO_FILES_CAPABILITY = 'files-mention' as const
  */
 export const STUDIO_WORKSPACES_CAPABILITY = 'workspaces' as const
 /**
+ * `workspaces.list` rows carry what a chat's row draws beyond its name and
+ * folder (`StudioWorkspace`'s chat-row members): its clocks, the row menu's
+ * marks, how it began and the worktree it works in. A client lists a machine's
+ * chats from these rows alone, a chat with no session there included; a
+ * Studio from before them gives those facts only on its listed chats
+ * (`conversation.list`).
+ */
+export const STUDIO_CHAT_ROWS_CAPABILITY = 'chat-rows' as const
+/**
  * A client may offer toolsets for Studio's agents (`tools.*`), and is sent a
  * `call` when an agent uses one. A client sends `reply` and `progress` frames
  * only to a Studio that advertises this.
@@ -496,6 +505,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_GIT_CAPABILITY,
   STUDIO_WORKTREES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+  STUDIO_CHAT_ROWS_CAPABILITY,
   STUDIO_CANVAS_BOARDS_CAPABILITY,
   STUDIO_CHAT_EXPORT_CAPABILITY,
   STUDIO_EXTENSIONS_CAPABILITY,

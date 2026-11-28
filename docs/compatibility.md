@@ -782,6 +782,15 @@ takes New chat's own options beside the contract's request (`newChat`,
 `worktree`, `worktreeName`, `inWorktree`, `effort`, and `noProject` in place of
 `workspaceId`), held to the same rules the gateway's tool holds them to; a
 Studio from before them refuses them as `invalid_params`.
+`chat-rows` (2026-11-28) widens `workspaces.list`'s rows with what a chat's
+row draws: `createdAt`, `recencyAt`, `lastUserMessageAt`, `lastTurnEndedAt`,
+`lastVisitedAt`, `visitRewoundAt`, `scheduledAgentId`, `snoozedUntil` (only a
+snooze still ahead), `highlight`, `autoSettle` and `worktree` (`branch`,
+`projectFolder`), each left out when there is nothing true to say. A client
+lists a machine's chats from these rows alone, a chat no session holds
+included. Additive: a Studio from before it does not list the capability, and
+a client takes those facts from its listed chats (`conversation.list`) as
+before.
 `conversation-handoff` (2026-10-21) adds the owner-only
 `conversation.handoff`, a chat handed off to a fresh session instead of
 compacted, answered with the path of the file its messages were saved to.
