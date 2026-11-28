@@ -327,8 +327,9 @@ test('designSystemAxes', async () => {
       // 2026-11-10, the hand-built headers: the Git pane down to its one
       // chrome rule, the diff to the one over its code, the composer pickers,
       // the account menu, the plugin and skill dialogs and Settings' footers
-      // separated by space and edge fades instead.
-      'components/auxWindows': 2,
+      // separated by space and edge fades instead. auxWindows 2 → 0,
+      // 2026-11-28: the diff window laid out as the editor window, its file
+      // row folded into the one band and its title strip gone.
       'components/backlog': 1,
       'components/diagnostics': 8,
       'components/htmlArtifact': 2,
