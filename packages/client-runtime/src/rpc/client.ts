@@ -550,7 +550,8 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
   function refusedByWelcome(pending: Pending): StudioError | null {
     if (
       pending.method === 'conversation.create' &&
-      (pending.params as { mode?: unknown }).mode !== undefined &&
+      // `default` is the same as naming none, to a Studio of any age.
+      ['plan', 'ask'].includes((pending.params as { mode?: unknown }).mode as string) &&
       !studioPeerSupports(welcome?.capabilities, STUDIO_NEW_CHAT_MODE_CAPABILITY)
     )
       return new StudioError(

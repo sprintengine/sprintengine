@@ -366,7 +366,7 @@ const STABLE_MESSAGES: Readonly<Record<StableCode, string>> = {
   conversation_start_failed: 'The conversation could not be started.',
   worktree_unavailable: 'No worktree could be made or found for the chat here, so nothing was started.',
   unsupported_effort: "That effort is not one this chat's agent CLI offers here.",
-  unsupported_mode: "That agent CLI cannot run a chat in that mode here, so nothing was started.",
+  unsupported_mode: 'That agent CLI cannot run a chat in that mode here, so nothing was started.',
   command_id_conflict: 'That command id was already used for a different command. Send this one under a new id.',
   // Another send to the chat is being prepared: the client tries again after
   // `retryAfterMs` (the SDK does so by itself), rather than failing for good.

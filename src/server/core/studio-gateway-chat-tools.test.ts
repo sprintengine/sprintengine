@@ -56,7 +56,10 @@ function sshMachine() {
   const client = {
     async request(method: string, params: Record<string, unknown>) {
       if (method === 'conversation.create' && params.mode !== undefined && !studio.takesMode)
-        throw new StudioError('unsupported_mode', 'This Studio is older than this app and cannot start a chat in a mode.')
+        throw new StudioError(
+          'unsupported_mode',
+          'This Studio is older than this app and cannot start a chat in a mode.',
+        )
       asked.push({ method, params })
       if (method.startsWith('conversation.') && 'workspaceId' in params && params.workspaceId !== 'ws-deploy')
         throw new StudioError('not_found', `No chat "${String(params.workspaceId)}".`)
