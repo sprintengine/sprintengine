@@ -21,7 +21,13 @@ import { chatMessagesOf } from './conversation-chat-read'
 // chat's state, and stops a turn — and never drives a chat that runs looser
 // than it does.
 
-type Sent = { route: string | null; workspaceId: string; agentId: string; clientId: string; command: ConversationCommand }
+type Sent = {
+  route: string | null
+  workspaceId: string
+  agentId: string
+  clientId: string
+  command: ConversationCommand
+}
 
 function session(overrides: Partial<ConversationSessionSummary> = {}): ConversationSessionSummary {
   return {
