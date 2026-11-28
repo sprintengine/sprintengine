@@ -1,4 +1,3 @@
-import { homedir } from 'os'
 import { isAbsolute } from 'path'
 import type { RepositoryIdentity } from '../../shared/repository-identity'
 import type { WorkspaceSyncSnapshot } from '../../shared/workspace-sync'
@@ -15,17 +14,13 @@ import {
   type LaunchedAgentLink,
   type LaunchLinkResult,
 } from '../agent-launch-notices'
-import { workspaceStoresRoot } from '../workspace-store'
-import { refuseWorkspaceFolder } from './workspace-folder-guard'
 import { confineToRoots } from '../studio-rpc/studio-file-confinement'
 import type { Workspace } from '../../shared/workspace'
+import { isThisMachinesChat } from '../../server/workspaces/studio-workspace-list'
 import {
-  isThisMachinesChat,
-  workspaceRecordView,
-  type StudioWorkspaceList,
-} from '../../server/workspaces/studio-workspace-list'
-import type { StudioWorkspaceReads } from '../../server/workspaces/studio-workspace-reads'
-import type { StudioCliRuntimes } from '../../server/core/studio-cli-runtimes'
+  agentTerminalSession as agentTerminalSessionOf,
+  workspaceAgentView,
+} from '../../server/workspaces/workspace-tools'
 import type {
   BacklogAddOrUpdateLinkInput,
   BacklogCriticalityPayload,
@@ -80,8 +75,6 @@ import { buildAgentBacklogLink } from '../../shared/backlog/agent-links'
 import { BACKLOG_SKILL_ID, backlogLifecycleHandoffPrompt } from '../../shared/backlog/handoff-prompt'
 import { renderSkillInvocationTemplate } from '../../shared/skill-invocation'
 import type { McpConnectionContext, McpToolRegistration, McpToolResult } from './mcp-socket-server'
-import type { WorkspaceCreateRequest, WorkspaceCreateResult } from '../workspace-registry-service'
-import type { WorkspaceMutationActor } from '../workspace-sync-service'
 import { getWorkspaceChangeSummary } from '../workspace-change-summary'
 import {
   capLaunchPermissionPreset,
@@ -101,9 +94,10 @@ import type { TerminalOutputTail } from '../terminal-output-tail'
 import { terminalPlainText } from './terminal-plain-text'
 import type { MachineSchedule, MachineScheduleAction, MachineSchedules } from '../../shared/machine-schedules'
 
-// The automation tool surface. v1: workspace.create / workspace.list /
-// workspace.status / agent.launch / agent.status; the read expansion adds
-// backlog.list / backlog.read / schedule.list. Reads and
+// The automation tool surface: agent.launch / agent.status, the terminals,
+// the backlog, scheduled agents and the extensions this desktop runs. (The
+// `workspace.*` and `cli.*` tools are every Studio's own, served from its core:
+// server/workspaces/workspace-tools.ts, server/core/cli-runtime-tools.ts.) Reads and
 // mutations alike answer from main's own services — there is one lane, and it is
 // main's. No tool on this surface needs a window, and the renderer
 // delegate that used to carry mutations, along with its `no_primary_window` /
@@ -150,12 +144,6 @@ const TERMINAL_READ_RAW_BYTES = 256 * 1024
 
 export type AutomationBackends = {
   getWorkspaceSyncSnapshot(): WorkspaceSyncSnapshot
-  /**
-   * The chats this Studio holds, as `workspace.list` answers them: the server
-   * core's own list (`server/workspaces/studio-workspace-list.ts`), the one
-   * `workspaces.list` answers on the protocol too.
-   */
-  listWorkspaces: StudioWorkspaceList['list']
   listTerminalSessions(): TerminalSessionSnapshot[]
   /**
    * The newest raw output of one terminal session, at most `maxBytes` of it
@@ -185,20 +173,6 @@ export type AutomationBackends = {
   resolveAgentPermissionPreset: AgentPermissionResolver
   /** Who started an agent here, as its record keeps it (`gatewayCallerStarter`). */
   agentStarterOf?: AgentStarterResolver
-  /**
-   * Mint a workspace in main's registry. Synchronous and
-   * window-independent: `workspace.create` no longer asks a renderer to build
-   * the record and then polls the bus to see whether it appeared.
-   */
-  createWorkspace(
-    input: WorkspaceCreateRequest,
-    actor: WorkspaceMutationActor,
-    /** The calling connection, for extensions' hooks to run as. */
-    context?: McpConnectionContext,
-  ):
-    | { ok: true; result: WorkspaceCreateResult }
-    | { ok: false; reason: string; message: string }
-    | Promise<{ ok: true; result: WorkspaceCreateResult } | { ok: false; reason: string; message: string }>
   /** Read-only backlog listing for a workspace root (files + frontmatter, no writes). */
   listBacklogItems(workspaceRoot: string): Promise<BacklogListItemsResult>
   /** Read one backlog item (validated backlog/ relative path). */
@@ -257,36 +231,12 @@ export type AutomationBackends = {
    */
   readRepositoryIdentity(folderPath: string): Promise<RepositoryIdentity | null>
   /**
-   * A project's checkout facts, as `workspace.checkout` answers them: the
-   * server core's own read (`server/workspaces/studio-workspace-reads.ts`),
-   * the one `workspaces.checkout` answers on the protocol too.
-   */
-  workspaceCheckout: StudioWorkspaceReads['checkout']
-  /**
-   * The skills a chat in a project can be given and the MCP servers a CLI
-   * there is configured with, as `workspace.extensions` answers them: the
-   * server core's own read, the one `workspaces.extensions` answers too.
-   */
-  workspaceExtensions: StudioWorkspaceReads['extensions']
-  /**
-   * Studio's own data folders in this process (its user data folder), which
-   * `workspace.create` will not open, nor anything above or inside them. The
-   * workspace stores are added to them wherever this is served.
-   */
-  studioDataDirs?(): readonly string[]
-  /**
    * Loaded CLI plugin manifests (`getPluginRegistry().loaded()`). backlog.work
    * composes the target CLI's native skill invocation from the matching
    * plugin's `skillIntegration.invocation.fileDropTemplate`; injected as a
    * backend so tests fake manifests.
    */
   listPlugins(): LoadedPlugin[]
-  /**
-   * The agent CLIs this Studio runs, as `cli.runtime.list` answers them: the
-   * server core's own list (`server/core/studio-cli-runtimes.ts`), the one
-   * `cliRuntimes.list` answers on the protocol too.
-   */
-  listCliRuntimes: StudioCliRuntimes['list']
   /**
    * Make a built-in skill present in the workspace's native harness dirs before
    * a launch reads its invocation (getStatus → install; the
@@ -572,43 +522,11 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     agentId: string,
     cliSessionId?: string,
   ): TerminalSessionSnapshot | null {
-    return (
-      backends
-        .listTerminalSessions()
-        .find(
-          (session) =>
-            session.kind === 'agent' &&
-            session.workspaceId === workspaceId &&
-            (session.agentId === agentId || (cliSessionId !== undefined && session.sessionId === cliSessionId)),
-        ) ?? null
-    )
-  }
-
-  function workspaceProjection(workspace: Workspace): Record<string, unknown> {
-    return workspaceRecordView(workspace, backends.getWorkspaceSyncSnapshot().state.workspaceWindows)
+    return agentTerminalSessionOf(backends.listTerminalSessions(), workspaceId, agentId, cliSessionId)
   }
 
   function agentProjection(workspace: Workspace, agentId: string): Record<string, unknown> {
-    const agent = workspace.agents[agentId]
-    const session = agentTerminalSession(workspace.id, agentId, agent?.cliSessionId)
-    return {
-      workspaceId: workspace.id,
-      agentId,
-      name: agent?.name ?? null,
-      cli: agent?.cli ?? null,
-      cliStartRequested: agent?.cliStartRequested ?? false,
-      cliHasLaunched: agent?.cliHasLaunched ?? false,
-      cliSessionId: agent?.cliSessionId ?? null,
-      terminal: session
-        ? {
-            sessionId: session.sessionId,
-            processAlive: session.processAlive,
-            startedAt: session.startedAt,
-            lastOutputAt: session.lastOutputAt,
-            phase: session.agentState?.phase ?? null,
-          }
-        : null,
-    }
+    return workspaceAgentView(workspace, agentId, backends.listTerminalSessions())
   }
 
   // The `permissionPreset` argument every launching tool accepts, validated
@@ -936,90 +854,6 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     }
   }
 
-  const workspaceList: McpToolRegistration = {
-    name: 'workspace.list',
-    description:
-      'List the workspaces visible to the user in the running SprintEngine instance, with window assignment and agent ids. ' +
-      'Workspaces that survived a restart are listed like any other: main owns the registry, so their name, ' +
-      'folder, mode, and agents are real whether or not a window is open.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    // A paired device is not listed this desktop's copies of another
-    // environment's chats: it reaches those on that machine, not through here.
-    handler: async (_args, context) => success(await backends.listWorkspaces({ ownOnly: isPairedDevice(context) })),
-  }
-
-  const workspaceStatus: McpToolRegistration = {
-    name: 'workspace.status',
-    description: 'Read one workspace from the main process store, including its agents and their terminal liveness.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workspaceId: { type: 'string', description: 'Workspace id from workspace.list or workspace.create.' },
-      },
-      required: ['workspaceId'],
-      additionalProperties: false,
-    },
-    handler: async (args, context) => {
-      const workspaceId = requireString(args, 'workspaceId')
-      if (typeof workspaceId !== 'string') return workspaceId
-      const workspace = findWorkspace(workspaceId, context)
-      if (!workspace) return failure('unknown_workspace', `Workspace "${workspaceId}" is not known to the running app.`)
-      return success({
-        workspace: workspaceProjection(workspace),
-        agents: Object.keys(workspace.agents).map((agentId) => agentProjection(workspace, agentId)),
-      })
-    },
-  }
-
-  const workspaceCreate: McpToolRegistration = {
-    name: 'workspace.create',
-    description:
-      'Create a workspace in the running SprintEngine instance. The main process owns the registry, so this ' +
-      'succeeds with no window open and the returned workspace is immediately addressable by every other tool.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Workspace display name.' },
-        folderPath: { type: 'string', description: 'Absolute folder to open in the workspace.' },
-        templateId: { type: 'string', description: 'Layout template id; defaults to the standard template.' },
-      },
-      additionalProperties: false,
-    },
-    handler: async (args, context) => {
-      const invalid = firstInvalidOptionalString(args, ['name', 'folderPath', 'templateId'])
-      if (invalid) return invalid
-      // Held to project folders, whoever asks; a paired device further to
-      // folders inside the projects this machine already has open.
-      const folderPath = optionalString(args.folderPath)
-      if (folderPath && isPairedDevice(context) && !(await deviceMayName(folderPath)))
-        return failure('folder_refused', DEVICE_FOLDER_REFUSED)
-      if (folderPath) {
-        const refused = await refuseWorkspaceFolder(folderPath, {
-          platform: process.platform,
-          homeDir: homedir(),
-          dataDirs: [workspaceStoresRoot(), ...(backends.studioDataDirs?.() ?? [])],
-        })
-        if (refused) {
-          return failure('folder_refused', `${refused} Open the project's own folder instead.`)
-        }
-      }
-      // Synchronous authority: the id comes back from the same call that
-      // committed it, which is what retired the delegate-to-renderer round trip
-      // and its 7s bus-confirmation poll.
-      const outcome = await backends.createWorkspace(
-        {
-          name: optionalString(args.name),
-          folderPath: optionalString(args.folderPath),
-          templateId: optionalString(args.templateId),
-        },
-        'gateway',
-        context,
-      )
-      if (!outcome.ok) return failure(outcome.reason, outcome.message)
-      return success({ workspace: workspaceProjection(outcome.result.workspace) })
-    },
-  }
-
   const agentLaunch: McpToolRegistration = {
     name: 'agent.launch',
     description:
@@ -1203,109 +1037,6 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
         notifyParent: linked?.linked === true,
         ...(linked && !linked.linked ? { notifyParentReason: linked.reason } : {}),
       })
-    },
-  }
-
-  // The checkout facts behind a remote launch's checkout · branch segments
-  // (checkout-and-branch-on-remote-create). A read, on `workspace:read`, so a
-  // paired Studio can show where a chat would run before asking for it; the
-  // worktree itself is minted by `agent.launch` (workspace:operate), never
-  // here — scopes stay a function of the tool's NAME (tailnet-scopes.ts).
-  const workspaceCheckout: McpToolRegistration = {
-    name: 'workspace.checkout',
-    description:
-      "Read a workspace's git checkout: whether its folder is a repository, the branch it is on, the trunk, " +
-      "every local branch, and the worktrees the repository holds. Pair it with agent.launch's " +
-      '"worktree.baseRef" to start an agent on a fresh worktree branched from one of the listed branches.',
-    inputSchema: {
-      type: 'object',
-      properties: { workspaceId: { type: 'string', description: 'Workspace id from workspace.list.' } },
-      required: ['workspaceId'],
-      additionalProperties: false,
-    },
-    handler: async (args, context) => {
-      const workspaceId = requireString(args, 'workspaceId')
-      if (typeof workspaceId !== 'string') return workspaceId
-      const read = await backends.workspaceCheckout(workspaceId, { ownOnly: isPairedDevice(context) })
-      return read.ok ? success(read.checkout) : failure(read.code, read.message)
-    },
-  }
-
-  // What a paired machine's composer offers a chat here: the project's skills
-  // (installed, and the built-ins a pick installs) and the MCP servers the
-  // chat's CLI is configured with, each with the connection it last reported.
-  // A read, on `workspace:read` like `workspace.checkout`; attaching one is
-  // `conversation.create`'s `skills`, under its own grant.
-  const workspaceExtensions: McpToolRegistration = {
-    name: 'workspace.extensions',
-    description:
-      "List what a chat in a workspace's folder can use: `skills` (id, name, description, whether it is " +
-      'installed there or a built-in a chat installs on first use, and the GitHub repository it came from when ' +
-      'a skill source installed it) and, with `cli`, `servers`: the MCP servers that CLI is configured with, ' +
-      'each with its `status` (connected, pending, needs-auth, failed, disabled) once a chat on it here has ' +
-      "reported one. Pass the skill ids to conversation.create's `skills`.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workspaceId: { type: 'string', description: 'Workspace id from workspace.list.' },
-        cli: { type: 'string', description: 'The agent CLI plugin id whose MCP servers to list.' },
-      },
-      required: ['workspaceId'],
-      additionalProperties: false,
-    },
-    handler: async (args, context) => {
-      const workspaceId = requireString(args, 'workspaceId')
-      if (typeof workspaceId !== 'string') return workspaceId
-      const invalid = firstInvalidOptionalString(args, ['cli'])
-      if (invalid) return invalid
-      const read = await backends.workspaceExtensions(workspaceId, optionalString(args.cli) ?? null, {
-        ownOnly: isPairedDevice(context),
-      })
-      return read.ok ? success(read.extensions) : failure(read.code, read.message)
-    },
-  }
-
-  // The answer to "what may I pass as a cli / model / effort?".
-  // Before this, `agent.launch.cliModel` was a blind string an agent could only
-  // guess at from a tool description's example. Reports the CLI plugin registry as the app itself resolves it —
-  // declared, not probed: it says what the registry HOLDS, never whether the
-  // binary is installed on this machine (that probe spawns a login shell per
-  // CLI and belongs to the app's own availability refresh).
-  const cliRuntimeList: McpToolRegistration = {
-    name: 'cli.runtime.list',
-    description:
-      'List the agent CLIs this app can launch, with the model ids and reasoning-effort levels each one ' +
-      'offers. Read it before passing `cli`/`cliModel` to agent.launch — those are otherwise blind strings. Only rows with `agentSelectable: ' +
-      'true` may be launched as agents (the CLI reports agent state via lifecycle hooks); ' +
-      'a false row is registry-held for install/detect only and every launch door refuses it. ' +
-      '`supportsModelSelection` says whether a model can be passed at all; a CLI whose `allowCustomModelId` ' +
-      'is true also accepts model ids its catalog does not list. A level outside `reasoningLevels` is ' +
-      'refused by the CLI itself. This reports what the registry HOLDS, not what is installed on this ' +
-      'machine — it never probes for binaries. ' +
-      'Each row may carry a `catalog`: what the model picker here offers for that CLI, read the way it reads ' +
-      'it — `models` is the list the CLI reported about itself followed by the ids added in Settings, ' +
-      'empty until the CLI has reported (or for a CLI that reports none) and nobody has added one, ' +
-      "each marked with the `family` row it renders under (a model's context " +
-      'windows are one row; `contextLabel` names the window, `familyDefault` the id the row selects), and ' +
-      '`isNew` where the picker shows New; `providerLabel` is the line under each row, naming the CLI a ' +
-      'hosted runtime rides (`hostedVia`); `conversational` says whether conversation.create can start it as ' +
-      "a chat. The CLI's own default model is not a row of `models`: omit `cliModel` for it.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        cli: {
-          type: 'string',
-          description: 'Report only this CLI plugin id. Unknown ids fail rather than returning an empty list.',
-        },
-      },
-      required: [],
-      additionalProperties: false,
-    },
-    handler: async (args) => {
-      const invalid = firstInvalidOptionalString(args, ['cli'])
-      if (invalid) return invalid
-      const listed = await backends.listCliRuntimes(optionalString(args.cli) ?? null)
-      return listed.ok ? success({ clis: listed.clis }) : failure(listed.code, listed.message)
     },
   }
 
@@ -2809,14 +2540,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   }
 
   return [
-    workspaceCheckout,
-    workspaceExtensions,
-    workspaceCreate,
-    workspaceList,
-    workspaceStatus,
     agentLaunch,
     agentStatus,
-    cliRuntimeList,
     terminalList,
     terminalRead,
     terminalCreate,

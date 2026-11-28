@@ -13,6 +13,8 @@ import { join, resolve } from 'node:path'
 
 import { parseSkillFrontmatter, SKILL_ENTRY_FILE } from '../../shared/skills'
 import { createAutomationTools } from '../automation/automation-tools'
+import { createWorkspaceTools } from '../../server/workspaces/workspace-tools'
+import { createCliRuntimeTools } from '../../server/core/cli-runtime-tools'
 import { createBrowserTools } from '../automation/browser-tools'
 import { createCanvasTools } from '../automation/canvas-tools'
 import { createEditorTools } from '../automation/editor-tools'
@@ -97,6 +99,8 @@ test('studio-plugin-skills', async () => {
   function registeredToolNames(): Set<string> {
     const registrations = [
       ...createAutomationTools({} as never),
+      ...createWorkspaceTools({} as never),
+      ...createCliRuntimeTools({} as never),
       ...createBrowserTools({} as never),
       ...createCanvasTools({} as never),
       ...createEditorTools({} as never),
