@@ -1,15 +1,16 @@
 import { useEffect } from 'react'
 
 import { formatEnvironmentRoute } from '../../../../packages/studio-protocol/src/environment'
-import type { EnvironmentEntry } from '../../../shared/environments'
 import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
-import { followEnvironmentChats, knowEnvironments } from '../studio/environmentChats'
+import { environmentTargetsToFollow, followEnvironmentChats, knowEnvironments } from '../studio/environmentChats'
 import { environmentStudioAvailable, type EnvironmentTarget } from '../studio/environmentStudio'
-import { useWorkspaceStore } from '../store/workspaceStore'
+import { useWorkspaceStore, workspaceRegistryReady } from '../store/workspaceStore'
+import { windowEnvironmentChatsCache } from '../studio/environmentChatsCache'
+import { seedEnvironmentChatsOnce } from '../studio/environmentChatsSeed'
 import type { Workspace } from '../../../shared/workspace'
 import { currentEnvironments, useEnvironments } from './useEnvironments'
 
-/** The environments a window's chats are on, other than its own Studio's, each once. */
+/** The environments this window keeps copies of chats of, each once, by the route the copy names. */
 export function windowEnvironmentTargets(workspaces: readonly Pick<Workspace, 'environment'>[]): EnvironmentTarget[] {
   const targets = new Map<string, EnvironmentTarget>()
   for (const workspace of workspaces) {
@@ -19,55 +20,50 @@ export function windowEnvironmentTargets(workspaces: readonly Pick<Workspace, 'e
   return [...targets.values()]
 }
 
-/**
- * The route kinds whose chats this window follows without a record of them
- * here: a paired desktop's (`tailnet:`). Its chats are listed by the machine
- * itself.
- */
-const FOLLOWED_WITHOUT_RECORDS: ReadonlySet<string> = new Set(['tailnet'])
-
-/** Every route of a kind the window follows without records, as the environment list names them. */
-export function listedEnvironmentTargets(entries: readonly EnvironmentEntry[]): EnvironmentTarget[] {
-  const targets = new Map<string, EnvironmentTarget>()
-  for (const entry of entries)
-    for (const route of entry.routes) {
-      if (!FOLLOWED_WITHOUT_RECORDS.has(route.kind)) continue
-      const formatted = formatEnvironmentRoute(route)
-      if (!targets.has(formatted)) targets.set(formatted, { route: formatted, name: entry.displayName })
-    }
-  return [...targets.values()]
-}
-
 const keyOf = (targets: readonly EnvironmentTarget[]) =>
   targets.map((target) => `${target.route}\u0000${target.name}`).join('\u0001')
 
 /**
- * Follow the chats of every environment this window has chats on, for as long
- * as it has them, and of every paired desktop, for as long as the environment list holds them (`environmentChats.ts`): their
- * sessions join the window's one list, and each draws its last-known rows
- * until it answers; an environment that leaves the list loses them. A web tab, which reaches no other
- * environment, follows none.
+ * Follow the chats of every environment the list holds (`environmentChats.ts`),
+ * for as long as it holds them, and of every environment this window still
+ * keeps a copy of a chat of (until those copies go): their sessions join the
+ * window's one list, and each draws its last-known rows until it answers; an
+ * environment that leaves the list loses them. A web tab, which reaches no
+ * other environment, follows none.
  */
 export function useFollowWindowEnvironments(): void {
   const recorded = useWorkspaceStore((state) => keyOf(windowEnvironmentTargets(state.workspaces)))
   const environments = useEnvironments()
-  const listed = keyOf(listedEnvironmentTargets(environments))
+  const listed = keyOf(environmentTargetsToFollow(environments))
   useEffect(() => {
     if (!environmentStudioAvailable()) return
     followEnvironmentChats([
       ...windowEnvironmentTargets(useWorkspaceStore.getState().workspaces),
-      ...listedEnvironmentTargets(currentEnvironments()),
+      ...environmentTargetsToFollow(currentEnvironments()),
     ])
   }, [recorded, listed])
-  // Which environment each route is, for the rows the window last read of it.
+  // Which environment each route is, for the rows the window last read of it:
+  // seeded once from the window's own records of their chats, then drawn.
   useEffect(() => {
-    if (!environmentStudioAvailable()) return
-    knowEnvironments(
-      environments.map((entry) => ({
-        environmentId: entry.environmentId,
-        routes: entry.routes.map((route) => formatEnvironmentRoute(route)),
-      })),
-    )
+    if (!environmentStudioAvailable() || environments.length === 0) return
+    const routes = new Map<string, string>()
+    const entries = environments.map((entry) => {
+      const formatted = entry.routes.map((route) => formatEnvironmentRoute(route))
+      if (entry.environmentId) for (const route of formatted) routes.set(route, entry.environmentId)
+      return { environmentId: entry.environmentId, routes: formatted }
+    })
+    let current = true
+    void seedEnvironmentChatsOnce({
+      ready: workspaceRegistryReady,
+      workspaces: () => useWorkspaceStore.getState().workspaces,
+      idOfRoute: (route) => routes.get(route) ?? null,
+      cache: windowEnvironmentChatsCache(),
+    }).finally(() => {
+      if (current) knowEnvironments(entries)
+    })
+    return () => {
+      current = false
+    }
   }, [environments])
   useEffect(() => () => followEnvironmentChats([]), [])
 }

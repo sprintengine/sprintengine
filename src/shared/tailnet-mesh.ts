@@ -7,6 +7,7 @@ import type {
   ConversationUsageLimitNotice,
   ConversationUsageLimitResumeAction,
   ConversationUsageLimitSnapshot,
+  ConversationWireHighlight,
 } from '../../packages/conversation-protocol/src/public'
 import { readableConversationPhase } from '../../packages/conversation-protocol/src/public'
 import { conversationPhaseWorking, phaseWithBackgroundWork } from './conversation/phase'
@@ -66,6 +67,27 @@ export type MeshWorkspace = {
    * workspace is one this machine draws no row for.
    */
   settledAt?: number | null
+  /**
+   * What the chat's row draws, as its machine's record says (`chat-rows`).
+   * Absent from a machine built before it said, whose listed chats
+   * (`conversation.list`) carry those facts instead.
+   */
+  row?: MeshWorkspaceRow
+}
+
+/** A workspace's row facts on the machine that holds it (`StudioWorkspace`'s chat-row members); each absent when it has none. */
+export type MeshWorkspaceRow = {
+  createdAt?: number
+  recencyAt?: number
+  lastUserMessageAt?: number
+  lastTurnEndedAt?: number
+  lastVisitedAt?: number
+  visitRewoundAt?: number
+  scheduledAgentId?: string
+  snoozedUntil?: number
+  highlight?: ConversationWireHighlight
+  autoSettle?: true
+  worktree?: { branch: string | null; projectFolder?: string }
 }
 
 /**

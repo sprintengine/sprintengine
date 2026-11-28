@@ -36,6 +36,14 @@ const discovery: StudioDiscovery = {
         remoteUrl: 'git@github.com:acme/parser.git',
         name: 'parser',
       },
+      // What its row draws (`chat-rows`), one fact a newer machine might add passed over.
+      createdAt: 1_000,
+      recencyAt: 2_000,
+      lastVisitedAt: 1_500,
+      highlight: { starred: true, color: 'blue' },
+      autoSettle: true,
+      worktree: { branch: 'fix', projectFolder: '/Users/dev/parser' },
+      laterFact: 'ignored',
     },
     { id: 'ws-2', name: 'notes', folderPath: '/Users/dev/notes', settledAt: 1_700 },
   ],
@@ -113,6 +121,16 @@ test('a browse reads its projects, the scopes its grant carries now, and what of
         ['ws-2', null, 1_700],
       ],
     )
+    // Each row's facts, read as this build reads them; one with none has an empty row, not an absent one.
+    assert.deepEqual(browse.workspaces[0]!.row, {
+      createdAt: 1_000,
+      recencyAt: 2_000,
+      lastVisitedAt: 1_500,
+      highlight: { starred: true, color: 'blue' },
+      autoSettle: true,
+      worktree: { branch: 'fix', projectFolder: '/Users/dev/parser' },
+    })
+    assert.deepEqual(browse.workspaces[1]!.row, {})
     // The rig serves no chat records and no Stop watching.
     assert.deepEqual(browse.chatRecord, { lifecycle: false, unwatchPullRequest: false })
   } finally {

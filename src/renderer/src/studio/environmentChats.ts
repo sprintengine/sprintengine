@@ -3,7 +3,13 @@ import {
   STUDIO_CONVERSATIONS_CAPABILITY,
   type StudioWelcomeFrame,
 } from '../../../../packages/studio-protocol/src/public'
-import { formatChatAddress, isEnvironmentId } from '../../../../packages/studio-protocol/src/environment'
+import {
+  formatChatAddress,
+  formatEnvironmentRoute,
+  isEnvironmentId,
+  isEnvironmentRoute,
+} from '../../../../packages/studio-protocol/src/environment'
+import type { EnvironmentEntry } from '../../../shared/environments'
 import type { ConversationEvent, ConversationSessionSummary } from '../../../shared/conversation-runtime'
 import type { MeshConversation, MeshConversationAccess } from '../../../shared/tailnet-mesh'
 import { createStudioChatServices } from '../components/panels/agentChat/studioChat'
@@ -595,6 +601,29 @@ export function createEnvironmentChatSource(
 }
 
 // ── The environments this window follows ─────────────────────────────────────
+
+/**
+ * Every environment the list holds other than this window's own Studio, each
+ * once, by its best route: every paired desktop, saved SSH machine and WSL
+ * distribution, whether or not the window holds a chat of it. Its rows are
+ * read in the background and drawn from its last-known list until it answers,
+ * so one that does not answer slows nothing. The window's own Studio is not
+ * one of them: the window already mirrors its chats (`workspaceSync`) and
+ * lists its sessions, and reading them again would hold a second copy of the
+ * same facts.
+ */
+export function environmentTargetsToFollow(
+  entries: readonly Pick<EnvironmentEntry, 'routes' | 'displayName'>[],
+): EnvironmentTarget[] {
+  const targets = new Map<string, EnvironmentTarget>()
+  for (const entry of entries) {
+    const best = entry.routes[0]
+    if (!best || best.kind === 'local' || !isEnvironmentRoute(best)) continue
+    const formatted = formatEnvironmentRoute(best)
+    if (!targets.has(formatted)) targets.set(formatted, { route: formatted, name: entry.displayName })
+  }
+  return [...targets.values()]
+}
 
 type Followed = { target: EnvironmentTarget; source: EnvironmentChatSource; stop: () => void }
 

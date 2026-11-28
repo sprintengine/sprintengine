@@ -43,6 +43,29 @@ export type StudioWorkspace = {
   projectFrecency?: number
   /** The latest new chat in the folder, ISO time; null for never. */
   projectLastUsedAt?: string | null
+  // ── What its row draws (`chat-rows`); each absent when there is nothing true to say ──
+  /** When the chat was made, ms epoch. */
+  createdAt?: number
+  /** Where its row sits in a list of chats: when a person last wrote to it, else when it last worked. */
+  recencyAt?: number
+  /** When a person last wrote to it, from any device. */
+  lastUserMessageAt?: number
+  /** When its agent last finished a turn. */
+  lastTurnEndedAt?: number
+  /** When a person last had it on screen, on any device. */
+  lastVisitedAt?: number
+  /** When Mark unread last moved `lastVisitedAt` back. */
+  visitRewoundAt?: number
+  /** The schedule whose run started it. */
+  scheduledAgentId?: string
+  /** When it wakes, while it is snoozed. */
+  snoozedUntil?: number
+  /** The row menu's star and highlight colour (`ConversationWireHighlight`): a colour the client does not offer is passed over. */
+  highlight?: { starred: boolean; color?: string }
+  /** Auto-settle is on for it. */
+  autoSettle?: true
+  /** It works in a worktree: its branch, and the project folder it was cut from. */
+  worktree?: { branch: string | null; projectFolder?: string }
   [member: string]: unknown
 }
 
