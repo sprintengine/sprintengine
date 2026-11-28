@@ -8,6 +8,7 @@ import {
   formatEnvironmentRoute,
   isEnvironmentId,
   isEnvironmentRoute,
+  parseEnvironmentRoute,
 } from '../../../../packages/studio-protocol/src/environment'
 import type { EnvironmentEntry } from '../../../shared/environments'
 import type { ConversationEvent, ConversationSessionSummary } from '../../../shared/conversation-runtime'
@@ -109,8 +110,13 @@ export type EnvironmentRows = {
 export type EnvironmentChatSource = {
   readonly route: string
   snapshot(): EnvironmentChatsSnapshot
-  /** Hear the snapshot change. Returns the unsubscriber. */
+  /** Hear the snapshot change, following the environment from now. Returns the unsubscriber. */
   subscribe(listener: () => void): () => void
+  /**
+   * Hear the snapshot change without following the environment: nothing is
+   * asked of it, so only its last-known rows are drawn. Returns the unsubscriber.
+   */
+  watch(listener: () => void): () => void
   /** Hear each of the environment's lifecycle events, and each reconnect. Returns the unsubscriber. */
   onLifecycleEvent(listener: (event: ConversationEvent) => void, onReconnected?: () => void): () => void
   /** Read both lists again now, whatever the clock says. */
@@ -566,6 +572,10 @@ export function createEnvironmentChatSource(
       follow()
       return () => listeners.delete(listener)
     },
+    watch(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
     onLifecycleEvent(listener, onReconnected) {
       follow()
       return services.sessions.onLifecycleEvent(listener, onReconnected)
@@ -603,29 +613,80 @@ export function createEnvironmentChatSource(
 // ── The environments this window follows ─────────────────────────────────────
 
 /**
+ * An environment this window follows, by its best route. A resting one is not
+ * asked anything: its last-known rows are drawn, as not connected, until it
+ * runs or a chat on it is opened (`environmentChatSourceFor`).
+ */
+export type FollowedEnvironment = EnvironmentTarget & { resting?: boolean }
+
+/**
+ * Whether an environment is followed only from its last-known rows: a WSL
+ * distribution that is not running (owner ruling 2026-11-28). Reaching its
+ * Studio would start the distribution, which costs memory and seconds on the
+ * PCs that run it, just to list its chats. Whether it runs is main's reading
+ * of `wsl.exe --list --verbose`, which starts nothing; once it runs, or a chat
+ * there is opened or started, it is followed like any other.
+ */
+function restsUntilRunning(entry: Pick<EnvironmentEntry, 'routes' | 'connection'>): boolean {
+  return entry.routes[0]?.kind === 'wsl' && entry.connection.state !== 'up'
+}
+
+/**
  * Every environment the list holds other than this window's own Studio, each
  * once, by its best route: every paired desktop, saved SSH machine and WSL
  * distribution, whether or not the window holds a chat of it. Its rows are
  * read in the background and drawn from its last-known list until it answers,
- * so one that does not answer slows nothing. The window's own Studio is not
- * one of them: the window already mirrors its chats (`workspaceSync`) and
- * lists its sessions, and reading them again would hold a second copy of the
- * same facts.
+ * so one that does not answer slows nothing; a WSL distribution that is not
+ * running rests (`restsUntilRunning`). The window's own Studio is not one of
+ * them: the window already mirrors its chats (`workspaceSync`) and lists its
+ * sessions, and reading them again would hold a second copy of the same facts.
  */
 export function environmentTargetsToFollow(
-  entries: readonly Pick<EnvironmentEntry, 'routes' | 'displayName'>[],
-): EnvironmentTarget[] {
-  const targets = new Map<string, EnvironmentTarget>()
+  entries: readonly Pick<EnvironmentEntry, 'routes' | 'displayName' | 'connection'>[],
+): FollowedEnvironment[] {
+  const targets = new Map<string, FollowedEnvironment>()
   for (const entry of entries) {
     const best = entry.routes[0]
     if (!best || best.kind === 'local' || !isEnvironmentRoute(best)) continue
     const formatted = formatEnvironmentRoute(best)
-    if (!targets.has(formatted)) targets.set(formatted, { route: formatted, name: entry.displayName })
+    if (targets.has(formatted)) continue
+    targets.set(formatted, {
+      route: formatted,
+      name: entry.displayName,
+      ...(restsUntilRunning(entry) ? { resting: true } : {}),
+    })
   }
   return [...targets.values()]
 }
 
-type Followed = { target: EnvironmentTarget; source: EnvironmentChatSource; stop: () => void }
+/**
+ * The listed environments, then the routes the window's copies name that the
+ * list does not follow by (a machine both paired and saved over SSH). A WSL
+ * distribution's copy never starts it: one the list does not say is running
+ * rests, as a listed one does.
+ */
+export function withRecordedTargets(
+  listed: readonly FollowedEnvironment[],
+  recorded: readonly EnvironmentTarget[],
+): FollowedEnvironment[] {
+  const routes = new Set(listed.map((target) => target.route))
+  return [
+    ...listed,
+    ...recorded
+      .filter((target) => !routes.has(target.route))
+      .map((target) => (parseEnvironmentRoute(target.route)?.kind === 'wsl' ? { ...target, resting: true } : target)),
+  ]
+}
+
+type Followed = {
+  target: EnvironmentTarget
+  source: EnvironmentChatSource
+  stop: () => void
+  /** Only its last-known rows are drawn; nothing is asked of it. */
+  resting: boolean
+  /** A chat view reads through it, so it is followed whatever the list says of it. */
+  pinned: boolean
+}
 
 const followed = new Map<string, Followed>()
 const followedListeners = new Set<() => void>()
@@ -638,11 +699,21 @@ const tellFollowed = (): void => {
 let directory: ReadonlyMap<string, string> = new Map()
 
 /** A source followed from now draws its environment's last-known rows, when the list knows its id. */
-function track(target: EnvironmentTarget, source: EnvironmentChatSource): void {
-  const stop = source.subscribe(tellFollowed)
-  followed.set(target.route, { target, source, stop })
+function track(target: EnvironmentTarget, source: EnvironmentChatSource, resting: boolean): Followed {
+  const stop = resting ? source.watch(tellFollowed) : source.subscribe(tellFollowed)
+  const entry: Followed = { target, source, stop, resting, pinned: false }
+  followed.set(target.route, entry)
   const id = directory.get(target.route)
   if (id) source.loadCached(id)
+  return entry
+}
+
+/** A resting environment followed from now: its source starts reading it. */
+function wake(entry: Followed): void {
+  if (!entry.resting) return
+  entry.stop()
+  entry.stop = entry.source.subscribe(tellFollowed)
+  entry.resting = false
 }
 
 /**
@@ -670,27 +741,43 @@ export function knowEnvironments(
 /**
  * Follow exactly these environments' chats from this window: a route not
  * followed yet gets its source, and a route no longer named lets its source
- * and its connection go.
+ * and its connection go. One that rests is drawn from its last-known rows; one
+ * that stops running goes back to resting, unless a chat view reads through it.
  */
 export function followEnvironmentChats(
-  targets: readonly EnvironmentTarget[],
+  targets: readonly FollowedEnvironment[],
   make: (target: EnvironmentTarget) => EnvironmentChatSource = (target) => createEnvironmentChatSource(target),
 ): void {
   const wanted = new Map(targets.map((target) => [target.route, target]))
   let changed = false
   for (const [route, entry] of followed) {
-    if (wanted.has(route)) continue
+    const want = wanted.get(route)
+    if (want && (entry.pinned || entry.resting || want.resting !== true)) continue
+    // Gone from the list, or a distribution that stopped: its connection goes,
+    // and one still listed is drawn again from its last-known rows.
     entry.stop()
     entry.source.close()
     followed.delete(route)
     changed = true
   }
   for (const [route, target] of wanted) {
-    if (followed.has(route)) continue
-    track(target, make(target))
+    const known = followed.get(route)
+    if (known) {
+      if (known.resting && target.resting !== true) {
+        wake(known)
+        changed = true
+      }
+      continue
+    }
+    track({ route: target.route, name: target.name }, make(target), target.resting === true)
     changed = true
   }
   if (changed) tellFollowed()
+}
+
+/** Whether the window follows a route only from its last-known rows (`FollowedEnvironment.resting`). */
+export function environmentResting(route: string): boolean {
+  return followed.get(route)?.resting === true
 }
 
 /** The sources this window follows now. */
@@ -709,12 +796,23 @@ export function onFollowedEnvironmentChats(listener: () => void): () => void {
   return () => followedListeners.delete(listener)
 }
 
-/** The followed source of a route, followed from now if it was not: what a chat view on it reads through. */
+/**
+ * The followed source of a route, followed from now if it was not, and woken
+ * if it rested: what a chat view on it reads through. It stays followed while
+ * the environment is listed, so a chat open on a distribution keeps it.
+ */
 export function environmentChatSourceFor(target: EnvironmentTarget): EnvironmentChatSource {
   const known = followed.get(target.route)
-  if (known) return known.source
-  const source = createEnvironmentChatSource(target)
-  track(target, source)
+  if (known) {
+    known.pinned = true
+    if (known.resting) {
+      wake(known)
+      tellFollowed()
+    }
+    return known.source
+  }
+  const entry = track(target, createEnvironmentChatSource(target), false)
+  entry.pinned = true
   tellFollowed()
-  return source
+  return entry.source
 }

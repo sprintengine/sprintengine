@@ -3,15 +3,7 @@ import assert from 'node:assert/strict'
 import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import {
-  AttentionPulse,
-  meshMachineNamesOf,
-  meshPanesOf,
-  groupKeyOf,
-  provenanceMachinesOf,
-  TerminalLineView,
-  WorkingElapsed,
-} from './WorkspaceSidebar'
+import { AttentionPulse, meshPanesOf, groupKeyOf, TerminalLineView, WorkingElapsed } from './WorkspaceSidebar'
 import type { Workspace } from '../../../../shared/workspace'
 import type { TerminalLine } from './terminalLines'
 import type { BranchPullRequest } from '../../../../shared/git/pull-request'
@@ -368,42 +360,6 @@ test('WorkspaceSidebar.rowMeta', async () => {
     assert.equal(renderToStaticMarkup(<AttentionPulse active resetKey="w1" tone="good" />), '')
   })
 
-  run('meshMachineNamesOf finds remote conversation tabs anywhere in the layout, deduplicated', () => {
-    const workspace = {
-      layoutModel: {
-        layout: {
-          type: 'row',
-          children: [
-            {
-              type: 'tabset',
-              children: [
-                { type: 'tab', component: 'terminal', config: {} },
-                { type: 'tab', component: 'mesh-conversation', config: { machineName: 'Air' } },
-              ],
-            },
-            {
-              type: 'row',
-              children: [
-                {
-                  type: 'tabset',
-                  children: [{ type: 'tab', component: 'mesh-conversation', config: { machineName: 'Air' } }],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    } as unknown as Workspace
-    assert.deepEqual(meshMachineNamesOf(workspace), ['Air'])
-  })
-
-  run('a workspace with no mesh tabs reports no machines', () => {
-    const workspace = {
-      layoutModel: { layout: { type: 'row', children: [] } },
-    } as unknown as Workspace
-    assert.deepEqual(meshMachineNamesOf(workspace), [])
-  })
-
   run('meshPanesOf finds the mounted remote panes, CLI mark when the tab carries one', () => {
     const workspace = {
       layoutModel: {
@@ -448,7 +404,7 @@ test('WorkspaceSidebar.rowMeta', async () => {
     ])
   })
 
-  run('a persisted mesh-terminal tab is stale: no pane, no machine, no remote grouping', () => {
+  run('a persisted mesh-terminal tab is stale: no pane, and no grouping of its own', () => {
     const stale = {
       folderPath: null,
       layoutModel: {
@@ -466,67 +422,7 @@ test('WorkspaceSidebar.rowMeta', async () => {
       },
     } as unknown as Workspace
     assert.deepEqual(meshPanesOf(stale), [])
-    assert.deepEqual(meshMachineNamesOf(stale), [])
-    assert.deepEqual(provenanceMachinesOf(stale), [])
     assert.equal(groupKeyOf(stale), '__no_folder__')
-  })
-
-  run('provenance comes from remoteOrigin first; the layout walk covers legacy rows and mounted panes', () => {
-    const born = {
-      folderPath: null,
-      remoteOrigin: {
-        connectionId: 'c1',
-        machineName: 'Air',
-        workspaceId: 'rw1',
-        workspaceName: 'app',
-        workspaceRoot: '/Users/me/app',
-      },
-      layoutModel: { layout: { type: 'row', children: [] } },
-    } as unknown as Workspace
-    assert.deepEqual(provenanceMachinesOf(born), ['Air'], 'a closed pane never loses the mark')
-    // Grouped by the PROJECT over there, not by the chat: two chats in one
-    // checkout on the Air share a header (owner, 2026-09-11). The repository
-    // takes precedence where the machine could name one, so the same repository
-    // on two machines is one project; this origin names none.
-    assert.equal(
-      groupKeyOf(born),
-      'remote:c1:/users/me/app',
-      'grouped by the folder over there, not by the remote workspace id',
-    )
-    const bornWithRepo = {
-      ...born,
-      remoteOrigin: {
-        ...(born as unknown as { remoteOrigin: Record<string, unknown> }).remoteOrigin,
-        repository: { canonicalKey: 'github.com/acme/app', remoteUrl: '', name: 'app' },
-      },
-    } as unknown as Workspace
-    assert.equal(
-      groupKeyOf(bornWithRepo),
-      'remote-repo:github.com/acme/app',
-      'a named repository is the project, whatever machine holds it',
-    )
-
-    const legacy = {
-      folderPath: null,
-      layoutModel: {
-        layout: {
-          type: 'tabset',
-          children: [{ type: 'tab', component: 'mesh-conversation', config: { machineName: 'Mini' } }],
-        },
-      },
-    } as unknown as Workspace
-    assert.deepEqual(provenanceMachinesOf(legacy), ['Mini'])
-    assert.equal(groupKeyOf(legacy), 'remote:mini')
-
-    const local = {
-      folderPath: '/Users/me/App/',
-      layoutModel: { layout: { type: 'row', children: [] } },
-    } as unknown as Workspace
-    assert.deepEqual(provenanceMachinesOf(local), [], 'local is the unmarked default')
-    assert.equal(groupKeyOf(local), '/users/me/app', 'local grouping is the folder key it always was')
-    const mounted = { ...local, layoutModel: legacy.layoutModel } as unknown as Workspace
-    assert.equal(groupKeyOf(mounted), '/users/me/app', 'a local workspace with a mounted pane keeps its folder')
-    assert.deepEqual(provenanceMachinesOf(mounted), ['Mini'], 'but still says where the pane lives')
   })
 
   run('a worktree row groups under the project it was cut from, not under its own slug', () => {

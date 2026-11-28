@@ -12,7 +12,7 @@ import { conversationPhaseWorking, conversationSummaryPhase } from '../../shared
 import { WORKING_STRETCH_GAP_MS } from '../../shared/conversation/workingStretch'
 import type { MeshConnection, MeshConversation } from '../../shared/tailnet-mesh'
 import type { ConversationBackend } from './conversation-backend'
-import { buildRemoteBand } from '../../renderer/src/components/workspace/remoteBand/remoteSessionsModel'
+import { environmentChatRows } from '../../renderer/src/components/workspace/remoteBand/remoteSessionsModel'
 import { createConversationSessionsStore } from '../../renderer/src/hooks/conversationSessionsStore'
 import { ConversationRuntime } from '../../main/conversation-runtime'
 import type {
@@ -457,15 +457,21 @@ test('one summary reads as the same work, from the same start, in this desktopâ€
       ),
     )
     assert.ok(frame?.type === 'sessions')
-    const [group] = buildRemoteBand({
-      connections: [mini],
-      browses: new Map([
-        [mini.id, { browse: null, loading: false, error: null, at: 1, conversations: frame.sessions }],
-      ]),
+    const [row] = environmentChatRows({
+      sources: [
+        {
+          route: `tailnet:${mini.id}`,
+          machineName: mini.machineName,
+          environmentId: null,
+          connectionId: mini.id,
+          live: true,
+          entry: { browse: null, loading: false, error: null, at: 1, conversations: frame.sessions },
+        },
+      ],
       environments: [],
-      workspaces: [],
+      records: new Map(),
     })
-    const row = group!.rows[0]!
+    assert.ok(row, name)
     const remote = { working: row.activity === 'working', since: row.activity === 'working' ? row.since : undefined }
 
     assert.equal(local.working, expected.working, `${name}: this desktop`)

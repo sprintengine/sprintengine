@@ -9,15 +9,15 @@ test('WorkspaceSidebar.remoteLink', async () => {
   // should no longer show the remote conversations in the side panel — I can
   // still see them even though I have disconnected").
   //
-  // `unattachedConversations` already withheld the rows read from a browse. The
-  // rows that stayed are the other half: real `Workspace`s here, stamped with
-  // `remoteOrigin`, whose whole content is a pane onto a machine that can no
-  // longer be reached. They are gated on the LINK — is Tailscale up on this
-  // machine — rather than on the listener, which is the inbound half and says
-  // nothing about whether the mesh can be reached.
+  // A chat over there is drawn by its address, from its machine's list,
+  // whether or not a window here has it open: a record here of it (stamped
+  // with `remoteOrigin`) is never a row of its own. The rows are gated on the
+  // LINK — is Tailscale up on this machine — rather than on the listener,
+  // which is the inbound half and says nothing about whether the mesh can be
+  // reached.
   //
   // This mounts the real sidebar because the gate sits in the grouping, and the
-  // two rows it has to tell apart (a local chat, a remote-born one) only exist
+  // two rows it has to tell apart (a local chat, one over there) only exist
   // once the tree is built.
 
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -120,6 +120,9 @@ test('WorkspaceSidebar.remoteLink', async () => {
       ],
     }),
   })
+  // The window follows the machine it is paired with (`useFollowWindowEnvironments`).
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
 
   async function main(): Promise<void> {
     const React = await import('react')
@@ -134,18 +137,13 @@ test('WorkspaceSidebar.remoteLink', async () => {
     const workspaces = [
       { id: 'w1', name: 'Alpha', mode: 'standard', folderPath: '/projA' },
       // A chat opened from the Mini, stored under the OLD naming rule: the
-      // agent's name in front of the chat's. Its pane is closed, so nothing but
-      // the browse can say what is standing in it.
+      // agent's name in front of the chat's. The row is its address row, named
+      // as its machine lists it.
       {
         id: 'w2',
         name: 'Tara Boyle · sprintengine',
         mode: 'standard',
         folderPath: null,
-        // Starred, so the pass below also covers the Starred section: starring
-        // moves the row there under a `starred-` key prefix, and a gate that
-        // only reached the project tree would leave the chat standing up here
-        // with no row at all.
-        highlight: { starred: true },
         remoteOrigin: {
           connectionId: 'c1',
           machineName: 'mac-mini',
@@ -228,6 +226,8 @@ test('WorkspaceSidebar.remoteLink', async () => {
       [...container.querySelectorAll('[data-row-key]')].map((row) => row.getAttribute('data-row-key') ?? '')
     /** Every row drawn for a workspace, wherever it was drawn. */
     const rowsFor = (id: string): string[] => rowKeys().filter((key) => key === id || key.endsWith(`-${id}`))
+    // The chat's own row, at its address (before the machine has said its id, its route and the chat's id).
+    const address = 'tailnet:c1:rw1'
 
     // Unconditional teardown. The sidebar arms interval timers, so a root left
     // mounted keeps the event loop alive: without this a FAILED assertion hangs
@@ -236,22 +236,23 @@ test('WorkspaceSidebar.remoteLink', async () => {
       // ── On the tailnet ─────────────────────────────────────────────────────
       await render()
       assert.deepEqual(
-        rowsFor('w2').sort(),
-        ['starred-w2'],
-        'on the tailnet the chat opened from the Mini is a row, in Starred because it is starred',
+        rowsFor(address),
+        ['starred-remote-session-tailnet:c1:rw1'],
+        'on the tailnet the chat on the Mini is a row, in Starred because it is starred there',
       )
+      assert.deepEqual(rowsFor('w2'), [], 'the record here of it is not a row of its own')
 
-      // Titled with the CHAT, not with an agent standing in it — even though the
-      // stored name still carries the agent from the old rule.
-      const remoteRow = container.querySelector('[data-row-key="starred-w2"]')!
+      // Titled with the CHAT, as its machine lists it, never with the record's
+      // stored name (the agent's name in front of the chat's, an old rule).
+      const remoteRow = container.querySelector(`[data-row-key="starred-remote-session-${address}"]`)!
       assert.ok(
         !(remoteRow.textContent ?? '').includes('Tara Boyle'),
         `the agent's name is not the row's title: ${remoteRow.textContent}`,
       )
       assert.ok((remoteRow.textContent ?? '').includes('sprintengine'), 'the chat over there is what the row is called')
 
-      // …and, with its pane closed, it still draws its agent's line — read from
-      // the machine's conversation list, the way a local chat draws its terminal.
+      // …and it draws its agent's line, read from the machine's conversation
+      // list, the way a local chat draws its terminal.
       const agentMarks = remoteRow.querySelectorAll('[aria-label*="Claude Code"]')
       assert.equal(agentMarks.length, 1, 'the chat’s agent gets a line')
       const markLabel = agentMarks[0]!.getAttribute('aria-label') ?? ''
@@ -262,7 +263,7 @@ test('WorkspaceSidebar.remoteLink', async () => {
       await render()
       assert.ok(rowKeys().includes('w1'), 'a local chat is untouched by the tailnet going away')
       assert.deepEqual(
-        rowsFor('w2'),
+        [...rowsFor(address), ...rowsFor('w2')],
         [],
         `off the tailnet the remote chat is nowhere — not in its project, not in Starred: ${rowKeys().join(', ')}`,
       )
@@ -272,11 +273,16 @@ test('WorkspaceSidebar.remoteLink', async () => {
 
       tailnetAddress = '100.64.0.5'
       await render()
-      assert.deepEqual(rowsFor('w2'), ['starred-w2'], 'and it returns, in Starred, with the link')
+      assert.deepEqual(
+        rowsFor(address),
+        ['starred-remote-session-tailnet:c1:rw1'],
+        'and it returns, in Starred, with the link',
+      )
     } finally {
       act(() => {
         for (const mounted of roots) mounted.unmount()
       })
+      followEnvironmentChats([])
     }
   }
 

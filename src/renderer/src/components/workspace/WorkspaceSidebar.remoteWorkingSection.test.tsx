@@ -33,7 +33,8 @@ const listed = (workspaceId: string, chatTitle: string, phase: string, minutesAg
   recencyAt: now - minutesAgo * minute,
   ...extra,
 })
-const chatKey = (workspaceId: string) => `mac-mini:chat:${workspaceId}`
+// A row's key is its address; before the machine has said who it is, its route and the chat's id.
+const chatKey = (workspaceId: string) => `tailnet:c1:${workspaceId}`
 
 let harness: Awaited<ReturnType<typeof createHarness>>
 
@@ -126,6 +127,9 @@ async function createHarness() {
     }),
     'conversation.visit': () => ({ lastVisitedAt: Date.now() }),
   })
+  // The window follows the machine it is paired with (`useFollowWindowEnvironments`).
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
 
   const React = await import('react')
   const { act } = React
@@ -250,7 +254,22 @@ async function createHarness() {
       candidate.textContent?.includes(name),
     )
 
-  return { dom, act, root, useWorkspaceStore, settle, show, push, section, rowsIn, tree, outside, header, opened }
+  return {
+    dom,
+    act,
+    root,
+    useWorkspaceStore,
+    followEnvironmentChats,
+    settle,
+    show,
+    push,
+    section,
+    rowsIn,
+    tree,
+    outside,
+    header,
+    opened,
+  }
 }
 
 beforeAll(async () => {
@@ -258,8 +277,9 @@ beforeAll(async () => {
 })
 
 afterAll(() => {
-  const { act, root, useWorkspaceStore } = harness
+  const { act, root, useWorkspaceStore, followEnvironmentChats } = harness
   act(() => root.unmount())
+  followEnvironmentChats([])
   useWorkspaceStore.setState(
     (state) =>
       ({
@@ -363,11 +383,13 @@ test('a chat open here reads the same whether in front or not', async () => {
   const workspaces = [opened('w-open', 'Builds away', 'rw1'), opened('w-other', 'Other', 'rw2')]
   const conversations = [listed('rw1', 'Builds away', 'running', 2), listed('rw2', 'Other', 'completed', 5)]
   await show({ view: 'all', workspaces, activeWorkspaceId: 'w-other', conversations })
-  assert.deepEqual(rowsIn(section()), ['w-open'], 'open behind another chat, it is in the section')
+  // The record here is not a row: the chat's own row, at its address, is.
+  assert.deepEqual(rowsIn(section()), [chatKey('rw1')], 'open behind another chat, it is in the section')
 
   await show({ view: 'all', workspaces, activeWorkspaceId: 'w-open', conversations })
-  assert.equal(section(), null, 'the chat in front stays where it is')
-  assert.ok(outside().includes('w-open'))
+  // `ok`, not `equal`: a failing equal would diff a whole DOM element.
+  assert.ok(!section(), 'the chat in front stays where it is')
+  assert.ok(outside().includes(chatKey('rw1')))
 })
 
 test('by status, the switch changes nothing: the shelf at the foot holds them, and no section', async () => {

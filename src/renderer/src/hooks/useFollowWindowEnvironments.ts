@@ -2,7 +2,13 @@ import { useEffect } from 'react'
 
 import { formatEnvironmentRoute } from '../../../../packages/studio-protocol/src/environment'
 import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
-import { environmentTargetsToFollow, followEnvironmentChats, knowEnvironments } from '../studio/environmentChats'
+import {
+  environmentTargetsToFollow,
+  followEnvironmentChats,
+  knowEnvironments,
+  withRecordedTargets,
+  type FollowedEnvironment,
+} from '../studio/environmentChats'
 import { environmentStudioAvailable, type EnvironmentTarget } from '../studio/environmentStudio'
 import { useWorkspaceStore, workspaceRegistryReady } from '../store/workspaceStore'
 import { windowEnvironmentChatsCache } from '../studio/environmentChatsCache'
@@ -20,8 +26,8 @@ export function windowEnvironmentTargets(workspaces: readonly Pick<Workspace, 'e
   return [...targets.values()]
 }
 
-const keyOf = (targets: readonly EnvironmentTarget[]) =>
-  targets.map((target) => `${target.route}\u0000${target.name}`).join('\u0001')
+const keyOf = (targets: readonly FollowedEnvironment[]) =>
+  targets.map((target) => `${target.route}\u0000${target.name}\u0000${target.resting ? 1 : 0}`).join('\u0001')
 
 /**
  * Follow the chats of every environment the list holds (`environmentChats.ts`),
@@ -32,15 +38,21 @@ const keyOf = (targets: readonly EnvironmentTarget[]) =>
  * other environment, follows none.
  */
 export function useFollowWindowEnvironments(): void {
-  const recorded = useWorkspaceStore((state) => keyOf(windowEnvironmentTargets(state.workspaces)))
+  const recorded = useWorkspaceStore((state) =>
+    windowEnvironmentTargets(state.workspaces)
+      .map((target) => `${target.route}\u0000${target.name}`)
+      .join('\u0001'),
+  )
   const environments = useEnvironments()
   const listed = keyOf(environmentTargetsToFollow(environments))
   useEffect(() => {
     if (!environmentStudioAvailable()) return
-    followEnvironmentChats([
-      ...windowEnvironmentTargets(useWorkspaceStore.getState().workspaces),
-      ...environmentTargetsToFollow(currentEnvironments()),
-    ])
+    followEnvironmentChats(
+      withRecordedTargets(
+        environmentTargetsToFollow(currentEnvironments()),
+        windowEnvironmentTargets(useWorkspaceStore.getState().workspaces),
+      ),
+    )
   }, [recorded, listed])
   // Which environment each route is, for the rows the window last read of it:
   // seeded once from the window's own records of their chats, then drawn.

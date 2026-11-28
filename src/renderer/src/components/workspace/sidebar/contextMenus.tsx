@@ -105,16 +105,6 @@ export type ChatMarkAction =
 /** A change to a chat's marks or sleep, as opposed to its rest: what a paired machine's `chat-lifecycle` takes. */
 export type ChatMarkChange = Exclude<ChatMarkAction, 'toggle-settle'>
 
-export function isChatMarkChange(action: string): action is ChatMarkChange {
-  return (
-    action === 'toggle-star' ||
-    action === 'toggle-auto-settle' ||
-    action === 'wake' ||
-    action === 'clear-color' ||
-    action.startsWith('snooze:')
-  )
-}
-
 export type ContextMenuAction =
   | 'open'
   | 'mark-unread'
@@ -309,15 +299,11 @@ export function WorkspaceContextMenu({
   isDetachedWindow,
   now,
   working,
-  remoteMarks = false,
-  remoteManage,
-  remoteNewChat = false,
   autoCompact = null,
   canMarkUnread = false,
   watchedPullRequestNumber = null,
   schedule = null,
   canDelete = false,
-  remoteDelete = false,
   onClose,
   onSelect,
   onPickColor,
@@ -339,16 +325,6 @@ export function WorkspaceContextMenu({
   /** The clock the wake times and the asleep/awake reading are resolved against. */
   now: number
   /**
-   * A row born on a paired machine whose machine takes the row menu's marks
-   * (`chat-lifecycle`): its Star, Highlight color, Snooze and Auto-settle are
-   * that machine's, and `workspace` carries them as that machine lists them.
-   */
-  remoteMarks?: boolean
-  /** What of a paired machine's chat's management its machine takes from here (`MeshConversationManage`). */
-  remoteManage?: MeshConversationManage
-  /** A paired machine's chat whose machine this pairing may start a chat on: New chat in project opens there. */
-  remoteNewChat?: boolean
-  /**
    * The Auto compact switch for a chat here (see `ChatRestAndMarkItems`);
    * null leaves it off the menu.
    */
@@ -368,16 +344,9 @@ export function WorkspaceContextMenu({
   /**
    * The window can delete settled chats (a confirm dialog and main's delete
    * are there). Delete is offered only on a settled chat: Settle is how a
-   * chat is put away, and deleting is for one already put away. A paired
-   * machine's is offered where that machine deletes its chats from here
-   * (`remoteDelete`).
+   * chat is put away, and deleting is for one already put away.
    */
   canDelete?: boolean
-  /**
-   * A paired machine's settled chat, whose machine deletes its chats from
-   * here (`chat-lifecycle`): Delete deletes it there, then this computer's record.
-   */
-  remoteDelete?: boolean
   onClose: () => void
   onSelect: (action: ContextMenuAction) => void
   onPickColor: (color: HighlightColor) => void
@@ -398,26 +367,15 @@ export function WorkspaceContextMenu({
   const snoozed = isSnoozedWorkspace(workspace, now)
   const autoSettle = workspace.autoSettleEnabled === true
   const currentColor = workspace.highlight?.color ?? null
-  // Settle is the one way a row is put away: there is no Close beside it. A
-  // row born on a paired machine asks that machine first where it keeps its
-  // chats' rest, and rests here alone where it keeps none; it never offers
-  // Un-settle: a settled one is off the rail here. Its sleep and Auto-settle
-  // are that machine's, offered where it takes them.
-  const remote = Boolean(workspace.remoteOrigin)
-  const where: ChatMenuPlace = workspace.remoteOrigin
-    ? {
-        kind: 'remote',
-        machineName: workspace.remoteOrigin.machineName,
-        marks: remoteMarks,
-        ...(remoteManage ? { manage: remoteManage } : {}),
-      }
-    : { kind: 'local' }
-  // Reveal is shown off, and says why, for a folder this computer cannot
-  // show: one on the paired machine the chat runs on, or one gone from disk.
-  const revealUnavailable = remote || (Boolean(workspace.folderPath) && workspace.folderMissing === true)
-  const settle = remote ? (settled ? null : 'settle') : settled ? 'unsettle' : 'settle'
-  const sleeps = remote ? remoteMarks : !settled
-  const canSnooze = remote ? !settled : canSnoozeWorkspace(workspace)
+  // Settle is the one way a row is put away: there is no Close beside it.
+  // This window's own chats only: another environment's chat has its own
+  // row and menu (`RemoteConversationContextMenu`).
+  const where: ChatMenuPlace = { kind: 'local' }
+  // Reveal is shown off, and says why, for a folder gone from disk.
+  const revealUnavailable = Boolean(workspace.folderPath) && workspace.folderMissing === true
+  const settle = settled ? 'unsettle' : 'settle'
+  const sleeps = !settled
+  const canSnooze = canSnoozeWorkspace(workspace)
 
   return (
     <ContextMenu
@@ -450,10 +408,6 @@ export function WorkspaceContextMenu({
         >
           {isProjectlessChatsRoot(newChatTarget) ? 'New chat without a project' : 'New chat in project'}
         </ChatMenuItem>
-      ) : remote && remoteNewChat ? (
-        <ChatMenuItem tooltip={tips.newChat(false, where)} onClick={() => onSelect('new-chat')}>
-          {appCopy.workspace.sidebar.contextMenus.newChatInProject}
-        </ChatMenuItem>
       ) : null}
       {folderPathExists ? (
         <ChatMenuItem tooltip={tips.reveal()} onClick={() => onSelect('reveal')}>
@@ -462,11 +416,7 @@ export function WorkspaceContextMenu({
       ) : revealUnavailable ? (
         <ChatMenuItem
           disabled
-          hint={
-            remote
-              ? appCopy.workspace.sidebar.contextMenus.on(workspace.remoteOrigin!.machineName)
-              : appCopy.workspace.sidebar.contextMenus.missing
-          }
+          hint={appCopy.workspace.sidebar.contextMenus.missing}
           tooltip={tips.revealUnavailable(where)}
           onClick={() => undefined}
         >
@@ -495,8 +445,8 @@ export function WorkspaceContextMenu({
         settle={settle}
         working={working}
         snooze={snoozed ? 'wake' : sleeps ? { disabled: !canSnooze } : null}
-        autoSettle={remote && !remoteMarks ? null : autoSettle}
-        autoCompact={remote && !remoteManage?.autoCompact ? null : autoCompact}
+        autoSettle={autoSettle}
+        autoCompact={autoCompact}
         between={
           <>
             {/* A chat whose agent has Studio babysitting its pull request reads as
@@ -539,7 +489,7 @@ export function WorkspaceContextMenu({
           ))}
         </>
       ) : null}
-      {canDelete && settled && (!remote || remoteDelete) ? (
+      {canDelete && settled ? (
         <>
           <MenuDivider />
           <ChatMenuItem variant="danger" tooltip={tips.deleteSettled(where)} onClick={() => onSelect('delete-settled')}>
@@ -618,7 +568,7 @@ export function RemoteConversationContextMenu({
   /** Its agent finished something nobody has been marked as missing, and the machine takes Mark unread. */
   canMarkUnread: boolean
   isDetachedWindow: boolean
-  /** The chat's link, by its address on its machine (`chatLinkOfRemoteChat`); null while that machine's id is not known. */
+  /** The chat's link, by its address on its environment; null while that environment's id is not known. */
   chatLink: string | null
   starred: boolean
   color: HighlightColor | null

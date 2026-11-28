@@ -137,6 +137,9 @@ test('WorkspaceSidebar.remoteManage', async () => {
     'conversation.setAutoCompact': (params) => ({ enabled: params.enabled }),
     'pullRequests.unwatch': () => ({ watched: true }),
   })
+  // The window follows the machine it is paired with (`useFollowWindowEnvironments`).
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
   const last = () => studio.writes().at(-1)
 
   const React = await import('react')
@@ -220,10 +223,8 @@ test('WorkspaceSidebar.remoteManage', async () => {
     [...container.querySelectorAll<HTMLElement>('[data-remote-conversation]')].find((row) =>
       (row.textContent ?? '').includes(title),
     )
-  const followedRow = () =>
-    [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')].find(
-      (row) => !row.hasAttribute('data-remote-conversation') && (row.textContent ?? '').includes('Another chat'),
-    )
+  // The chat opened here: its record here is not a row; the chat's own row, at its address, is.
+  const followedRow = () => remoteRowOf('Another chat')
   const menu = () => dom.window.document.querySelector<HTMLElement>('[role="menu"]')
   const itemsOf = (surface: HTMLElement) =>
     [...surface.querySelectorAll<HTMLElement>('[role^="menuitem"]')]
@@ -279,10 +280,10 @@ test('WorkspaceSidebar.remoteManage', async () => {
     })
     assert.ok(remoteRowOf('Parser, reviewed'), 'the row reads the new name')
 
-    // A row opened here is renamed there too, and takes the name here once taken.
+    // A chat opened here is renamed there too, and its record here takes the name once taken.
     const followedMenu = await openMenuOn(followedRow())
     await click(followedMenu, 'Rename')
-    const followedField = container.querySelector<HTMLInputElement>('[role="treeitem"] input')
+    const followedField = container.querySelector<HTMLInputElement>('input[aria-label="Rename Another chat"]')
     assert.ok(followedField, 'the opened row turns into a field')
     await typeInto(followedField, 'Another chat, renamed')
     await settle()
@@ -366,5 +367,6 @@ test('WorkspaceSidebar.remoteManage', async () => {
     act(() => {
       root.unmount()
     })
+    followEnvironmentChats([])
   }
 })

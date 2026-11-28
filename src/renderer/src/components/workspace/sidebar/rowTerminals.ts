@@ -3,7 +3,7 @@
 
 import { finishedUnseen } from '../../../../../shared/workspace-lifecycle'
 import { type Workspace } from '../../../../../shared/workspace'
-import { meshPanesOf, meshMachineNamesOf } from './folderGroups'
+import { meshPanesOf } from './folderGroups'
 
 /**
  * The panes this workspace's layout mounts FROM other machines: one entry per
@@ -44,19 +44,6 @@ export function rowHasOpenTerminals(
   liveSessionsByWorkspaceId: ReadonlyMap<string, ReadonlyArray<unknown>>,
 ): boolean {
   return (liveSessionsByWorkspaceId.get(workspace.id)?.length ?? 0) > 0 || meshPanesOf(workspace).length > 0
-}
-
-/**
- * The machines a row says it lives on. `remoteOrigin` is the primary source —
- * set once at creation and kept when the pane closes — and the layout walk is
- * the fallback for rows that predate it, plus any machine a local workspace
- * has since mounted a pane from. Local is the unmarked default (decision 7).
- */
-export function provenanceMachinesOf(workspace: Workspace): string[] {
-  const names = new Set<string>()
-  if (workspace.remoteOrigin) names.add(workspace.remoteOrigin.machineName)
-  for (const name of meshMachineNamesOf(workspace)) names.add(name)
-  return [...names]
 }
 
 /**

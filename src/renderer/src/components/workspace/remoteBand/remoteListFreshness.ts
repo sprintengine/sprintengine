@@ -1,4 +1,3 @@
-import type { MeshMachineReachability } from '../../../../../shared/tailnet-mesh'
 import type { EnvironmentStatusKind } from '../../../../../../packages/client-runtime/src/environments/environmentStatus'
 import { formatRelativeMs, formatRelativeMsAgo } from '../../../utils/relativeTime'
 import { copy } from '../../../../../shared/copy'
@@ -21,11 +20,11 @@ import type { EnvironmentListFailure } from '../../../studio/environmentChatsFre
 
 /**
  * Why a machine's rows are a last-known list: it no longer takes this
- * pairing (`signed-out`), it does not answer (`not-answering`), its Studio and
- * this one share no protocol (`outdated`), or the pairing is gone from here
- * (`unpaired`).
+ * device (`signed-out`), it does not answer (`not-answering`), its Studio and
+ * this one share no protocol (`outdated`), or it is not running and is not
+ * started just to list its chats (`not-connected`, a WSL distribution).
  */
-export type RemoteLastKnownReason = 'signed-out' | 'not-answering' | 'outdated' | 'unpaired' | 'superseded'
+type RemoteLastKnownReason = 'signed-out' | 'not-answering' | 'outdated' | 'not-connected'
 
 export type RemoteLastKnown = {
   reason: RemoteLastKnownReason
@@ -37,21 +36,19 @@ export type RemoteLastKnown = {
  * Whether a machine's rows are a last-known list, and why.
  *
  * The window's own newest read decides first: a read that failed makes the
- * list last-known whatever main's background check says, because the check
- * can pass while the read is refused. A read that succeeded after main's last
- * check is believed over that check. Otherwise how the machine stands
- * (`environmentStatus`) decides, as it did when these rows were dimmed.
+ * list last-known whatever the environment list says, because a machine can
+ * read as connected while the read is refused, and a read that answered is
+ * current whatever the list says. Before the window has read it, how the
+ * machine stands (`environmentStatus`) decides.
  */
 export function remoteLastKnownOf(
   entry: { listedAt?: number; listFailure?: EnvironmentListFailure | null } | undefined,
   status: EnvironmentStatusKind | null,
-  reach?: MeshMachineReachability,
 ): RemoteLastKnown | null {
   const since = entry?.listedAt ?? null
   const failure = entry?.listFailure ?? null
   if (failure) return { reason: failure.kind === 'unauthorized' ? 'signed-out' : 'not-answering', since }
-  const checkedAt = reach?.checkedAt ?? null
-  if (since !== null && checkedAt !== null && since > checkedAt) return null
+  if (entry?.listFailure === null) return null
   if (status === 'signed-out') return { reason: 'signed-out', since }
   if (status === 'offline') return { reason: 'not-answering', since }
   if (status === 'incompatible') return { reason: 'outdated', since }
@@ -93,11 +90,8 @@ export function remoteLastKnownWords(
   switch (lastKnown.reason) {
     case 'signed-out':
       return said(words.signedOut, words.signedOut, true, words.refusedThisDevice(machineName))
-    case 'unpaired':
-      return said(words.notPaired, words.notPaired, true, words.noLongerPaired(machineName))
-    case 'superseded':
-      // Paired again already: nothing to pair, only the new pairing's row to open.
-      return said(words.oldPairing, words.oldPairing, false, words.pairedAgainSince(machineName))
+    case 'not-connected':
+      return said(words.notConnected, words.notConnected, false, words.isNotRunning(machineName))
     case 'outdated':
       return said(words.outOfDate, words.outOfDate, false, words.shareNoProtocol(machineName))
     case 'not-answering':

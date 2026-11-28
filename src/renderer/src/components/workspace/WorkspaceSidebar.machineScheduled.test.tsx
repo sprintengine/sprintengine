@@ -123,6 +123,33 @@ test('WorkspaceSidebar.machineScheduled', async () => {
             ],
             pausedAll: null,
           },
+    // The box lists its chat, of which this window keeps a copy (below).
+    'workspaces.list': (_params, connectionId) => ({
+      workspaces:
+        connectionId === 'ssh:m1'
+          ? [{ id: 'w-box', name: 'On the box', mode: 'standard', folderPath: '/home/dev/proj', repository: null }]
+          : [],
+    }),
+    'conversation.list': (_params, connectionId) => ({
+      conversations:
+        connectionId === 'ssh:m1'
+          ? [
+              {
+                workspaceId: 'w-box',
+                agentId: 'agent-1',
+                title: 'Agent one',
+                chatTitle: 'On the box',
+                phase: 'completed',
+                updatedAt: createdAt,
+                createdAt,
+                providerId: 'claude-agent',
+                modelId: 'opus',
+                turnCount: 1,
+                lastSeq: 2,
+              },
+            ]
+          : [],
+    }),
     'schedules.runNow': () => ({ workspaceId: 'run-1' }),
     'schedules.pauseAll': (params) => ({ pausedAll: { since: createdAt, until: params.until } }),
   })
@@ -151,6 +178,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
 
   const noop = () => {}
   const opened: Array<[string, string]> = []
+  const newChatFolders: string[] = []
   const props = {
     workspaces,
     workspaceWindowId: 'win1',
@@ -166,7 +194,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     onMoveWorkspaceToMainWindow: noop,
     onForgetFolder: noop,
     onNewChat: noop,
-    onNewChatInFolder: noop,
+    onNewChatInFolder: (folder: string) => newChatFolders.push(folder),
     onRevealFolder: noop,
     onOpenScheduledAgent: noop,
     onOpenRemoteScheduledAgent: (route: string, id: string) => opened.push([route, id]),
@@ -368,6 +396,24 @@ test('WorkspaceSidebar.machineScheduled', async () => {
       scheduledRows().some((row) => row.dataset.scheduledAgent === 'sa-box'),
       'and its schedules are listed from that read',
     )
+
+    // The box's chat is its row by address, not the copy's; New chat in
+    // project opens in the copy's folder there, as the copy's own row did.
+    const chatRow = [...container.querySelectorAll<HTMLElement>('[data-remote-conversation]')].find((candidate) =>
+      (candidate.textContent ?? '').includes('On the box'),
+    )
+    assert.ok(chatRow, 'the box’s chat is a row')
+    act(() => {
+      chatRow.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }))
+    })
+    const newChat = [...dom.window.document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')].find(
+      (item) => (item.textContent ?? '').trim().startsWith('New chat in project'),
+    )
+    assert.ok(newChat, 'its menu offers New chat in project')
+    act(() => {
+      newChat.click()
+    })
+    assert.deepEqual(newChatFolders, ['ssh://m1/home/dev/proj'])
   } finally {
     act(() => {
       root.unmount()

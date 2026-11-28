@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 import { test } from 'vitest'
 
+import { STUDIO_CHAT_ROWS_CAPABILITY } from '../../../../../packages/studio-protocol/src/public'
+
 test('WorkspaceSidebar.projectColour', async () => {
   // One colour per project, on the folder glyph (owner ruling 2026-09-09, hashed
   // hues 2026-09-11; backlog/unfiled/2026-09-09-one-colour-per-project-on-the-folder-glyph.md).
@@ -107,6 +109,34 @@ test('WorkspaceSidebar.projectColour', async () => {
     },
   }
 
+  // A paired machine's Studio, as this window's own client of it reaches it,
+  // and the window following it (`useFollowWindowEnvironments`): one chat,
+  // in that machine's clone of acme/sprintengine.
+  const { fakePairedStudios, PAIRED_STUDIO_CAPABILITIES } = await import('../../studio/environmentStudio.double')
+  fakePairedStudios(
+    domWindow.api as object,
+    {
+      'workspaces.list': () => ({
+        workspaces: [
+          {
+            id: 'rw1',
+            name: 'Foxtrot',
+            mode: 'standard',
+            folderPath: '/Users/air/sprintengine',
+            repository: SPRINTENGINE,
+            createdAt: Date.now() - 60 * 60_000,
+            recencyAt: Date.now() - 60 * 60_000,
+          },
+        ],
+      }),
+      'conversation.list': () => ({ conversations: [] }),
+    },
+    // A Studio of today, whose rows carry what a row draws (`chat-rows`).
+    { capabilities: [...PAIRED_STUDIO_CAPABILITIES, STUDIO_CHAT_ROWS_CAPABILITY] },
+  )
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'MacBook Air' }])
+
   /** The hue an svg wears, or null when it wears none. */
   function hueOf(node: Element | null | undefined): number | null {
     const hue = node?.getAttribute('data-project-hue')
@@ -150,20 +180,9 @@ test('WorkspaceSidebar.projectColour', async () => {
       ...localWorkspaces,
       // No folder is not a project (decision 6).
       workspace('w4', 'Echo', null),
-      // Born on a paired machine, in ITS clone of acme/sprintengine. It is a row of
-      // projA like Alpha and Bravo (one-project-across-machines), wearing that
-      // project's hue plus the green machine glyph.
-      workspace('w5', 'Foxtrot', null, {
-        remoteOrigin: {
-          connectionId: 'c1',
-          machineName: 'MacBook Air',
-          workspaceId: 'rw1',
-          workspaceName: 'sprintengine',
-          workspaceRoot: '/Users/air/sprintengine',
-          repository: SPRINTENGINE,
-        },
-        layoutModel: { layout: { type: 'row', children: [] } },
-      }),
+      // The paired machine's chat in its clone of acme/sprintengine (above) is
+      // a row of projA like Alpha and Bravo (one-project-across-machines),
+      // wearing that project's hue plus the green machine glyph.
     ] as SidebarProps['workspaces']
 
     const noop = () => {}
@@ -401,7 +420,10 @@ test('WorkspaceSidebar.projectColour', async () => {
     )
     assert.equal(marks[1]?.tagName.toLowerCase(), 'svg', 'the folder glyph follows it')
     assert.equal(marks[2]?.textContent, 'projA', 'and the project’s name after that')
-    assert.ok(!(foxtrot.textContent ?? '').includes('MacBook Air'), 'never as row text')
+    // Only a screen reader hears where it runs.
+    const shown = foxtrot.cloneNode(true) as Element
+    for (const hidden of shown.querySelectorAll('.sr-only')) hidden.remove()
+    assert.ok(!(shown.textContent ?? '').includes('MacBook Air'), 'never as row text')
     assert.ok(machineMark?.classList.contains('project-mark'), 'the mark wears the folder’s ink')
     assert.equal(
       (machineMark as HTMLElement).style.getPropertyValue('--project-hue'),
@@ -496,6 +518,7 @@ test('WorkspaceSidebar.projectColour', async () => {
     act(() => {
       restarted.root.unmount()
     })
+    followEnvironmentChats([])
   }
 
   const suiteRun = main()
