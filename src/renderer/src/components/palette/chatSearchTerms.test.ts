@@ -163,7 +163,13 @@ test("another environment's chat is a switch row at its address, found by its fo
     projectFolder: '/home/dev/app',
     agents: [
       { branch: ' agent/parser ', pullRequests: [pullRequest({ number: 77 })] },
-      { branch: null, pullRequests: [pullRequest({ number: 77 }), pullRequest({ number: 78, url: 'https://github.com/acme/app/pull/78' })] },
+      {
+        branch: null,
+        pullRequests: [
+          pullRequest({ number: 77 }),
+          pullRequest({ number: 78, url: 'https://github.com/acme/app/pull/78' }),
+        ],
+      },
     ],
   } as unknown as RemoteConversation
   const facts = environmentChatFacts(listed)

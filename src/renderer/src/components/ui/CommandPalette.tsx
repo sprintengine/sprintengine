@@ -779,26 +779,19 @@ export default function CommandPalette({
       // Every other environment's chats, by address, opened as their sidebar
       // row opens them. The id is the one its environment's search rows wear
       // (`chatSearchPlaces.ts`), so a match on what was said folds into it.
-      ...[...environmentChats.values()].map(
-        ({ row, facts }): Command => ({
-          id: workspaceSwitchRowId(row.key),
-          label: row.title,
-          keywords: [
-            'switch to',
-            row.machineName,
-            facts.folderPath,
-            chatSearchKeywords(facts.pullRequests, facts.branch),
-          ]
-            .filter(Boolean)
-            .join(' '),
-          mark: { kind: 'chat', workspaceId: row.key, mode: 'standard' },
-          group: 'agents',
-          run: () => {
-            onOpenEnvironmentChat?.(openSpecOfConversation(row))
-            onClose()
-          },
-        }),
-      ),
+      ...[...environmentChats.values()].map(({ row, facts }): Command => ({
+        id: workspaceSwitchRowId(row.key),
+        label: row.title,
+        keywords: ['switch to', row.machineName, facts.folderPath, chatSearchKeywords(facts.pullRequests, facts.branch)]
+          .filter(Boolean)
+          .join(' '),
+        mark: { kind: 'chat', workspaceId: row.key, mode: 'standard' },
+        group: 'agents',
+        run: () => {
+          onOpenEnvironmentChat?.(openSpecOfConversation(row))
+          onClose()
+        },
+      })),
       ...registryCommands,
       // Actions — the five verbs the launcher opens on (owner rulings
       // 2026-09-11): start a chat, find a file, search the project's text,

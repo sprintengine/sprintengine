@@ -3469,9 +3469,7 @@ function WorkspaceSidebar({
                     }}
                     machine={{ ref: machine.machine, name: machine.machineName }}
                     runInProgress={null}
-                    selected={
-                      openScheduledAgent?.route === machine.route && openScheduledAgent.id === agent.id
-                    }
+                    selected={openScheduledAgent?.route === machine.route && openScheduledAgent.id === agent.id}
                     pausedAll={machine.pausedAll !== null}
                     {...(machine.operable
                       ? {
