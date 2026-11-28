@@ -231,22 +231,6 @@ export function remoteProjectName(workspaceRoot: string | null, machineName: str
   return folderDisplayName(remoteProjectFolder(workspaceRoot))
 }
 
-/**
- * The project of a record this window keeps of another environment's chat (a
- * copy, a chat attached here), for the lists that still read records: the
- * palette's chats and Settled chats, until they read each environment's own.
- */
-export function remoteGroupDisplayName(workspace: Workspace): string {
-  if (workspace.environment) {
-    // Its project, as the row's header key has it: a worktree's recorded
-    // parent, which the path convention alone would not find.
-    const folder = projectlessScopeOf(workspace.folderPath) ? workspace.folderPath : workspaceProjectRoot(workspace)
-    return remoteProjectName(folder, workspace.environment.label)
-  }
-  const origin = workspace.remoteOrigin
-  return origin ? remoteProjectName(origin.workspaceRoot, origin.machineName) : folderDisplayName(workspace.folderPath)
-}
-
 export function buildFolderGroups(
   workspaces: Workspace[],
   keyOf: (workspace: Workspace) => string = groupKeyOf,

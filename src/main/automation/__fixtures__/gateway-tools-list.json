@@ -190,19 +190,19 @@
     },
     {
       "name": "conversation.send",
-      "sha256": "7e841da0f12b5de986e1e727dd2c9ec585354b19b742b8f7b4d8b99e24fd3962"
+      "sha256": "1e31d96f4756f89bbaf9d3fe37d7af9dabfecf8ba54c7561de26e88b00fee323"
     },
     {
       "name": "conversation.read",
-      "sha256": "721fc457ddbbe7d606b9b27eee95b0bddac0f50f1baef8cdc0a981ab2529aa3b"
+      "sha256": "d2f4c4269d0127c03f706a8d08f2bf0d2499b614925b926c7c472554cdf1db15"
     },
     {
       "name": "conversation.wait",
-      "sha256": "166c69ea8152cd791895c11cb3c4580f82b6168ec97aa892bd61ea656ae109ef"
+      "sha256": "b4a771508e18cbbe6c924839f4150628745dea2ffd089b63f0b45b88bb65767a"
     },
     {
       "name": "conversation.interrupt",
-      "sha256": "617e12674520f14b708021c9e71e45ba1674d7e10aa017030e31424ea86996ca"
+      "sha256": "ea262dd324bea57bfc0792e885ede698f90713e8efbc8cf4dfcbc8157f4af6f4"
     },
     {
       "name": "subagent.start",
@@ -688,19 +688,19 @@
     },
     {
       "name": "conversation.send",
-      "sha256": "7e841da0f12b5de986e1e727dd2c9ec585354b19b742b8f7b4d8b99e24fd3962"
+      "sha256": "1e31d96f4756f89bbaf9d3fe37d7af9dabfecf8ba54c7561de26e88b00fee323"
     },
     {
       "name": "conversation.read",
-      "sha256": "721fc457ddbbe7d606b9b27eee95b0bddac0f50f1baef8cdc0a981ab2529aa3b"
+      "sha256": "d2f4c4269d0127c03f706a8d08f2bf0d2499b614925b926c7c472554cdf1db15"
     },
     {
       "name": "conversation.wait",
-      "sha256": "166c69ea8152cd791895c11cb3c4580f82b6168ec97aa892bd61ea656ae109ef"
+      "sha256": "b4a771508e18cbbe6c924839f4150628745dea2ffd089b63f0b45b88bb65767a"
     },
     {
       "name": "conversation.interrupt",
-      "sha256": "617e12674520f14b708021c9e71e45ba1674d7e10aa017030e31424ea86996ca"
+      "sha256": "ea262dd324bea57bfc0792e885ede698f90713e8efbc8cf4dfcbc8157f4af6f4"
     },
     {
       "name": "subagent.start",

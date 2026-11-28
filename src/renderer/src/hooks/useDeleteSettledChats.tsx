@@ -1,146 +1,176 @@
 import React, { useCallback, useState } from 'react'
 import { changeEnvironmentChat, environmentChatDeletePlan } from '../studio/environmentChatRecords'
-import {
-  environmentCommandId,
-  environmentStudioAvailable,
-  pairedTarget,
-  withEnvironmentStudio,
-  type EnvironmentTarget,
-} from '../studio/environmentStudio'
-import { environmentTargetOf, windowClientOfRoute } from '../components/panels/agentChat/environmentChat'
+import type { EnvironmentTarget } from '../studio/environmentStudio'
 import type {
   SettledChatDeletionOutcome,
   SettledChatDeletionPlan,
 } from '../../../../packages/studio-protocol/src/public'
 
-import type { WorkspaceId } from '../../../shared/workspace'
-import { useWorkspaceStore } from '../store/workspaceStore'
 import { showToast } from '../store/toastStore'
 import { useConfirmDialog } from '../components/ui/ConfirmDialog'
-import {
-  remoteConversationTitle,
-  remoteOriginChatWorkspaceId,
-} from '../components/workspace/remoteBand/remoteSessionsModel'
+import type { SettledChatEntry } from '../components/settings/settledChatsModel'
 import { deletionConfirmation, deletionToast } from '../utils/settledChatDeletion'
 import { worktreesApi } from '../studio/worktrees'
 import { copy as appCopy } from '../../../shared/copy'
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-/** How long a machine is given to plan or delete its chats: a worktree's checks there take as long as here. */
-const MACHINE_DELETE_MS = 60_000
+/** A settled chat to delete: this computer's, or another environment's, where it is. */
+export type SettledChatToDelete = Pick<SettledChatEntry, 'key' | 'chatId' | 'title' | 'environment'>
+
+/** One chat's plan, keyed by its entry: what deleting it would do, as the Studio that holds it says. */
+type Planned = { chat: SettledChatToDelete; plan: SettledChatDeletionPlan; gone: boolean }
+
+const targetOf = (chat: SettledChatToDelete): EnvironmentTarget | null =>
+  chat.environment ? { route: chat.environment.route, name: chat.environment.machineName } : null
+
+/** What deleting this computer's chats would do, as its own Studio plans it. */
+async function planHere(chats: readonly SettledChatToDelete[]): Promise<Planned[]> {
+  if (chats.length === 0) return []
+  const plans = await worktreesApi.planSettledChatDeletion(chats.map((chat) => chat.chatId))
+  const byId = new Map(plans.map((plan) => [plan.workspaceId, plan]))
+  return chats.map((chat) => ({
+    chat,
+    plan: { ...(byId.get(chat.chatId) ?? missingPlan(chat.chatId)), workspaceId: chat.key },
+    gone: false,
+  }))
+}
+
+const missingPlan = (workspaceId: string): SettledChatDeletionPlan => ({
+  workspaceId,
+  remoteMachine: null,
+  worktrees: [],
+  refused: 'This chat is not here any more.',
+})
+
+/** What deleting another environment's chat would do, as that environment plans it; one away refuses in words. */
+async function planThere(chat: SettledChatToDelete, target: EnvironmentTarget): Promise<Planned> {
+  const refused = (message: string): Planned => ({
+    chat,
+    plan: { workspaceId: chat.key, remoteMachine: null, worktrees: [], refused: message },
+    gone: false,
+  })
+  try {
+    const plan = await environmentChatDeletePlan(target, chat.chatId)
+    if (!plan.ok) return refused(plan.message)
+    return {
+      chat,
+      plan: {
+        workspaceId: chat.key,
+        remoteMachine: null,
+        // A worktree there is named, never pathed: its path is that machine's.
+        worktrees: plan.worktrees.map((tree) => ({ ...tree, path: tree.name })),
+        ...(plan.refused ? { refused: plan.refused } : {}),
+      },
+      gone: plan.gone === true,
+    }
+  } catch (error) {
+    return refused(errorText(error))
+  }
+}
+
+/** Delete this computer's chats on its own Studio; outcomes keyed by entry. */
+async function deleteHere(chats: readonly SettledChatToDelete[]): Promise<SettledChatDeletionOutcome[]> {
+  if (chats.length === 0) return []
+  const keyOf = new Map(chats.map((chat) => [chat.chatId, chat.key]))
+  const outcomes = await worktreesApi.deleteSettledChats(chats.map((chat) => chat.chatId))
+  return outcomes.map((outcome) => ({ ...outcome, workspaceId: keyOf.get(outcome.workspaceId) ?? outcome.workspaceId }))
+}
+
+/** Delete another environment's chat there, for every device that follows it; one away fails in words. */
+async function deleteThere(
+  chat: SettledChatToDelete,
+  target: EnvironmentTarget,
+  gone: boolean,
+): Promise<SettledChatDeletionOutcome> {
+  // Gone there already: there is nothing left to delete.
+  if (gone) return { workspaceId: chat.key, ok: true, worktrees: [] }
+  try {
+    const deleted = await changeEnvironmentChat(target, chat.chatId, { kind: 'delete' })
+    return deleted.ok
+      ? { workspaceId: chat.key, ok: true, worktrees: [] }
+      : { workspaceId: chat.key, ok: false, message: deleted.message }
+  } catch (error) {
+    return { workspaceId: chat.key, ok: false, message: errorText(error) }
+  }
+}
+
+/** The line that says where chats on other machines are deleted, when any are. */
+function whereSentence(chats: readonly SettledChatToDelete[]): string[] {
+  const machines = [...new Set(chats.flatMap((chat) => (chat.environment ? [chat.environment.machineName] : [])))]
+  if (machines.length === 0) return []
+  if (chats.length === 1) return [`It runs on ${machines[0]}, and is deleted there, for every device that follows it.`]
+  return [`Chats on another machine are deleted there, for every device that follows them: ${machines.join(', ')}.`]
+}
 
 /**
- * The chats asked about, by the Studio that holds each: this window's own,
- * or an SSH machine's own for a chat it holds (its record here is only a
- * copy, which goes when the machine says the chat went).
+ * Delete settled chats, one or many, wherever each is: the Studio that holds
+ * each (this computer's own, or another environment's) says what would go
+ * (`settledChats.planDelete` here, `conversation.deletePlan` there), the
+ * app's confirm dialog says it to the person once for all of them, and only
+ * then does each Studio delete, checking everything again. This computer's
+ * records leave the store on main's broadcast; another environment's chats
+ * leave its list when its source next reads (`onDeletedThere`). Resolves
+ * with the keys of the chats that were deleted.
  */
-function byStudio(workspaceIds: readonly string[]): Array<{ target: EnvironmentTarget | null; ids: string[] }> {
-  const records = new Map(useWorkspaceStore.getState().workspaces.map((workspace) => [workspace.id, workspace]))
-  const groups = new Map<string, { target: EnvironmentTarget | null; ids: string[] }>()
-  for (const id of workspaceIds) {
-    const target = environmentTargetOf(records.get(id)?.environment)
-    const key = target?.route ?? 'local'
-    const group = groups.get(key) ?? { target, ids: [] }
-    group.ids.push(id)
-    groups.set(key, group)
-  }
-  return [...groups.values()]
-}
-
-/** What deleting these would do, asked of the Studio that holds them; a machine away refuses each in words. */
-async function planOn(group: { target: EnvironmentTarget | null; ids: string[] }): Promise<SettledChatDeletionPlan[]> {
-  const { target, ids } = group
-  if (!target) return worktreesApi.planSettledChatDeletion(ids)
-  try {
-    return await withEnvironmentStudio(
-      target,
-      async (client) =>
-        (await windowClientOfRoute(client, target.route).request('settledChats.planDelete', { workspaceIds: ids }))
-          .plans,
-      { timeoutMs: MACHINE_DELETE_MS },
-    )
-  } catch (error) {
-    return ids.map((workspaceId) => ({ workspaceId, remoteMachine: null, worktrees: [], refused: errorText(error) }))
-  }
-}
-
-/** Delete these on the Studio that holds them; a machine away fails each in words. */
-async function deleteOn(group: {
-  target: EnvironmentTarget | null
-  ids: string[]
-}): Promise<SettledChatDeletionOutcome[]> {
-  const { target, ids } = group
-  if (!target) return worktreesApi.deleteSettledChats(ids)
-  try {
-    return await withEnvironmentStudio(
-      target,
-      async (client) =>
-        (
-          await windowClientOfRoute(client, target.route).request('settledChats.delete', {
-            commandId: environmentCommandId(),
-            workspaceIds: ids,
-          })
-        ).outcomes,
-      { timeoutMs: MACHINE_DELETE_MS },
-    )
-  } catch (error) {
-    return ids.map((workspaceId) => ({ workspaceId, ok: false as const, message: errorText(error) }))
-  }
-}
-
-function titleOf(workspaceId: string): string {
-  const workspace = useWorkspaceStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
-  return workspace ? remoteConversationTitle(workspace) : 'this chat'
-}
-
-/**
- * Delete settled chats, one or many, the way every surface that offers it
- * does: the Studio that holds each (this window's own, or an SSH machine's
- * own) says what would go (`settledChats.planDelete`), the app's
- * confirm dialog says it to the person, and only then does the Studio delete,
- * checking everything again. The records leave the store on main's broadcast, as a
- * removal from any window does. Resolves with the ids that were deleted.
- */
-export function useDeleteSettledChats(): {
-  deleteChats: (workspaceIds: readonly WorkspaceId[]) => Promise<WorkspaceId[]>
-  /** Delete a paired machine's settled chat there, then this computer's record of it; whether it went. */
-  deleteThere: (workspaceId: WorkspaceId) => Promise<boolean>
-  deleting: ReadonlySet<WorkspaceId>
+export function useDeleteSettledChats(
+  options: {
+    /** Another environment's chats went: read its list again. */
+    onDeletedThere?: (route: string) => void
+  } = {},
+): {
+  deleteChats: (chats: readonly SettledChatToDelete[]) => Promise<string[]>
+  /** The keys of the chats being deleted now. */
+  deleting: ReadonlySet<string>
 } {
   const dialog = useConfirmDialog()
-  const [deleting, setDeleting] = useState<ReadonlySet<WorkspaceId>>(new Set())
+  const [deleting, setDeleting] = useState<ReadonlySet<string>>(new Set())
+  const { onDeletedThere } = options
 
   const deleteChats = useCallback(
-    async (workspaceIds: readonly WorkspaceId[]): Promise<WorkspaceId[]> => {
-      if (workspaceIds.length === 0) return []
+    async (chats: readonly SettledChatToDelete[]): Promise<string[]> => {
+      if (chats.length === 0) return []
       const failed = (description: string) =>
         showToast({
           tone: 'error',
           title:
-            workspaceIds.length === 1
+            chats.length === 1
               ? appCopy.hooks.useDeleteSettledChats.theChatWasNotDeleted
               : appCopy.hooks.useDeleteSettledChats.theChatsWereNotDeleted,
           description,
         })
-      let plans
+      const titles = new Map(chats.map((chat) => [chat.key, chat.title]))
+      const titleOf = (key: string) => titles.get(key) ?? 'this chat'
+      let planned: Planned[]
       try {
-        plans = (await Promise.all(byStudio(workspaceIds).map(planOn))).flat()
+        planned = (
+          await Promise.all([
+            planHere(chats.filter((chat) => !chat.environment)),
+            ...chats.flatMap((chat) => {
+              const target = targetOf(chat)
+              return target ? [planThere(chat, target).then((each) => [each])] : []
+            }),
+          ])
+        ).flat()
       } catch (error) {
         failed(errorText(error))
         return []
       }
-      const deletable = plans.filter((plan) => !plan.refused)
+      const deletable = planned.filter((each) => !each.plan.refused)
       if (deletable.length === 0) {
-        failed(plans.find((plan) => plan.refused)?.refused ?? 'Nothing could be deleted.')
+        failed(planned.find((each) => each.plan.refused)?.plan.refused ?? 'Nothing could be deleted.')
         return []
       }
-      const confirmation = deletionConfirmation(deletable, titleOf, plans.length - deletable.length)
+      const confirmation = deletionConfirmation(
+        deletable.map((each) => each.plan),
+        titleOf,
+        planned.length - deletable.length,
+      )
       const confirmed = await dialog.confirm({
         title: confirmation.title,
         body: (
           <div className="space-y-2">
-            {confirmation.paragraphs.map((paragraph) => (
+            {[...whereSentence(deletable.map((each) => each.chat)), ...confirmation.paragraphs].map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>
             ))}
           </div>
@@ -149,100 +179,36 @@ export function useDeleteSettledChats(): {
         tone: 'danger',
       })
       if (!confirmed) return []
-      const ids = deletable.map((plan) => plan.workspaceId)
-      // Titles are read before the records go: the toast names what was deleted.
-      const titles = new Map(ids.map((id) => [id, titleOf(id)]))
-      setDeleting((current) => new Set([...current, ...ids]))
+      const keys = deletable.map((each) => each.chat.key)
+      setDeleting((current) => new Set([...current, ...keys]))
       try {
-        const outcomes = (await Promise.all(byStudio(ids).map(deleteOn))).flat()
-        showToast(deletionToast(outcomes, (id) => titles.get(id) ?? 'this chat'))
-        return outcomes.filter((outcome) => outcome.ok).map((outcome) => outcome.workspaceId)
+        const outcomes = (
+          await Promise.all([
+            deleteHere(deletable.filter((each) => !each.chat.environment).map((each) => each.chat)),
+            ...deletable.flatMap((each) => {
+              const target = targetOf(each.chat)
+              return target ? [deleteThere(each.chat, target, each.gone).then((outcome) => [outcome])] : []
+            }),
+          ])
+        ).flat()
+        showToast(deletionToast(outcomes, titleOf))
+        const gone = new Set(outcomes.filter((outcome) => outcome.ok).map((outcome) => outcome.workspaceId))
+        for (const route of new Set(
+          deletable.flatMap((each) =>
+            each.chat.environment && gone.has(each.chat.key) ? [each.chat.environment.route] : [],
+          ),
+        ))
+          onDeletedThere?.(route)
+        return [...gone]
       } catch (error) {
         failed(errorText(error))
         return []
       } finally {
-        setDeleting((current) => new Set([...current].filter((id) => !ids.includes(id))))
+        setDeleting((current) => new Set([...current].filter((key) => !keys.includes(key))))
       }
     },
-    [dialog],
+    [dialog, onDeletedThere],
   )
 
-  // A settled chat opened here from a paired machine that deletes its chats
-  // from here (`chat-lifecycle`): deleted there, for every device that follows
-  // it, as that machine plans it, and then this computer's record of it. The
-  // confirmation says what goes there; there is no undo on either machine.
-  const deleteThere = useCallback(
-    async (workspaceId: WorkspaceId): Promise<boolean> => {
-      const origin = useWorkspaceStore
-        .getState()
-        .workspaces.find((workspace) => workspace.id === workspaceId)?.remoteOrigin
-      const title = titleOf(workspaceId)
-      const failed = (description: string) =>
-        showToast({ tone: 'error', title: appCopy.hooks.useDeleteSettledChats.theChatWasNotDeleted, description })
-      if (!origin || !environmentStudioAvailable()) {
-        failed('Deleting chats on another machine is not available here.')
-        return false
-      }
-      const machine = { id: origin.connectionId, machineName: origin.machineName }
-      const chatThere = remoteOriginChatWorkspaceId(origin)
-      setDeleting((current) => new Set([...current, workspaceId]))
-      try {
-        const plan = await environmentChatDeletePlan(pairedTarget(machine), chatThere)
-        const refused = !plan.ok ? plan.message : plan.refused
-        if (!plan.ok || refused) {
-          failed(refused ?? 'Nothing could be deleted.')
-          return false
-        }
-        // Gone there already: only this computer's record is left to take.
-        if (!plan.gone) {
-          const confirmation = deletionConfirmation(
-            [
-              {
-                workspaceId,
-                remoteMachine: null,
-                worktrees: plan.worktrees.map((tree) => ({ ...tree, path: tree.name })),
-              },
-            ],
-            () => title,
-          )
-          const confirmed = await dialog.confirm({
-            title: appCopy.hooks.useDeleteSettledChats.deleteOn(title, origin.machineName),
-            body: (
-              <div className="space-y-2">
-                {[
-                  `It runs on ${origin.machineName}, and is deleted there, for every device that follows it.`,
-                  ...confirmation.paragraphs,
-                ].map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
-                ))}
-              </div>
-            ),
-            confirmLabel: appCopy.hooks.useDeleteSettledChats.delete,
-            tone: 'danger',
-          })
-          if (!confirmed) return false
-          const deleted = await changeEnvironmentChat(pairedTarget(machine), chatThere, { kind: 'delete' })
-          if (!deleted.ok) {
-            failed(deleted.message)
-            return false
-          }
-        }
-        const [removed] = await worktreesApi.deleteSettledChats([workspaceId])
-        if (removed && !removed.ok) {
-          failed(`It was deleted on ${origin.machineName}, but not removed here: ${removed.message}`)
-          return false
-        }
-        showToast({ tone: 'good', title: appCopy.hooks.useDeleteSettledChats.deletedOn(title, origin.machineName) })
-        return true
-      } catch (error) {
-        failed(errorText(error))
-        return false
-      } finally {
-        setDeleting((current) => new Set([...current].filter((id) => id !== workspaceId)))
-      }
-    },
-    [dialog],
-  )
-
-  return { deleteChats, deleteThere, deleting }
+  return { deleteChats, deleting }
 }

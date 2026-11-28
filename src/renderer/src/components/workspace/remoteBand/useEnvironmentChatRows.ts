@@ -14,11 +14,13 @@ import { useRemoteSessions } from './useRemoteSessions'
  * each environment's source moves: the rows the sidebar draws (the same
  * environments, the same hidden kinds, none of a paired desktop's while this
  * device is off the tailnet), for a list that shows them beside it (the
- * palette).
+ * palette), or the chats each has settled (Settings ▸ Settled chats).
  */
 export function useEnvironmentChatRows(
   workspaces: readonly Pick<Workspace, 'id' | 'environment' | 'remoteOrigin'>[],
   moduleOverrides: ModuleEnablementOverrides | undefined,
+  /** The chats each environment has settled instead (Settings ▸ Settled chats). */
+  settled = false,
 ): readonly RemoteConversation[] {
   const { sources, link } = useRemoteSessions()
   const environments = useEnvironments()
@@ -31,7 +33,8 @@ export function useEnvironmentChatRows(
         hiddenMode: (mode) => mode !== null && isHiddenFromRail({ mode: mode as WorkspaceMode }, moduleOverrides),
         onTailnet: link !== 'down',
         reachedOverTailnet,
+        settled,
       }),
-    [sources, environments, workspaces, moduleOverrides, link],
+    [sources, environments, workspaces, moduleOverrides, link, settled],
   )
 }

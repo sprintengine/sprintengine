@@ -388,6 +388,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // the control channel (extension-open-bridge.ts).
   const extensionOpener = shellExtensionOpenOverControl(rpc)
   gateway = createStudioGateway(core, {
+    // A chat's address is routed by the shell's environment registry, asked
+    // each time: one registry, read where it is kept (environment-registry.ts).
+    environmentRoutes: async (environmentId) => {
+      const routes = await rpc.call<unknown>(SHELL_METHODS.environmentRoutes, { environmentId })
+      return Array.isArray(routes) ? routes.filter((route): route is string => typeof route === 'string') : []
+    },
     // An agent that starts a chat hears back from it, as one that launches a
     // terminal agent does.
     ...(terminals

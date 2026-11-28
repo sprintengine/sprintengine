@@ -89,11 +89,15 @@ Read `cli_runtime_list` before naming any `cli` or `cliModel`. Only rows with
 
 ## Driving another chat
 
-Four tools let you work with another chat on this machine, as the person does
-by moving between chats. Name the chat by `workspaceId` (and `agentId` when
-its workspace holds more than one chat agent).
+Four tools let you work with another chat, as the person does by moving
+between chats. Name the chat by `chat`, its address (`<environmentId>:<chatId>`)
+or its link (`sprintengine://chat/...`, what dragging a chat into the composer
+writes), or, for a chat on this machine, by `workspaceId`; add `agentId` when
+the chat holds more than one chat agent. A chat on an SSH machine or a WSL
+distribution this computer reaches is driven there; a paired desktop's chat is
+not reachable from these tools.
 
-- `conversation_send` with `{workspaceId, message}` sends it a message. The
+- `conversation_send` with `{chat, message}` sends it a message. The
   default `mode: "queue"` sends now when the chat is not in a turn and
   otherwise holds the message for the turn's end; `mode: "steer"` puts it
   into the running turn where the chat's CLI can take one. A chat at rest is

@@ -1039,9 +1039,11 @@ chat's workspace, every change under a command id and answered once:
   the plan says why not. There is no undo. A chat already gone answers
   `gone: true` to both, so a delete sent twice does no harm. The plan is a
   read on `conversation:read`; the delete needs `conversation:operate` and is
-  audited. A paired desktop offers Delete on a settled chat it opened from
-  here, asks the plan, says it in its confirmation, and once this desktop has
-  deleted the chat removes its own record of it.
+  audited. Another desktop's Settings ▸ Settled chats lists this desktop's
+  settled chats from `workspaces.list` (`settledAt`), asks the plan, says it
+  in one confirmation with whatever else was picked, and deletes the chat
+  here; nothing of it is kept on that desktop. An SSH machine's and a WSL
+  distribution's settled chats are deleted the same way, on their own Studio.
 - **`conversation.searchChats`** `{ query }` finds what was said in the
   desktop's chats as its own palette does: the chats its sidebar lists, most
   recently spoken in first, each through the runtime's transcript search. It

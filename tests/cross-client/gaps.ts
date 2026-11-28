@@ -22,6 +22,7 @@ export const SCENARIOS = [
   'machine',
   'unreachable',
   'list',
+  'open',
   'discover',
 ] as const
 export type ScenarioId = (typeof SCENARIOS)[number]
@@ -44,18 +45,43 @@ export const SCENARIO_WORDS: Record<ScenarioId, string> = {
   unreachable:
     'the phone and a paired desktop cannot reach it: no method lists or tickets it, and no path through the desktop serves it',
   list: 'a chat is listed at its address with what its row draws; a star and a settle asked by one client read back in every list',
+  open: 'a chat is opened by its link: the client finds the Studio the link names, the chat in its list, and reads it',
   discover:
     'the CLIs it runs, a project’s checkout and what a chat there can use are answered by the Studio on the machine, to a window and to an agent there',
 }
 
 /** Which rows each client is held to. A read-only embed is not asked to write. */
 export const ROWS: Record<ClientId, readonly ScenarioId[]> = {
-  desktop: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list'],
-  peer: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list'],
-  phone: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list'],
+  desktop: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list', 'open'],
+  peer: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list', 'open'],
+  phone: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list', 'open'],
   embed: ['stream', 'resume', 'restart', 'isolation'],
-  ssh: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list', 'discover'],
-  wsl: ['create', 'stream', 'approval', 'schedule', 'restart', 'launch', 'machine', 'unreachable', 'list', 'discover'],
+  ssh: [
+    'create',
+    'stream',
+    'upload',
+    'approval',
+    'subagent',
+    'schedule',
+    'resume',
+    'restart',
+    'list',
+    'open',
+    'discover',
+  ],
+  wsl: [
+    'create',
+    'stream',
+    'approval',
+    'schedule',
+    'restart',
+    'launch',
+    'machine',
+    'unreachable',
+    'list',
+    'open',
+    'discover',
+  ],
 }
 
 /** `expect`: what the row's failure says today; failing for any other reason is a failure. */

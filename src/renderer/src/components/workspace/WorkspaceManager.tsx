@@ -174,6 +174,7 @@ import { SidebarRevealFrame, SidebarRevealZones, useFineHover, useSidebarHoverRe
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useNarrowViewport } from '../../hooks/useNarrowViewport'
 import {
+  remoteConversationTitle,
   remoteWorkspaceName,
   type RemoteSessionOpenSpec,
   type RemoteWindowPlace,
@@ -299,6 +300,7 @@ import {
 // deferred chunk.
 import { paletteScopeForCommand, type PaletteScope } from '../commandPaletteSearch'
 import { subscribePaletteOpenRequest, type PaletteAgentTarget } from '../palette/paletteOpenRequest'
+import { subscribeEnvironmentChatOpenRequest } from './remoteBand/environmentChatOpenRequest'
 import { isGlobalShortcutSuppressedTarget, isTerminalKeyTarget } from '../../utils/keyboard'
 import { controlTabContextItemOf, controlTabContextOf, cycleFocusedControlTabScope } from '../../utils/controlTab'
 import { useExtensionsDrawerRows } from './extensionsDrawerRows'
@@ -494,7 +496,11 @@ export default function WorkspaceManager() {
   // The row menu's Delete chat… on a settled chat, the same flow Settings ▸ Settled chats runs.
   const { deleteChats: deleteSettledChats } = useDeleteSettledChats()
   const sidebarDeleteSettledChat = useCallback(
-    (workspaceId: string) => void deleteSettledChats([workspaceId]),
+    (workspaceId: string) => {
+      const workspace = useWorkspaceStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
+      const title = workspace ? remoteConversationTitle(workspace) : 'this chat'
+      void deleteSettledChats([{ key: workspaceId, chatId: workspaceId, title, environment: null }])
+    },
     [deleteSettledChats],
   )
   const workspaceWindowId = useMemo(() => getWorkspaceWindowIdFromLocation(), [])
@@ -4050,6 +4056,9 @@ export default function WorkspaceManager() {
       workspaceWindowId,
     ],
   )
+  // Settings ▸ Settled chats' Open on another environment's chat: Settings
+  // has no path to this opener, so it asks by a window event.
+  useEffect(() => subscribeEnvironmentChatOpenRequest((spec) => void openRemoteSession(spec)), [openRemoteSession])
 
   // A chat agent started on another environment (remote-sessions-ux /
   // new-chat-on-a-remote-machine, design-environments PR 2), whatever kind of

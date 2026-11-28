@@ -11,6 +11,7 @@ import { localOnlyGatewayToolReason } from './tailnet/tailnet-scopes'
 import {
   CHAT_WAIT_DEFAULT_MS,
   createConversationChatTools,
+  type ChatRef,
   type ConversationChatControl,
 } from './conversation-chat-tools'
 import { chatMessagesOf } from './conversation-chat-read'
@@ -20,7 +21,13 @@ import { chatMessagesOf } from './conversation-chat-read'
 // chat's state, and stops a turn — and never drives a chat that runs looser
 // than it does.
 
-type Sent = { workspaceId: string; agentId: string; clientId: string; command: ConversationCommand }
+type Sent = {
+  route: string | null
+  workspaceId: string
+  agentId: string
+  clientId: string
+  command: ConversationCommand
+}
 
 function session(overrides: Partial<ConversationSessionSummary> = {}): ConversationSessionSummary {
   return {
@@ -50,18 +57,33 @@ function harness(
   const pages: Array<{ before?: number; turns: number }> = []
   const answers = [...(options.answers ?? [])]
   const clock = options.clock ?? { now: 1_000 }
+  const found: ChatRef[] = []
   const chats: ConversationChatControl = {
-    chatAgentsOf: (workspaceId) =>
-      (options.agents ?? { 'ws-target': ['agent-1'], 'ws-caller': ['agent-1'] })[workspaceId] ?? null,
-    resolveKey: (workspaceId, agentId) => ({ workspaceRoot: `/Users/dev/${workspaceId}`, workspaceId, agentId }),
+    find: async (ref) => {
+      found.push(ref)
+      const agents = (options.agents ?? { 'ws-target': ['agent-1'], 'ws-caller': ['agent-1'] })[ref.chatId]
+      if (ref.environmentId === 'env-away')
+        return { ok: false, code: 'unavailable', message: 'build-box cannot be reached.' }
+      if (!agents) return { ok: false, code: 'unknown_workspace', message: `No chat "${ref.chatId}".` }
+      return {
+        ok: true,
+        chat: {
+          route: ref.environmentId === 'env-ssh' ? 'ssh:build-box' : null,
+          workspaceId: ref.chatId,
+          agents,
+          title: ref.chatId === 'ws-caller' ? 'Release plan' : 'Parser fix',
+          keyOf: (agentId) => ({ workspaceRoot: `/Users/dev/${ref.chatId}`, workspaceId: ref.chatId, agentId }),
+        },
+      }
+    },
     chatTitle: (workspaceId) => (workspaceId === 'ws-caller' ? 'Release plan' : 'Parser fix'),
     session: () => (options.summary ? options.summary() : session()),
     permissionOf: () => options.preset ?? 'auto',
-    command: async (key, clientId, _commandId, command) => {
-      sent.push({ workspaceId: key.workspaceId, agentId: key.agentId, clientId, command })
+    command: async ({ route, key }, clientId, _commandId, command) => {
+      sent.push({ route, workspaceId: key.workspaceId, agentId: key.agentId, clientId, command })
       return answers.shift() ?? { ok: true }
     },
-    readPage: async (_key, page) => {
+    readPage: async (_target, page) => {
       pages.push(page)
       return { ok: true, events: exportChatEvents(), hasMore: true, before: 42 }
     },
@@ -76,7 +98,7 @@ function harness(
   })
   const call = (name: string, args: Record<string, unknown>, context: McpConnectionContext = agent) =>
     tools.find((tool) => tool.name === name)!.handler(args, context) as Promise<McpToolResult>
-  return { call, sent, pages, clock }
+  return { call, sent, pages, clock, found }
 }
 
 const agent: McpConnectionContext = {
@@ -180,6 +202,54 @@ test('a chat is named by its workspace, and by its agent where the workspace hol
   assert.equal(errorCode(await h.call('conversation.read', { workspaceId: 'ws-gone' })), 'unknown_workspace')
   const read = await h.call('conversation.read', { workspaceId: 'ws-target', agentId: 'agent-2' })
   assert.equal(body(read).agentId, 'agent-2')
+})
+
+test("a chat is named by its address or its link, wherever it is; a link's agent is the one it names", async () => {
+  const h = harness({ agents: { 'ws-target': ['agent-1', 'agent-2'] } })
+  const byLink = await h.call('conversation.send', {
+    chat: 'sprintengine://chat/env-ssh/ws-target?agent=agent-2',
+    message: 'Ship it.',
+  })
+  assert.equal(byLink.isError, undefined, JSON.stringify(body(byLink)))
+  assert.deepEqual(h.found[0], { environmentId: 'env-ssh', chatId: 'ws-target' })
+  assert.equal(h.sent[0]!.route, 'ssh:build-box', 'the command goes where the chat is')
+  assert.equal(h.sent[0]!.agentId, 'agent-2')
+
+  const byAddress = await h.call('conversation.read', { chat: 'env-ssh:ws-target', agentId: 'agent-1' })
+  assert.equal(body(byAddress).title, 'Parser fix')
+  assert.deepEqual(h.found[1], { environmentId: 'env-ssh', chatId: 'ws-target' })
+
+  // A link from before links named an environment is this machine's chat.
+  await h.call('conversation.read', { chat: 'sprintengine://chat/ws-target', agentId: 'agent-1' })
+  assert.deepEqual(h.found[2], { environmentId: null, chatId: 'ws-target' })
+  // A workspace id is this machine's chat.
+  await h.call('conversation.read', { workspaceId: 'ws-target', agentId: 'agent-1' })
+  assert.deepEqual(h.found[3], { environmentId: null, chatId: 'ws-target' })
+
+  // A machine that cannot be reached is said so in its words.
+  const away = await h.call('conversation.read', { chat: 'env-away:ws-target' })
+  assert.equal(errorCode(away), 'unavailable')
+  assert.match(body(away).error.message, /build-box cannot be reached/u)
+})
+
+test('a chat is named once, by an address or link or by a workspace id', async () => {
+  const h = harness()
+  for (const args of [
+    { chat: 'env-ssh:ws-target', workspaceId: 'ws-target' },
+    { chat: 'https://example.com/chat/ws-target' },
+    { chat: 'ws-target' },
+    {},
+  ])
+    assert.equal(errorCode(await h.call('conversation.read', args)), 'invalid_arguments', JSON.stringify(args))
+  assert.equal(h.found.length, 0)
+})
+
+test("an agent's own chat is its own only on this machine", async () => {
+  const h = harness()
+  const there = await h.call('conversation.send', { chat: 'env-ssh:ws-caller', message: 'hi' })
+  assert.equal(there.isError, undefined, 'a chat on another machine with the same id is not the caller’s')
+  const here = await h.call('conversation.send', { chat: 'sprintengine://chat/ws-caller', message: 'hi' })
+  assert.equal(errorCode(here), 'own_chat')
 })
 
 test('a read is the words alone, a page at a time, with the cursor to the earlier turns', async () => {
