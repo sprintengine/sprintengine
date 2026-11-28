@@ -105,16 +105,6 @@ export type ChatMarkAction =
 /** A change to a chat's marks or sleep, as opposed to its rest: what a paired machine's `chat-lifecycle` takes. */
 export type ChatMarkChange = Exclude<ChatMarkAction, 'toggle-settle'>
 
-export function isChatMarkChange(action: string): action is ChatMarkChange {
-  return (
-    action === 'toggle-star' ||
-    action === 'toggle-auto-settle' ||
-    action === 'wake' ||
-    action === 'clear-color' ||
-    action.startsWith('snooze:')
-  )
-}
-
 export type ContextMenuAction =
   | 'open'
   | 'mark-unread'

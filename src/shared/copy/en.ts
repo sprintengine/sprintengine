@@ -6788,8 +6788,8 @@ export const en = {
       open: 'Open',
       couldnTOpenFrom: (title: unknown, machineName: unknown) => `Couldn't open ${title} from ${machineName}`,
       noAgentListedThere: (machine: unknown) =>
-          `${machine} lists no agent in this chat that a pane here can follow; open it on ${machine}.`,
-        theSoloLayoutTemplateIs2: 'The Solo layout template is missing.',
+        `${machine} lists no agent in this chat that a pane here can follow; open it on ${machine}.`,
+      theSoloLayoutTemplateIs2: 'The Solo layout template is missing.',
       couldNotStartAChat: (machineName: unknown) => `Could not start a chat on ${machineName}`,
       startedOnButNoPane: (machineName: unknown) => `Started on ${machineName}, but no pane could open`,
       theSoloLayoutTemplateIs3: (title: unknown) =>

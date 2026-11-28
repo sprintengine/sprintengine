@@ -24,7 +24,7 @@ import type { EnvironmentListFailure } from '../../../studio/environmentChatsFre
  * this one share no protocol (`outdated`), or it is not running and is not
  * started just to list its chats (`not-connected`, a WSL distribution).
  */
-export type RemoteLastKnownReason = 'signed-out' | 'not-answering' | 'outdated' | 'not-connected'
+type RemoteLastKnownReason = 'signed-out' | 'not-answering' | 'outdated' | 'not-connected'
 
 export type RemoteLastKnown = {
   reason: RemoteLastKnownReason
