@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { changeEnvironmentChat, settleEnvironmentChat, visitEnvironmentChat } from '../../studio/environmentChatRecords'
-import { environmentStudioAvailable, pairedConnectionOf, reachedOverTailnet } from '../../studio/environmentStudio'
+import { environmentStudioAvailable, pairedConnectionOf } from '../../studio/environmentStudio'
 import { pairedScheduledAgentAction } from '../../studio/pairedSchedules'
 import { ChatGlyph, NewChatIcon, RemoteMachineGlyph, ScheduleGlyph, resolveEnabledWorkspaceType } from '../AppIcons'
 import CliIcon from '../CliIcon'
@@ -109,13 +109,10 @@ import { useWorkspaceMachineRef } from '../../hooks/useMachineIdentity'
 import { distroOfHostId, isWslHostId } from '../../../../shared/execution-host'
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useRemoteSessions } from './remoteBand/useRemoteSessions'
-import type { WorkspaceMode } from '../../../../shared/workspace-mode'
 import { workspaceLastUserMessageAt } from '../../utils/workspaceRecency'
 import { useEnvironments } from '../../hooks/useEnvironments'
-import { environmentIdOfRoute } from './remoteBand/environmentChatsNow'
+import { useEnvironmentChatRows } from './remoteBand/useEnvironmentChatRows'
 import {
-  chatRecordsByAddress,
-  environmentChatRows,
   isEnvironmentRecord,
   openSpecOfConversation,
   remoteRowActivity,
@@ -173,6 +170,7 @@ import {
   remoteScheduleActionWords,
   useRemoteScheduledAgents,
   type RemoteScheduledMachine,
+  type ScheduledAgentRef,
 } from './sidebar/useRemoteScheduledAgents'
 import {
   PauseAllScheduledAgentsControl,
@@ -244,7 +242,7 @@ import {
 import { TerminalLineView } from './sidebar/TerminalLineView'
 import {
   FolderContextMenu,
-  RemoteConversationContextMenu,
+  EnvironmentChatContextMenu,
   WorkspaceContextMenu,
   autoCompactSwitchOf,
   canRegenerateTitleOf,
@@ -354,14 +352,11 @@ type WorkspaceSidebarProps = {
   // Open New chat switched to Scheduled agent: the clock beside New chat.
   // Absent, there is no clock (a host with no scheduling).
   onNewScheduledAgent?: () => void
-  // Open a scheduled agent's card: New chat, editing it.
-  onOpenScheduledAgent?: (id: string) => void
+  // Open any machine's scheduled agent: New chat, editing it on the machine
+  // it runs on (`route` null for this computer's).
+  onOpenScheduledAgent?: (agent: ScheduledAgentRef) => void
   // The scheduled agent the door in this window is editing, drawn selected.
-  openScheduledAgentId?: string | null
-  // Open a paired machine's scheduled agent: the same editor, saving there.
-  onOpenRemoteScheduledAgent?: (route: string, id: string) => void
-  // The paired machine's scheduled agent the door is editing, drawn selected.
-  openRemoteScheduledAgent?: { route: string; id: string } | null
+  openScheduledAgent?: ScheduledAgentRef | null
   // Reopen a kept New chat draft, and throw one away. Absent, no Drafts section.
   onOpenDraft?: (id: string) => void
   onDeleteDraft?: (id: string) => void
@@ -469,9 +464,7 @@ function WorkspaceSidebar({
   onNewChat,
   onNewScheduledAgent,
   onOpenScheduledAgent,
-  openScheduledAgentId = null,
-  onOpenRemoteScheduledAgent,
-  openRemoteScheduledAgent = null,
+  openScheduledAgent = null,
   onOpenDraft,
   onDeleteDraft,
   openDraftId = null,
@@ -1432,28 +1425,12 @@ function WorkspaceSidebar({
   // once, as a local Star flips at once, until a list read after the
   // environment took them stands in for them (`withPendingRemoteMarks`).
   const [pendingRemoteMarks, setPendingRemoteMarks] = useState<ReadonlyMap<string, PendingRemoteMarks>>(() => new Map())
-  // The records here of other environments' chats, by address: what opening a
-  // row focuses. A route's environment id is the one its rows are keyed by:
-  // its own Studio's, else the list's.
-  const idOfRoute = useMemo(
-    () => environmentIdOfRoute(environments, environmentSources),
-    [environments, environmentSources],
-  )
-  const chatRecords = useMemo(() => chatRecordsByAddress(workspaces, idOfRoute), [workspaces, idOfRoute])
+  // Every other environment's rows, as the palette lists them too
+  // (`useEnvironmentChatRows`), with the marks asked and not yet read back.
+  const listedEnvironmentRows = useEnvironmentChatRows(workspaces, moduleOverrides)
   const environmentRows = useMemo(
-    () =>
-      withPendingRemoteMarks(
-        environmentChatRows({
-          sources: environmentSources,
-          environments,
-          records: chatRecords,
-          hiddenMode: (mode) => mode !== null && isHiddenFromRail({ mode: mode as WorkspaceMode }, moduleOverrides),
-          onTailnet: remoteLink !== 'down',
-          reachedOverTailnet,
-        }),
-        pendingRemoteMarks,
-      ),
-    [environmentSources, environments, chatRecords, moduleOverrides, remoteLink, pendingRemoteMarks],
+    () => withPendingRemoteMarks(listedEnvironmentRows, pendingRemoteMarks),
+    [listedEnvironmentRows, pendingRemoteMarks],
   )
   const readAtOfRoute = useCallback(
     (route: string) => environmentSources.find((source) => source.route === route)?.entry.at ?? null,
@@ -3464,9 +3441,9 @@ function WorkspaceSidebar({
                   now={now}
                   project={flatProjectOfScheduled(agent)}
                   runInProgress={scheduledAgentRunInProgress(agent, activityByWorkspaceId)}
-                  selected={openScheduledAgentId === agent.id}
+                  selected={openScheduledAgent?.route === null && openScheduledAgent.id === agent.id}
                   pausedAll={scheduledPausedAll !== null}
-                  onOpen={() => onOpenScheduledAgent?.(agent.id)}
+                  onOpen={() => onOpenScheduledAgent?.({ route: null, id: agent.id })}
                   onClose={() => closeScheduledAgent(agent)}
                   onTogglePause={() => void setScheduledAgentPaused(agent, agent.pausedAt === undefined)}
                   onRunNow={() => runScheduledAgentNow(agent)}
@@ -3492,16 +3469,14 @@ function WorkspaceSidebar({
                     }}
                     machine={{ ref: machine.machine, name: machine.machineName }}
                     runInProgress={null}
-                    selected={
-                      openRemoteScheduledAgent?.route === machine.route && openRemoteScheduledAgent.id === agent.id
-                    }
+                    selected={openScheduledAgent?.route === machine.route && openScheduledAgent.id === agent.id}
                     pausedAll={machine.pausedAll !== null}
                     {...(machine.operable
                       ? {
                           // Opens in New chat's editor, which saves it on the
                           // machine it runs on, addressed by its route.
-                          ...(onOpenRemoteScheduledAgent
-                            ? { onOpen: () => onOpenRemoteScheduledAgent(machine.route, agent.id) }
+                          ...(onOpenScheduledAgent
+                            ? { onOpen: () => onOpenScheduledAgent({ route: machine.route, id: agent.id }) }
                             : {}),
                           onClose: () => actOnRemoteScheduled(machine, agent, 'delete'),
                           onTogglePause: () =>
@@ -4474,7 +4449,7 @@ function WorkspaceSidebar({
               ? chatLinkFor({ environmentId: conversation.environmentId, chatId: conversation.workspaceId })
               : null
             return (
-              <RemoteConversationContextMenu
+              <EnvironmentChatContextMenu
                 x={remoteMenu.x}
                 y={remoteMenu.y}
                 title={conversation.title}

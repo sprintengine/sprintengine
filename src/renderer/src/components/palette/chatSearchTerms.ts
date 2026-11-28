@@ -1,7 +1,8 @@
 import { primaryPullRequest, type BranchPullRequest } from '../../../../shared/git/pull-request'
 import type { Workspace } from '../../../../shared/workspace'
 import { workspaceProjectRoot } from '../../utils/workspaceWorktree'
-import { folderDisplayName, remoteGroupDisplayName } from '../workspace/sidebar/folderGroups'
+import { folderDisplayName, remoteProjectName } from '../workspace/sidebar/folderGroups'
+import type { RemoteConversation } from '../workspace/remoteBand/remoteSessionsModel'
 
 // What a chat row in the palette can be found by beyond its title and folder:
 // the pull requests the chat holds and the branch it works on. Someone coming
@@ -30,12 +31,12 @@ export function pullRequestSearchTerms(pullRequest: BranchPullRequest): string[]
 
 /**
  * The branch a chat is on that holds without a running process: the worktree
- * the app cut for it, or the checkout a remote create chose. A chat on the
+ * the app cut for it. A chat on the
  * project's own checkout has no branch of its own — the checkout's current
  * branch is a fact about the folder, not the chat — so it has none here.
  */
-export function chatBranch(workspace: Pick<Workspace, 'worktree' | 'remoteOrigin'>): string | null {
-  return workspace.worktree?.branch?.trim() || workspace.remoteOrigin?.checkout?.branch?.trim() || null
+export function chatBranch(workspace: Pick<Workspace, 'worktree'>): string | null {
+  return workspace.worktree?.branch?.trim() || null
 }
 
 /** The extra match text for a chat row: its pull requests' terms and its branch. */
@@ -140,12 +141,41 @@ export function chatMatchReason(
 /**
  * The project a chat belongs to, named the way the sidebar's header names it:
  * the folder's own name, and for a worktree the project it was cut from — not
- * `pool-08`, which is a slot, not a place. A chat on another machine is named
- * by its folder there. Null for a chat with no folder, which belongs to no
- * project and says nothing by repeating so.
+ * `pool-08`, which is a slot, not a place. Null for a chat with no folder,
+ * which belongs to no project and says nothing by repeating so. Another
+ * environment's chat is named from its own row (`environmentChatFacts`).
  */
 export function chatProjectName(workspace: Workspace): string | null {
-  if (workspace.remoteOrigin || workspace.environment) return remoteGroupDisplayName(workspace)
   const root = workspaceProjectRoot(workspace) ?? workspace.folderPath
   return root?.trim() ? folderDisplayName(root) : null
+}
+
+/** What the palette draws and finds another environment's chat by, read off its row there. */
+export type EnvironmentChatFacts = {
+  /** Its project, as its sidebar header names it: the project there, else its machine. */
+  project: string
+  /** Its folder on that machine's disk. */
+  folderPath: string | null
+  branch: string | null
+  pullRequests: BranchPullRequest[]
+}
+
+/**
+ * Another environment's chat (a paired desktop's, an SSH machine's, a WSL
+ * distribution's), as its environment lists it (`environmentChatsNow`): the
+ * same project its sidebar row is filed under, its folder there, the branch
+ * its agents work on and the pull requests they hold.
+ */
+export function environmentChatFacts(
+  row: Pick<RemoteConversation, 'machineName' | 'workspaceRoot' | 'projectFolder' | 'agents'>,
+): EnvironmentChatFacts {
+  return {
+    project: remoteProjectName(row.projectFolder ?? row.workspaceRoot, row.machineName),
+    folderPath: row.workspaceRoot,
+    branch: row.agents.map((agent) => agent.branch?.trim()).find(Boolean) ?? null,
+    pullRequests: mergeChatPullRequests(
+      undefined,
+      row.agents.map((agent) => agent.pullRequests),
+    ),
+  }
 }

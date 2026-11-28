@@ -89,6 +89,9 @@ export function ownedScheduledMachines(): readonly RemoteScheduledMachine[] {
   return publishedMachines.filter((machine) => machine.connectionId === null)
 }
 
+/** A scheduled agent, by the machine it runs on: `route` null for this computer's, else that machine's route. */
+export type ScheduledAgentRef = { route: string | null; id: string }
+
 /** One of another machine's schedules as the Scheduled section holds it now, with its machine, by its route. */
 export function remoteScheduledAgentNow(
   route: string,

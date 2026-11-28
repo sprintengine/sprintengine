@@ -177,7 +177,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
   followEnvironmentChats([{ route: 'ssh:m1', name: 'dev@build-box' }])
 
   const noop = () => {}
-  const opened: Array<[string, string]> = []
+  const opened: Array<{ route: string | null; id: string }> = []
   const newChatFolders: string[] = []
   const props = {
     workspaces,
@@ -196,8 +196,8 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     onNewChat: noop,
     onNewChatInFolder: (folder: string) => newChatFolders.push(folder),
     onRevealFolder: noop,
-    onOpenScheduledAgent: noop,
-    onOpenRemoteScheduledAgent: (route: string, id: string) => opened.push([route, id]),
+    // One opener for every machine's schedules, by the machine's route.
+    onOpenScheduledAgent: (agent: { route: string | null; id: string }) => opened.push(agent),
     onSetSidebarCollapsed: noop,
     sidebarWidth: 260,
     onSetSidebarWidth: noop,
@@ -313,7 +313,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     await settle()
     assert.ok(opened.length > 0, 'it opens')
     assert.ok(
-      opened.every(([route, id]) => route === 'ssh:m1' && id === 'sa-box'),
+      opened.every(({ route, id }) => route === 'ssh:m1' && id === 'sa-box'),
       'opened on its machine, by its route',
     )
 

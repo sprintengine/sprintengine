@@ -34,7 +34,7 @@ test('every item of a chat’s menu, here or on a paired machine, has a tooltip'
   const React = await import('react')
   const { act } = React
   const { createRoot } = await import('react-dom/client')
-  const { WorkspaceContextMenu, RemoteConversationContextMenu } = await import('./sidebar/contextMenus')
+  const { WorkspaceContextMenu, EnvironmentChatContextMenu } = await import('./sidebar/contextMenus')
 
   const now = Date.now()
   const base = {
@@ -69,7 +69,7 @@ test('every item of a chat’s menu, here or on a paired machine, has a tooltip'
       ...extra,
     })
   const remote = (extra: Record<string, unknown> = {}) =>
-    React.createElement(RemoteConversationContextMenu, {
+    React.createElement(EnvironmentChatContextMenu, {
       x: 0,
       y: 0,
       title: 'Review the parser',
