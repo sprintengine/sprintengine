@@ -851,7 +851,20 @@ Every change on the protocol carries a command id: a retry is answered with
 the first answer and written once, so a settle retried after an Undo does not
 settle the chat again.
 
-- **`conversation.settle`** `{ workspaceId, settled? }` (default `true`)
+An agent's lifecycle tools name the chat as `conversation.send` does: by
+`chat`, its address (`<environmentId>:<chatId>`) or link, or by `workspaceId`
+for a chat on this machine. A chat on an SSH machine or in a WSL distribution
+is changed there, by the methods above on that machine's own Studio, so the
+machine's record of it moves and every list reads it back; a paired desktop's
+chat is refused in words. The agent's `conversation.create` takes
+`environment` (an environment id, or a chat's address or link there) beside
+`workspaceId` or `noProject`, and starts the chat on that machine's Studio
+with its `conversation.create`. That create carries no mode, so a `plan` or
+`ask` chat there is refused rather than started writable. Until the copies of
+those machines' chats go, a copy's `workspaceId` reaches its machine the same
+way.
+
+- **`conversation.settle`** `{ chat | workspaceId, settled? }` (default `true`)
   writes the same patch as the row menu's Settle, or with `false` its
   Un-settle, and answers `{ ok: true, workspaceId, settledAt }` (`null` when
   the chat is in the list). It is refused as `working` while anything in the
@@ -861,7 +874,7 @@ settle the chat again.
   have; settling a settled chat again changes nothing. The desktop then does
   what its own Settle does: the chat's agents stop, and a window that has it
   in front moves on to the next chat.
-- **`conversation.visit`** `{ workspaceId, visitedAt? }` moves the chat's
+- **`conversation.visit`** `{ chat | workspaceId, visitedAt? }` moves the chat's
   `lastVisitedAt` forward to `visitedAt` (now when omitted, and never past the
   desktop's now) and answers `{ ok: true, workspaceId, lastVisitedAt }`. A
   `visitedAt` no later than the chat's `visitRewoundAt` is a reading taken
@@ -881,7 +894,7 @@ settle the chat again.
   desktop following a paired machine's chat draws the same "New" divider,
   read from that machine's `lastVisitedAt` as its list gave it before the
   opening's first visit.
-- **`conversation.mark_unread`** `{ workspaceId }` (2026-10-07;
+- **`conversation.mark_unread`** `{ chat | workspaceId }` (2026-10-07;
   `conversation.markUnread` on the Studio protocol) moves the chat's `lastVisitedAt`
   **back**, to its latest finish less a millisecond, and answers
   `{ ok: true, workspaceId, lastVisitedAt }`. Its finish reads as unseen again
