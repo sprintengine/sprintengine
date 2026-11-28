@@ -449,6 +449,16 @@ export const STUDIO_BROWSER_TABS_CAPABILITY = 'browser-tabs' as const
 export const STUDIO_NEW_CHAT_FOLDER_CAPABILITY = 'new-chat-folder' as const
 
 /**
+ * `conversation.create` takes `mode` (`plan` or `ask`): the mode every turn of
+ * the new chat runs in, its first included, kept on the chat, as a create on
+ * that machine's own window or gateway applies it. A Studio before it reads
+ * the create without the member and would start the chat writable, so a
+ * client sends a mode only to a Studio that says this, and refuses it
+ * (`unsupported_mode`) otherwise. Served with `conversation-create`.
+ */
+export const STUDIO_NEW_CHAT_MODE_CAPABILITY = 'new-chat-mode' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -522,6 +532,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_BROWSER_TABS_CAPABILITY,
   STUDIO_NEW_CHAT_FOLDER_CAPABILITY,
   STUDIO_WEB_TAB_CAPABILITY,
+  STUDIO_NEW_CHAT_MODE_CAPABILITY,
 ] as const
 
 /**

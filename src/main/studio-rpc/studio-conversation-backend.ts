@@ -306,6 +306,8 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
         ...(request.worktreeName ? { worktreeName: request.worktreeName } : {}),
         ...(request.inWorktree ? { existingWorktreePath: request.inWorktree } : {}),
         ...(request.effort ? { reasoningEffort: request.effort } : {}),
+        // Held on the chat for every turn, as the launch keeps it for any caller.
+        ...(request.mode ? { mode: request.mode } : {}),
         ...(request.cli ? { cli: request.cli } : {}),
         ...(request.model ? { cliModel: request.model } : {}),
         ...(request.prompt ? { prompt: request.prompt } : {}),

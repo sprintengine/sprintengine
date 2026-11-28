@@ -489,6 +489,53 @@ test('a create is retried under one command id and makes one chat', async () => 
   assert.equal(created.ref.agentId, created.info.agentId)
 })
 
+test('a create in a mode goes only to a Studio that takes one; an older one is refused it, never sent it', async () => {
+  const target = await studio()
+  const token = pairFakeClient(target.auth, 'planner', ['conversation:create', 'conversation:operate'])
+  const current = await client(target, token)
+  assert.equal(current.supports('new-chat-mode'), true)
+  await current.rpc['conversation.create']({ workspaceId: 'ws-1', mode: 'plan', commandId: 'plan-1' })
+  assert.equal(target.backend.creates.at(-1)?.request.mode, 'plan')
+
+  // A Studio from before the member: its welcome does not say `new-chat-mode`,
+  // and it would read the create without the mode and start the chat writable.
+  const plain = socketTransport({ dataDir: target.dataDir })
+  const older = await connect({
+    transport: async () => {
+      const transport = await plain()
+      return {
+        ...transport,
+        send: (frame) => transport.send(frame),
+        close: () => transport.close(),
+        onClose: (listener) => transport.onClose(listener),
+        onMessage: (listener) =>
+          transport.onMessage((frame) => {
+            const parsed = JSON.parse(frame) as { t?: string; capabilities?: string[] }
+            if (parsed.t !== 'welcome') return listener(frame)
+            listener(
+              JSON.stringify({ ...parsed, capabilities: parsed.capabilities?.filter((name) => name !== 'new-chat-mode') }),
+            )
+          }),
+      }
+    },
+    client: { name: 'sdk-test' },
+    auth: { token },
+    reconnect: { initialDelayMs: 10, maxDelayMs: 50 },
+  })
+  cleanups.push(() => older.close())
+  assert.equal(older.supports('new-chat-mode'), false)
+  const creates = target.backend.creates.length
+  for (const mode of ['plan', 'ask'] as const)
+    await assert.rejects(
+      older.rpc['conversation.create']({ workspaceId: 'ws-1', mode, commandId: `plan-${mode}` }),
+      (error: StudioError) => error.code === 'unsupported_mode',
+    )
+  assert.equal(target.backend.creates.length, creates)
+  // Without a mode it is the create it always was.
+  const unmoded = await older.conversations.create({ workspaceId: 'ws-1', commandId: 'plan-4' })
+  assert.ok(unmoded.ok, JSON.stringify(unmoded))
+})
+
 test('the same handles work in process over a module’s conversation service', async () => {
   const followed: Array<(frame: ConversationFollowFrame | { type: 'error'; message: string }) => void> = []
   const calls: string[] = []

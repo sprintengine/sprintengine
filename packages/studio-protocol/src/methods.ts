@@ -1,4 +1,5 @@
 import {
+  CONVERSATION_SEND_MODES,
   explainRejectedConversationMessage,
   parseConversationClientMessage,
   parseConversationCreateRequest,
@@ -6,6 +7,7 @@ import {
   type ConversationCommand,
   type ConversationCreateRequest,
   type ConversationHelloAnswer,
+  type ConversationSendMode,
   type ConversationServerFrame,
   type ConversationThread,
   type ConversationToolDetail,
@@ -273,6 +275,8 @@ export type StudioRuntimeRefusalCode =
   // New chat's own: no worktree could be cut or found for it, or its CLI has no such effort.
   | 'worktree_unavailable'
   | 'unsupported_effort'
+  // A mode the chat's agent cannot run (`new-chat-mode`): it is never started without it.
+  | 'unsupported_mode'
 
 /** A command's own refusals: the runtime's, a ceiling it would exceed, and a decision no remote client makes. */
 type CommandRefusal = StudioRuntimeRefusalCode | 'ceiling_exceeded' | 'unsafe_remote_decision'
@@ -608,7 +612,10 @@ const noParams = (): StudioParsed<Record<string, never>> => studioParams({})
  * workspace, in a worktree cut for it (`worktree`, named from `worktreeName`)
  * or one the project already has (`inWorktree`, a path `workspaces.checkout`
  * lists), under no project at all (`noProject`, in place of `workspaceId`),
- * and at a reasoning effort (`effort`, one of the CLI's `reasoningLevels`).
+ * at a reasoning effort (`effort`, one of the CLI's `reasoningLevels`), and
+ * in a mode (`mode`, `new-chat-mode`): every turn of it, the first included,
+ * runs in `plan` or `ask`, whoever sends it, and a chat whose agent cannot run
+ * that mode is refused `unsupported_mode`, never started writable.
  * The gateway's `conversation.create` tool takes the same, for agents.
  */
 export type StudioNewChatOptions = {
@@ -617,6 +624,7 @@ export type StudioNewChatOptions = {
   worktreeName?: string
   inWorktree?: string
   effort?: string
+  mode?: ConversationSendMode
 }
 
 /**
@@ -663,6 +671,7 @@ export function parseStudioConversationCreate(
     worktreeName,
     inWorktree,
     effort,
+    mode,
     ...request
   } = value
   if (noProject !== undefined && noProject !== true) return { ok: false, message: '"noProject", when given, is true.' }
@@ -688,6 +697,8 @@ export function parseStudioConversationCreate(
       return { ok: false, message: `"${name}" is a string of 1 to ${max} characters.` }
   if (effort !== undefined && (typeof effort !== 'string' || !EFFORT_ID.test(effort.trim())))
     return { ok: false, message: '"effort" is an effort level id, such as "high".' }
+  if (mode !== undefined && !CONVERSATION_SEND_MODES.includes(mode as never))
+    return { ok: false, message: '"mode" is "default", "plan" or "ask".' }
   if (noProject) {
     if (request.workspaceId !== undefined)
       return { ok: false, message: '"noProject" takes the place of "workspaceId".' }
@@ -714,6 +725,8 @@ export function parseStudioConversationCreate(
     ...(typeof worktreeName === 'string' ? { worktreeName: worktreeName.trim() } : {}),
     ...(typeof inWorktree === 'string' ? { inWorktree: inWorktree.trim() } : {}),
     ...(typeof effort === 'string' ? { effort: effort.trim() } : {}),
+    // `default` is the same as naming none, and is read as none.
+    ...(mode === 'plan' || mode === 'ask' ? { mode } : {}),
   }
   if (noProject) {
     const { workspaceId: _standIn, ...rest } = parsed.request

@@ -233,9 +233,28 @@ test('a create takes New chat’s options, held to its rules, and "No project" i
     { workspaceId: 'ws-1', inWorktree: '/Users/dev/app-wt' },
     { workspaceId: 'ws-1', newChat: true, worktree: true, inWorktree: '/Users/dev/app-wt' },
     { workspaceId: 'ws-1', effort: 'not an effort!' },
+    { workspaceId: 'ws-1', mode: 'write' },
+    { workspaceId: 'ws-1', mode: true },
     {},
   ])
     assert.equal(create(refused).ok, false, JSON.stringify(refused))
+})
+
+test('a create carries the mode every turn of the chat runs in; "default" is the same as none', () => {
+  const create = (params: Record<string, unknown>) =>
+    parseStudioMethodParams('conversation.create', { commandId: 'c-1', ...params })
+  assert.deepEqual(create({ workspaceId: 'ws-1', newChat: true, mode: 'plan' }), {
+    ok: true,
+    params: { workspaceId: 'ws-1', newChat: true, mode: 'plan', commandId: 'c-1' },
+  })
+  assert.deepEqual(create({ noProject: true, mode: 'ask' }), {
+    ok: true,
+    params: { noProject: true, mode: 'ask', commandId: 'c-1' },
+  })
+  assert.deepEqual(create({ workspaceId: 'ws-1', mode: 'default' }), {
+    ok: true,
+    params: { workspaceId: 'ws-1', commandId: 'c-1' },
+  })
 })
 
 test('a create names a folder on that machine in place of a workspace, as a new chat there', () => {
