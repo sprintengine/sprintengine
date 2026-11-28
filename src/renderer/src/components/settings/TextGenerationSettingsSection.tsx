@@ -98,15 +98,11 @@ export function TextGenerationSettingsSection(): JSX.Element {
       <SettingCard>
         <SettingToggle
           label={appCopy.settings.textGenerationSettingsSection.nameChatsWithYourAgent}
-          description={appCopy.settings.textGenerationSettingsSection.yourAgentCLITitlesEach}
           enabled={textGeneration.enabled}
           onChange={setTextGenerationEnabled}
           requirement={noRuntime ? 'Needs Claude Code or Codex' : undefined}
         />
-        <SettingsRow
-          label={appCopy.settings.textGenerationSettingsSection.textGenerationModel}
-          help="Used for chat titles, commit messages and pull requests. A small model at low effort is plenty, and costs a fraction of a turn."
-        >
+        <SettingsRow label={appCopy.settings.textGenerationSettingsSection.textGenerationModel}>
           {noRuntime || !effective ? (
             <span className="text-body text-[color:var(--text-muted)]">
               {appCopy.settings.textGenerationSettingsSection.noSupportedCLIInstalled}
@@ -168,11 +164,7 @@ function WritingStyleRows({ disabled }: { disabled: boolean }): JSX.Element {
 
   return (
     <>
-      <SettingsRow
-        label={appCopy.settings.textGenerationSettingsSection.commitAndPullRequestStyle}
-        help="How drafted commit messages and pull request titles read. Matching follows the repository's recent commits."
-        htmlFor={styleId}
-      >
+      <SettingsRow label={appCopy.settings.textGenerationSettingsSection.commitAndPullRequestStyle} htmlFor={styleId}>
         <Select
           id={styleId}
           ariaLabel={appCopy.settings.textGenerationSettingsSection.commitAndPullRequestStyle}
@@ -183,12 +175,7 @@ function WritingStyleRows({ disabled }: { disabled: boolean }): JSX.Element {
         />
       </SettingsRow>
       {writingStyle.mode === 'custom' ? (
-        <SettingsRow
-          label={appCopy.settings.textGenerationSettingsSection.yourStyleGuide}
-          help={`Given to your agent after the app's own rules, which it cannot change. Up to ${MAX_WRITING_STYLE_INSTRUCTIONS_LENGTH.toLocaleString('en-US')} characters. Left empty, drafts match the repository.`}
-          htmlFor={guideId}
-          stacked
-        >
+        <SettingsRow label={appCopy.settings.textGenerationSettingsSection.yourStyleGuide} htmlFor={guideId} stacked>
           <Textarea
             id={guideId}
             value={guide}

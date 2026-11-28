@@ -2411,11 +2411,7 @@ export function BacklogDetail({
         heading={
           redirected ? appCopy.panels.backlogPanel.backlogFolderNotFound : appCopy.panels.backlogPanel.noBacklogFolder
         }
-        body={
-          redirected
-            ? appCopy.panels.backlogPanel.isnTThereRightNow(backlogLocation.root)
-            : appCopy.panels.backlogPanel.createOneOrPointTo
-        }
+        body={redirected ? appCopy.panels.backlogPanel.isnTThereRightNow(backlogLocation.root) : undefined}
         cta={
           <div className="flex flex-wrap items-center justify-center gap-2">
             {redirected ? null : (
@@ -2961,8 +2957,8 @@ function BacklogDetailSkeleton(): JSX.Element {
   )
 }
 
-function DetailState({ heading, body, cta }: { heading?: string; body: string; cta?: React.ReactNode }): JSX.Element {
-  return <EmptyState title={heading ?? body} body={heading ? body : undefined} action={cta} />
+function DetailState({ heading, body, cta }: { heading?: string; body?: string; cta?: React.ReactNode }): JSX.Element {
+  return <EmptyState title={heading ?? body ?? ''} body={heading ? body : undefined} action={cta} />
 }
 
 // Epic -> children roll-up (epic detail only): a flat done/total progress track

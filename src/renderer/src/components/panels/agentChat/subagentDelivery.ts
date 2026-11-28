@@ -35,7 +35,7 @@ export type LaneDeliveryFacts = {
 }
 
 export function laneDelivery(lane: TranscriptToolEntry, facts: LaneDeliveryFacts): SubagentDelivery {
-  if (!facts.operate) return { kind: 'bar', why: 'This pairing may follow the chat but not drive it.' }
+  if (!facts.operate) return { kind: 'bar', why: 'This pairing lets you read this chat but not send to it.' }
   if (!facts.transportRelays)
     return {
       kind: 'bar',

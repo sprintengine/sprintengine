@@ -37,7 +37,7 @@ export type AttachSource = "library" | "camera" | "file";
 export type ComposerOption =
   | { kind: "start-as"; label: string; choices: readonly StartAs[]; selected: StartAs }
   | { kind: "attach"; source: AttachSource; label: string; disabledReason: string | null }
-  | { kind: "schedule"; label: string; on: boolean; repeats: boolean; disabledReason: string | null };
+  | { kind: "schedule"; label: string; on: boolean; disabledReason: string | null };
 
 export const ATTACH_LABELS: Record<AttachSource, string> = {
   library: "Choose photos",
@@ -64,8 +64,7 @@ export const ATTACH_LABELS: Record<AttachSource, string> = {
 export function composerOptions(input: {
   startAs: { offered: readonly StartAs[]; selected: StartAs };
   attach: { held: number; max: number; busy: boolean; pictures?: boolean; files?: boolean } | null;
-  /** `repeats`: New's schedule, which may repeat; a chat's message goes once. */
-  schedule?: { on: boolean; busy: boolean; repeats?: boolean } | null;
+  schedule?: { on: boolean; busy: boolean } | null;
 }): ComposerOption[] {
   const rows: ComposerOption[] = [];
   const offered = input.startAs.offered.filter((kind, index, all) => all.indexOf(kind) === index);
@@ -90,7 +89,7 @@ export function composerOptions(input: {
     }
   }
   if (input.schedule) {
-    const { on, busy, repeats = false } = input.schedule;
+    const { on, busy } = input.schedule;
     const held = input.attach?.held ?? 0;
     const disabledReason = on
       ? null
@@ -99,7 +98,7 @@ export function composerOptions(input: {
         : held > 0
           ? "Each run starts from words alone: remove the attachments to schedule it."
           : null;
-    rows.push({ kind: "schedule", label: copy.phone.conversations.composerOptions.schedule, on, repeats, disabledReason });
+    rows.push({ kind: "schedule", label: copy.phone.conversations.composerOptions.schedule, on, disabledReason });
   }
   return rows;
 }

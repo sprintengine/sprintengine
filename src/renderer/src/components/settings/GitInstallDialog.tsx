@@ -49,8 +49,8 @@ export function GitInstallDialog({
         <ModalHeader title="Install from a git URL" titleId={titleId} onClose={onCancel} />
         <ModalBody className="space-y-3">
           <p className="text-body leading-5 text-[color:var(--text-default)]">
-            An HTTPS or SSH URL of a repository holding extension.json, or a Claude Code plugin (its skills and MCP
-            servers are installed). Add #&lt;branch, tag or commit&gt; to pick one. It is labelled Unverified.
+            To install a particular version, add #&lt;branch, tag or commit&gt; to the URL. Studio labels an extension
+            installed this way Unverified.
           </p>
           {message ? <p className="text-meta text-[color:var(--tone-error)]">{message}</p> : null}
           <Field label="Git URL" htmlFor={urlId}>
@@ -62,11 +62,11 @@ export function GitInstallDialog({
               onChange={(event) => setUrl(event.currentTarget.value)}
             />
           </Field>
-          <Field label="Folder" htmlFor={folderId} help="Where the extension is in the repository, if not its root.">
+          <Field label="Folder" htmlFor={folderId}>
             <Input
               size="md"
               value={folder}
-              placeholder="plugins/notes"
+              placeholder="Leave empty for the repository root"
               onChange={(event) => setFolder(event.currentTarget.value)}
             />
           </Field>

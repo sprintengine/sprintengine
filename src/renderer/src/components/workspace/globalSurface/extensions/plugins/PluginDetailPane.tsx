@@ -339,7 +339,7 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
           <p className="px-3 pb-3 text-meta text-[color:var(--text-muted)]">
             {`Installed from this source at ${shortCommit(props.install.record.commitSha)}; the source now reads ${
               commitLine(plugin, props.source).sha || 'a newer commit'
-            }. Update refreshes the items already installed.`}
+            }.`}
           </p>
         ) : null}
       </ScrollArea>

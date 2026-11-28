@@ -18,7 +18,6 @@ export function UsageLimitResumeSettings() {
   return (
     <SettingToggle
       label={copy.settings.usageLimitResumeSettings.resumeAfterUsageLimits}
-      description={copy.settings.usageLimitResumeSettings.claudeAndCodexChatsCarry}
       enabled={autoResume}
       onChange={(enabled) => void updateUsageLimitResume({ kind: 'auto', enabled })}
     />

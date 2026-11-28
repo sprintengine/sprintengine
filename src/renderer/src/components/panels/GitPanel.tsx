@@ -1842,8 +1842,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       body: (
         <>
           {appCopy.panels.gitPanel.thisCreatesANewCommit}
-          {commit.subject}
-          {appCopy.panels.gitPanel.historyIsKeptNothingIs}
+          {commit.subject}”.
         </>
       ),
       confirmLabel: appCopy.panels.gitPanel.revertCommit,
@@ -1902,13 +1901,6 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!repoRoot || !requireApi(gitApi.deleteGitBranch, 'Git branch deletion')) return
     const confirmed = await dialog.confirm({
       title: appCopy.panels.gitPanel.deleteBranch(branchName),
-      body: (
-        <>
-          {appCopy.panels.gitPanel.deletesTheLocalBranch}
-          <span className="font-mono">{branchName}</span>
-          {appCopy.panels.gitPanel.unmergedBranchesNeedAForce}
-        </>
-      ),
       confirmLabel: appCopy.panels.gitPanel.deleteBranch2,
       tone: 'danger',
     })
@@ -2063,13 +2055,6 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!repoRoot) return
     const name = await dialog.prompt({
       title: appCopy.panels.gitPanel.newBranchFrom(commit.shortHash),
-      body: (
-        <>
-          {appCopy.panels.gitPanel.createsABranchAt}
-          {commit.subject}
-          {appCopy.panels.gitPanel.andSwitchesToIt}
-        </>
-      ),
       inputLabel: appCopy.panels.gitPanel.branchName,
       placeholder: 'feature/my-branch',
       required: true,
@@ -2087,12 +2072,6 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!repoRoot) return
     const name = await dialog.prompt({
       title: appCopy.panels.gitPanel.newTagAt(commit.shortHash),
-      body: (
-        <>
-          {appCopy.panels.gitPanel.tags}
-          {commit.subject}”.
-        </>
-      ),
       inputLabel: appCopy.panels.gitPanel.tagName,
       placeholder: 'v1.0.0',
       required: true,

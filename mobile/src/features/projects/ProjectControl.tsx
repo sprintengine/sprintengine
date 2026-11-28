@@ -185,7 +185,6 @@ function ProjectSwitcherPanel({ visible, onClose }: { visible: boolean; onClose:
               </Pressable>
             );
           })}
-          <Text style={styles.hint}>{appCopy.phone.projects.projectControl.manageDesktopsInSettings}</Text>
         </>
       ) : null}
     </SidePanel>
@@ -328,12 +327,6 @@ const createStyles = ({ colors }: Theme) =>
       ...typography.micro,
       fontWeight: fontWeight.regular,
       color: colors.textSubtle,
-    },
-    hint: {
-      ...typography.meta,
-      color: colors.textMuted,
-      paddingTop: space.sm,
-      paddingHorizontal: space.sm,
     },
     emptyText: {
       ...typography.meta,

@@ -93,7 +93,7 @@ test('PluginsSurface', async () => {
       'the command, verbatim',
     )
     assert.ok(markup.includes('Declares a hook command'), 'the warning names what the plugin carries')
-    assert.ok(markup.includes('Installing here copies no hooks'), 'and what an install here does with it')
+    assert.ok(markup.includes('Installing here does not copy its hooks'), 'and what an install here does with it')
     assert.equal(markup.includes('type="checkbox"'), false, 'no acknowledgement gate — hooks are not copied')
     assert.equal(markup.includes('Install to this workspace'), false, 'there is no all-in install')
     assert.equal(markup.includes('Enabled as security-guidance@claude-plugins-official'), false)

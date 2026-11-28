@@ -328,7 +328,6 @@ export function ChatPage({
                   </Group>
                 </View>
               ))}
-              <Text style={styles.note}>{copy.phone.conversations.chatPage.asTheAgentLastReported}</Text>
             </>
           ) : view === "browser" ? (
             <>
@@ -342,7 +341,6 @@ export function ChatPage({
                   metaTone="live"
                 />
               </Group>
-              <Text style={styles.note}>{copy.phone.conversations.chatPage.drivenInTheDesktopS}</Text>
             </>
           ) : (
             <>
@@ -357,14 +355,11 @@ export function ChatPage({
                 />
               </Group>
               {onOpenCanvases ? (
-                <>
-                  <Text style={styles.note}>{copy.phone.conversations.chatPage.theAgentDidnTName}</Text>
-                  <View style={styles.after}>
-                    <Group>
-                      <GroupRow first label={copy.phone.conversations.chatPage.theDesktopSBoards} onPress={leaveFor(onOpenCanvases)} />
-                    </Group>
-                  </View>
-                </>
+                <View style={styles.after}>
+                  <Group>
+                    <GroupRow first label={copy.phone.conversations.chatPage.theDesktopSBoards} onPress={leaveFor(onOpenCanvases)} />
+                  </Group>
+                </View>
               ) : (
                 <Text style={styles.note}>{copy.phone.conversations.chatPage.drawnOnADesktopBoard}</Text>
               )}

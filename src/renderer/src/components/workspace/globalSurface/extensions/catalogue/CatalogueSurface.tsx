@@ -654,7 +654,7 @@ export function CatalogueHead({
   monogram?: React.ReactNode
   name: string
   /** Where this tab's rows come from. One line; it truncates rather than wraps. */
-  stateLine: React.ReactNode
+  stateLine?: React.ReactNode
   actions?: React.ReactNode
 }): JSX.Element {
   return (
@@ -662,7 +662,7 @@ export function CatalogueHead({
       {monogram}
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-title font-semibold tracking-tight text-[color:var(--text-strong)]">{name}</h3>
-        <p className="mt-0.5 truncate text-body text-[color:var(--text-muted)]">{stateLine}</p>
+        {stateLine ? <p className="mt-0.5 truncate text-body text-[color:var(--text-muted)]">{stateLine}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-1.5">{actions}</div> : null}
     </div>

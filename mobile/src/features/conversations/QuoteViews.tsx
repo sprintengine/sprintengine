@@ -194,7 +194,6 @@ export function QuotePicker({
           />
           <Text accessibilityRole="header" style={styles.pickerTitle}>{copy.phone.conversations.quoteViews.quoteFromThisReply}</Text>
         </View>
-        <Text style={styles.hint}>{copy.phone.conversations.quoteViews.selectWordsThenQuoteSelect}</Text>
         <TextInput
           accessibilityHint={copy.phone.conversations.quoteViews.selectTheWordsToQuote}
           accessibilityLabel={copy.phone.conversations.quoteViews.theReply}
@@ -264,7 +263,6 @@ const createStyles = ({ colors }: Theme) =>
     picker: { flex: 1, backgroundColor: colors.bgApp, paddingHorizontal: space.xl, gap: space.md },
     pickerHead: { flexDirection: "row", alignItems: "center", gap: space.md, paddingTop: space.xs },
     pickerTitle: { ...typography.title, color: colors.textPrimary, flexShrink: 1 },
-    hint: { ...typography.meta, color: colors.textMuted },
     replyBox: {
       ...typography.body,
       flex: 1,

@@ -154,9 +154,6 @@ export function RemoteProjectPicker({
               icon={<NoProjectGlyph className="mt-0.5 icon-xs shrink-0" />}
             >
               <span className="block text-body font-medium">{REMOTE_NO_PROJECT.name}</span>
-              <span className="block text-meta text-[color:var(--text-subtle)]">
-                {copy.workspace.agentComposer.remoteProjectPicker.chatInAFolderOf}
-              </span>
             </MenuOption>
             <div className={MENU_DIVIDER_CLASS} role="separator" />
           </>

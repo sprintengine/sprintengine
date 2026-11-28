@@ -75,7 +75,8 @@ export function ExtensionSettingsForm({
     <SettingCard>
       {state.writable ? null : (
         <p className="px-4 pt-3 text-meta text-[color:var(--text-muted)]">
-          Read only here: this connection may not read or change Studio’s settings, so each shows its default.
+          This connection isn’t allowed to read or change Studio’s settings, so each setting shows its default and can’t
+          be changed here.
         </p>
       )}
       {settings.map((setting) => (

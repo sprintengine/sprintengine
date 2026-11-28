@@ -226,7 +226,6 @@ export function localServerRunQuestion(server: StudioLocalServer): ConfirmDialog
             in {server.cwd ?? 'the conversation’s folder'}
           </span>
         </span>
-        <span className="text-[color:var(--text-subtle)]">{appCopy.workspace.localServersMenu.youAreAskedAgainIf}</span>
       </div>
     ),
     confirmLabel: appCopy.workspace.localServersMenu.run2,

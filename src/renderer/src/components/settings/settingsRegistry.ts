@@ -1,6 +1,6 @@
 // settingsRegistry — the typed descriptors for the application-level settings
-// fields that more than one surface would otherwise spell for itself: label,
-// help text, and field shape in one place.
+// fields that more than one surface would otherwise spell for itself: label
+// and field shape in one place.
 //
 // It holds ONLY fields a consumer actually fetches. Four descriptors nothing
 // ever asked for — appearance-theme, last-selected-cli,
@@ -52,6 +52,8 @@ type SettingFieldNumber = {
   min?: number
   max?: number
   step?: number
+  // The unit, said after the field ("minutes"), when the label does not.
+  unit?: string
 }
 
 type SettingFieldSwitch = {
@@ -70,8 +72,6 @@ export type SettingDescriptor = {
   // Stable id; consumers use this as React key + htmlFor / aria-controls link.
   id: string
   label: string
-  // Sentence-case help. Rendered through Field's `help` slot.
-  help?: string
   scope: SettingScope
   // Settings tab / popover group this field belongs to.
   group: string
@@ -93,7 +93,6 @@ const settingsRegistry: ReadonlyArray<SettingDescriptor> = [
   {
     id: 'keep-running-in-background',
     label: copy.settings.settingsRegistry.keepRunningWhenTheLast,
-    help: 'Agents and automations keep working with no window open.',
     scope: 'app',
     group: 'background',
     field: { type: 'switch' },
@@ -107,7 +106,6 @@ const settingsRegistry: ReadonlyArray<SettingDescriptor> = [
   {
     id: 'telemetry-enabled',
     label: copy.settings.settingsRegistry.shareAnonymousUsageData,
-    help: 'Counts and timings only — never your prompts, code, file paths, or project names.',
     scope: 'app',
     group: 'background',
     field: { type: 'switch' },
@@ -119,17 +117,15 @@ const settingsRegistry: ReadonlyArray<SettingDescriptor> = [
   {
     id: 'terminal-idle-suspend-minutes',
     label: copy.settings.settingsRegistry.pauseIdleTerminalsAfter,
-    help: 'Minutes. Paused terminals keep their screen and resume on click.',
     scope: 'app',
     group: 'agents',
-    field: { type: 'number', min: 1, max: 1440, step: 1 },
+    field: { type: 'number', min: 1, max: 1440, step: 1, unit: copy.settings.settingsRegistry.minutes },
     storePath: 'appSettings.terminalIdleSuspendMinutes',
     storeSetter: 'setTerminalIdleSuspendMinutes',
   },
   {
     id: 'terminal-keep-recent-alive',
     label: copy.settings.settingsRegistry.alwaysKeepRunning,
-    help: 'The most recent terminals that are never paused.',
     scope: 'app',
     group: 'agents',
     field: { type: 'number', min: 0, max: 20, step: 1 },

@@ -148,8 +148,8 @@ export function SettingsScreen({
         />
         <SettingsNote>
           {steerFollowUps
-            ? "A message sent mid-turn goes into the turn now, where its CLI can take one. Long-press send to queue it instead."
-            : "A message sent mid-turn waits and sends when the turn ends. Long-press send to steer it into the turn instead."}
+            ? appCopy.phone.settings.settingsScreen.steerOn
+            : appCopy.phone.settings.settingsScreen.steerOff}
         </SettingsNote>
 
         <Text style={styles.version}>{versionLine()}</Text>

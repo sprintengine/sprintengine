@@ -59,8 +59,6 @@ const MONO_FIELD = 'font-mono'
 const ROW_FIELD = 'w-60 max-w-full font-mono'
 const NO_AVAILABILITY: AgentCliAvailabilityMap = {}
 
-const MACHINE_HELP_ID = 'settings-agents-machine-help'
-
 /**
  * The machine switcher at the top of Settings ▸ Agents: the same segmented
  * control as General's update channel, because it is the same kind of choice —
@@ -89,15 +87,9 @@ export function AgentsMachineSwitcher({
   if (machines.length < 2) return null
   return (
     <SettingCard>
-      <SettingsRow
-        label={appCopy.settings.agentClisSection.machine}
-        help="Whose agent CLIs are listed below."
-        helpId={MACHINE_HELP_ID}
-        stacked={machines.length > 2}
-      >
+      <SettingsRow label={appCopy.settings.agentClisSection.machine} stacked={machines.length > 2}>
         <SegmentedControl<ExecutionHostId>
           ariaLabel={appCopy.settings.agentClisSection.machine}
-          ariaDescribedBy={MACHINE_HELP_ID}
           items={machines.map((machine) => {
             const badge = badges?.[machine.id]
             return {
@@ -619,18 +611,7 @@ export function AgentClisSection({
                         }}
                       />
                     ) : null}
-                    <SettingsRow
-                      label={appCopy.settings.agentClisSection.commandOverride}
-                      help={
-                        <>
-                          {appCopy.settings.agentClisSection.runs}
-                          <span className="font-mono text-[color:var(--text-default)]">{plugin.binary}</span>
-                          {wsl ? ` in ${machine.label}` : ''}
-                          {appCopy.settings.agentClisSection.whenBlank}
-                        </>
-                      }
-                      htmlFor={commandFieldId}
-                    >
+                    <SettingsRow label={appCopy.settings.agentClisSection.commandOverride} htmlFor={commandFieldId}>
                       <Input
                         id={commandFieldId}
                         // Per-plugin accessible name so screen readers don't announce an

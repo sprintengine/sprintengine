@@ -583,7 +583,7 @@ export default function RemoteConversationPanel({
               parentName: subagent.parentName,
               onGoToParent: subagent.onGoToParent,
               ...(access !== null && access !== 'operate'
-                ? { blocked: `This pairing may follow this chat on ${machineName} but not drive it.` }
+                ? { blocked: `This pairing lets you read this chat on ${machineName} but not send to it.` }
                 : {}),
             },
           }

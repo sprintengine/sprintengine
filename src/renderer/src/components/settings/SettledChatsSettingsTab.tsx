@@ -59,7 +59,7 @@ function AutoSettleDaysRow() {
   return (
     <SettingsRow
       label={copy.settings.settledChatsSettingsTab.settleAfterQuietDays}
-      help={`For chats with Auto-settle switched on from their menu: how many days without activity settle one, from ${MIN_AUTO_SETTLE_AFTER_DAYS} to ${MAX_AUTO_SETTLE_AFTER_DAYS}.`}
+      help={copy.settings.settledChatsSettingsTab.appliesToChatsWithAutoSettle}
       htmlFor="auto-settle-after-days"
     >
       <Input
@@ -177,19 +177,16 @@ export function SettledChatsSettingsTab({
         <AutoSettleDaysRow />
         <SettingToggle
           label={copy.settings.settledChatsSettingsTab.settleWhenItsPullRequests}
-          description={copy.settings.settledChatsSettingsTab.withAutoSettleOnA}
           enabled={settleOnMerge}
           onChange={setSettleOnMerge}
         />
         <SettingToggle
           label={copy.settings.settledChatsSettingsTab.keepChatsWithAnOpen}
-          description={copy.settings.settledChatsSettingsTab.withAutoSettleOnA2(quietDays(autoSettleDays))}
           enabled={keepWithOpenPr}
           onChange={setKeepWithOpenPr}
         />
         <SettingToggle
           label={copy.settings.settledChatsSettingsTab.autoCompactIdleChats}
-          description={copy.settings.settledChatsSettingsTab.idleClaudeChatsOver100k}
           enabled={autoCompact}
           onChange={setAutoCompact}
         />

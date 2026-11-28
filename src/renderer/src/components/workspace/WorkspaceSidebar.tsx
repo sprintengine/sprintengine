@@ -576,11 +576,7 @@ function WorkspaceSidebar({
       .then((removed) => {
         showToast(
           removed.ok
-            ? {
-                tone: 'neutral',
-                title: appCopy.workspace.workspaceSidebar.scheduledAgentClosed,
-                description: appCopy.workspace.workspaceSidebar.itWillNotRunAgain,
-              }
+            ? { tone: 'neutral', title: appCopy.workspace.workspaceSidebar.scheduledAgentClosed }
             : { tone: 'error', title: appCopy.workspace.workspaceSidebar.notClosed, description: removed.message },
         )
       })

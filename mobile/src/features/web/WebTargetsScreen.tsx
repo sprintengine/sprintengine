@@ -1,4 +1,4 @@
-import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, ScrollView, StyleSheet, Text } from "react-native";
 
 import { Card, CardRow } from "../../components/Card";
 import { ScreenFrame, useListContentStyle, useRefreshControl } from "../../components/Screen";
@@ -63,9 +63,6 @@ export function WebTargetsScreen({
             ))}
           </Card>
         )}
-        <View style={styles.footer}>
-          <Text style={styles.footnote}>{copy.phone.web.webTargetsScreen.theseOpenInYourBrowser}</Text>
-        </View>
       </ScrollView>
     </ScreenFrame>
   );
@@ -87,14 +84,6 @@ const createStyles = ({ colors }: Theme) =>
       ...typography.meta,
       color: colors.textMuted,
       paddingVertical: space.sm,
-      textAlign: "center",
-    },
-    footer: {
-      paddingTop: space.sm,
-    },
-    footnote: {
-      ...typography.meta,
-      color: colors.textSubtle,
       textAlign: "center",
     },
   });

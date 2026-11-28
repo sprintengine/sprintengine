@@ -463,7 +463,7 @@ export function ProjectSourceMenu({
               viewBox="0 0 16 16"
               fill="none"
               aria-hidden="true"
-              className="mt-0.5 icon-xs shrink-0 text-[color:var(--text-muted)]"
+              className="icon-xs shrink-0 text-[color:var(--text-muted)]"
             >
               <path
                 d="M2 5.5c0-.8.7-1.5 1.5-1.5h2.6l1.2 1.4h5.2c.8 0 1.5.7 1.5 1.5v5.1c0 .8-.7 1.5-1.5 1.5h-9c-.8 0-1.5-.7-1.5-1.5V5.5Z"
@@ -475,9 +475,6 @@ export function ProjectSourceMenu({
           }
         >
           <span className="block text-body font-medium">{copy.workspace.agentComposer.projectSourceMenu.browse}</span>
-          <span className="block text-meta text-[color:var(--text-subtle)]">
-            {copy.workspace.agentComposer.projectSourceMenu.pickAFolderOnDisk}
-          </span>
         </MenuItem>
       ) : null}
       {onClone ? (
@@ -489,7 +486,7 @@ export function ProjectSourceMenu({
               viewBox="0 0 16 16"
               fill="none"
               aria-hidden="true"
-              className="mt-0.5 icon-xs shrink-0 text-[color:var(--text-muted)]"
+              className="icon-xs shrink-0 text-[color:var(--text-muted)]"
             >
               <path
                 d="M6.5 9.5a2.6 2.6 0 0 0 3.7 0l2.3-2.3a2.6 2.6 0 1 0-3.7-3.7l-1 1"
@@ -506,16 +503,13 @@ export function ProjectSourceMenu({
             </svg>
           }
           trailing={
-            <span aria-hidden="true" className="mt-0.5 shrink-0 text-micro text-[color:var(--text-disabled)]">
+            <span aria-hidden="true" className="shrink-0 text-micro text-[color:var(--text-disabled)]">
               ›
             </span>
           }
         >
           <span className="block text-body font-medium">
             {copy.workspace.agentComposer.projectSourceMenu.importFromGit}
-          </span>
-          <span className="block text-meta text-[color:var(--text-subtle)]">
-            {copy.workspace.agentComposer.projectSourceMenu.cloneARepositoryAndOpen}
           </span>
         </MenuItem>
       ) : null}
@@ -528,22 +522,19 @@ export function ProjectSourceMenu({
               viewBox="0 0 16 16"
               fill="none"
               aria-hidden="true"
-              className="mt-0.5 icon-xs shrink-0 text-[color:var(--text-muted)]"
+              className="icon-xs shrink-0 text-[color:var(--text-muted)]"
             >
               <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
           }
           trailing={
-            <span aria-hidden="true" className="mt-0.5 shrink-0 text-micro text-[color:var(--text-disabled)]">
+            <span aria-hidden="true" className="shrink-0 text-micro text-[color:var(--text-disabled)]">
               ›
             </span>
           }
         >
           <span className="block text-body font-medium">
             {copy.workspace.agentComposer.projectSourceMenu.newProject}
-          </span>
-          <span className="block text-meta text-[color:var(--text-subtle)]">
-            {copy.workspace.agentComposer.projectSourceMenu.startOneHereAndPut}
           </span>
         </MenuItem>
       ) : null}
@@ -562,9 +553,6 @@ export function ProjectSourceMenu({
           icon={<NoProjectGlyph className="mt-0.5 icon-xs shrink-0" />}
         >
           <span className="block text-body font-medium">{PROJECTLESS_CHATS_LABEL}</span>
-          <span className="block text-meta text-[color:var(--text-subtle)]">
-            {copy.workspace.agentComposer.projectSourceMenu.chatInAFolderOf}
-          </span>
         </MenuOption>
       ) : null}
       <div className={MENU_DIVIDER_CLASS} role="separator" />

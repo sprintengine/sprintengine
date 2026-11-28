@@ -9,7 +9,6 @@ export function QuitConfirmationSetting() {
   return (
     <MainOwnedSettingToggle
       label={copy.settings.quitConfirmationSetting.askBeforeQuittingWhileAgents}
-      description={copy.settings.quitConfirmationSetting.quittingStopsRunningAgentsSchedules}
       read={window.api?.getQuitConfirmation}
       write={(enabled) => window.api.setQuitConfirmation(enabled)}
     />

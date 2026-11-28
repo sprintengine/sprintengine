@@ -47,7 +47,6 @@ export function CanvasExportDialog({ open, boardName, pending, error, onCancel, 
       <ModalHeader
         title={appCopy.workspace.pane.canvas.canvasExportDialog.export(boardName)}
         titleId={titleId}
-        subtitle={appCopy.workspace.pane.canvas.canvasExportDialog.saveACopyToA}
         onClose={pending ? undefined : onCancel}
       />
       <ModalBody className="flex flex-col gap-3">
@@ -55,8 +54,7 @@ export function CanvasExportDialog({ open, boardName, pending, error, onCancel, 
           <DescribedCheckRow
             id={`${rowId}-board`}
             title={appCopy.workspace.pane.canvas.canvasExportDialog.boardFile}
-            code={files[0]}
-            description={appCopy.workspace.pane.canvas.canvasExportDialog.theEditableBoardForThe}
+            description={<span className="font-mono">{files[0]}</span>}
             checked
             disabled
             onChange={() => {}}
@@ -64,8 +62,7 @@ export function CanvasExportDialog({ open, boardName, pending, error, onCancel, 
           <DescribedCheckRow
             id={`${rowId}-png`}
             title={appCopy.workspace.pane.canvas.canvasExportDialog.pNGImage}
-            code={`${boardName}.png`}
-            description={appCopy.workspace.pane.canvas.canvasExportDialog.aPictureForAREADME}
+            description={<span className="font-mono">{`${boardName}.png`}</span>}
             checked={formats.png}
             disabled={pending}
             onChange={(png) => setFormats((current) => ({ ...current, png }))}
@@ -73,8 +70,7 @@ export function CanvasExportDialog({ open, boardName, pending, error, onCancel, 
           <DescribedCheckRow
             id={`${rowId}-svg`}
             title={appCopy.workspace.pane.canvas.canvasExportDialog.sVGImage}
-            code={`${boardName}.svg`}
-            description={appCopy.workspace.pane.canvas.canvasExportDialog.theSamePictureAsA}
+            description={<span className="font-mono">{`${boardName}.svg`}</span>}
             checked={formats.svg}
             disabled={pending}
             onChange={(svg) => setFormats((current) => ({ ...current, svg }))}

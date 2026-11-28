@@ -390,7 +390,7 @@ function ReplayPlayer({
         </div>
       </SubagentTypesProvider>
 
-      <ReplayFoot playing={state.playing} atEnd={atEnd} />
+      {atEnd ? <ReplayEnd /> : null}
     </div>
   )
 }
@@ -508,46 +508,21 @@ function useReplayFollow(rows: readonly { id: string; kind: string }[]) {
   }
 }
 
-/** Where the composer was: what the keys do, and the end said in words. */
-function ReplayFoot({ playing, atEnd }: { playing: boolean; atEnd: boolean }) {
+/**
+ * Where the composer was, once the replay has ended: the end said in words,
+ * and Home, the one way back to the start that no button offers. Space, the
+ * arrows and Esc have the band's buttons and tooltips.
+ */
+function ReplayEnd() {
   return (
     <div className="chat-column-gutter flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 pb-4 pt-2 text-meta text-[color:var(--text-muted)]">
-      {atEnd ? (
-        <span className="text-[color:var(--text-default)]">
-          {copy.panels.agentChat.conversationReplayView.endOfTheConversation}
-        </span>
-      ) : null}
-      <ReplayKeyHint
-        keys={['Space']}
-        label={
-          playing
-            ? copy.panels.agentChat.conversationReplayView.pause
-            : copy.panels.agentChat.conversationReplayView.play
-        }
-      />
-      <ReplayKeyHint
-        keys={['→']}
-        ariaLabel={copy.panels.agentChat.conversationReplayView.rightArrow}
-        label={copy.panels.agentChat.conversationReplayView.nextMessage}
-      />
-      <ReplayKeyHint
-        keys={['←']}
-        ariaLabel={copy.panels.agentChat.conversationReplayView.leftArrow}
-        label={copy.panels.agentChat.conversationReplayView.previousMessage}
-      />
-      {atEnd ? (
-        <ReplayKeyHint keys={['Home']} label={copy.panels.agentChat.conversationReplayView.fromTheStart} />
-      ) : null}
-      <ReplayKeyHint keys={['Esc']} label={copy.panels.agentChat.conversationReplayView.leave} />
+      <span className="text-[color:var(--text-default)]">
+        {copy.panels.agentChat.conversationReplayView.endOfTheConversation}
+      </span>
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <KbdChord keys={['Home']} />
+        {copy.panels.agentChat.conversationReplayView.fromTheStart}
+      </span>
     </div>
-  )
-}
-
-function ReplayKeyHint({ keys, label, ariaLabel }: { keys: string[]; label: string; ariaLabel?: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <KbdChord keys={keys} ariaLabel={ariaLabel} />
-      {label}
-    </span>
   )
 }

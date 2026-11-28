@@ -16,10 +16,7 @@ export function ConversationImportSettings() {
   // behaviour.
   return (
     <>
-      <SettingsRow
-        label={copy.settings.conversationImportSettings.importConversations}
-        help="Bring in sessions you ran in Claude Code or Codex. Each becomes a chat that carries on the same session."
-      >
+      <SettingsRow label={copy.settings.conversationImportSettings.importConversations}>
         {/* The row's action as the outline button every Settings row action
             is, so it does not read as a stray label beside the next card's. */}
         <OutlineButton size="sm" onClick={() => setOpen(true)}>

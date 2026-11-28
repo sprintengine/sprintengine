@@ -1007,12 +1007,12 @@ export function sourceUpdateSkipMessage(
     : `Checked ${age}; without a GitHub token the studio checks each source once a day.`
 }
 
-/** The cadence in force, for the line beside the token field in Settings. */
-export function sourceUpdateCadenceLine(hasToken: boolean, transport: SkillRepoTransport = 'api'): string {
-  if (transport === 'git') {
-    return "Plugin sources are checked for updates once an hour, over git. A head check is one git ls-remote, which GitHub's API rate limit does not count, so a GitHub token is not what decides the cadence."
-  }
-  return hasToken
-    ? 'Plugin sources are checked for updates once an hour, because this GitHub token raises the rate limit to 5,000 requests an hour. Without one the studio checks once a day.'
-    : 'No GitHub token: plugin sources are checked for updates once a day. Anonymous GitHub allows 60 requests an hour for this whole machine, which an hourly check would spend on one question. With a token the studio checks hourly.'
+/**
+ * The one cadence worth saying beside the token field in Settings: without a
+ * token, over the API, sources are checked daily rather than hourly. Over git
+ * or with a token the hourly check is what anyone expects, so nothing is said.
+ */
+export function sourceUpdateCadenceLine(hasToken: boolean, transport: SkillRepoTransport = 'api'): string | null {
+  if (transport === 'git' || hasToken) return null
+  return 'Without a GitHub token, Studio checks plugin sources for updates once a day instead of every hour.'
 }

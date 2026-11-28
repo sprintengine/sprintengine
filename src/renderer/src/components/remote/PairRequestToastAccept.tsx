@@ -78,7 +78,7 @@ export function PairRequestToastAccept({ request }: { request: TailnetPairReques
       >
         {codeError ??
           (request.oauth
-            ? 'Type the code its sign-in page shows. Allows read only; choose more from the Remote glyph.'
+            ? 'Type the code shown on its sign-in page. Allow gives it read-only access; to give it more, answer from Remote.'
             : 'Type the code it is showing.')}
       </p>
     </div>

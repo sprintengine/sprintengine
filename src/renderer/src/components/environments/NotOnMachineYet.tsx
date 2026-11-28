@@ -29,19 +29,9 @@ export function useWorkspaceEnvironmentLabel(workspaceId: string): string | null
  * offered in its place: picking one would move the chat off its machine.
  */
 export function FilesOnMachineLater({ machine }: { machine: string }): JSX.Element {
-  return (
-    <EmptyState
-      title={copy.environments.notOnMachineYet.filesOnOpenInA(machine)}
-      body={copy.environments.notOnMachineYet.thisChatSFolderIs(machine)}
-    />
-  )
+  return <EmptyState title={copy.environments.notOnMachineYet.thisChatSFolderIs(machine)} />
 }
 
 export function NotOnMachineYet({ what, machine }: { what: string; machine: string }): JSX.Element {
-  return (
-    <EmptyState
-      title={copy.environments.notOnMachineYet.areNotAvailableForSSH(what)}
-      body={copy.environments.notOnMachineYet.chatsFilesAndGitRun(machine, what.toLowerCase())}
-    />
-  )
+  return <EmptyState title={copy.environments.notOnMachineYet.onCannotBeOpened(what, machine)} />
 }
