@@ -1180,7 +1180,7 @@ chat before its create is answered), `.lifecycle` (Settle, Un-settle, Snooze or
 Wake on the reading the window made it on), `.setSettledChatsSettings` and
 `.setModuleRunStates` (what only a desktop window knows; a browser's is
 answered and not applied), the one-time hydration (`workspaceRegistry.*`),
-the window's backup of its own copy (`workspaceBackup.*`) and the folders of
+the window's backup of its own settings (`workspaceBackup.*`) and the folders of
 chats without a project (`projectlessChats.*`). Each is an owner's, with the
 reason in the table; a browser on the tailnet makes a workspace only inside
 the folders Studio knows. The registry's records cross as the desktop defines

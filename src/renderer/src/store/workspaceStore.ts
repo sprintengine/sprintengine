@@ -484,16 +484,13 @@ function getPersistedWorkspaceCount(raw: string | null): number {
   }
 }
 
-// The userData backup is the last-known-good copy that recovery falls back to
-// when the legacy registry key reads as dangerously empty. Main owns the
-// registry, so main fills the registry half in when it writes the file
-// (`src/main/workspace-backup.ts`) and this window sends only the settings
-// envelope it owns. Serializing a registry of a few hundred workspaces here
-// cost several milliseconds of this thread on every store write, for data
-// that was main's to begin with.
+// The data folder's backup of this window's settings
+// (`src/main/workspace-backup.ts`): the copy recovery restores them from when
+// this window's own storage is lost. Only the settings: the workspace list is
+// the server's, which every window mirrors from it.
 //
-// The backup is refreshed when the settings or the workspace list change,
-// coalesced so that a burst of layout writes costs one IPC.
+// The backup is refreshed when the settings change, coalesced so that a burst
+// of changes costs one call.
 const BACKUP_WRITE_DEBOUNCE_MS = 1000
 let backupWriteTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -526,9 +523,6 @@ function scheduleBackupWrite(): void {
   backupWriteTimer = setTimeout(() => {
     backupWriteTimer = null
     const state = useWorkspaceStore.getState()
-    // The backup mirrors a non-empty registry only. An intentionally empty
-    // one is honored locally and never promoted over the last good copy.
-    if (state.workspaces.length === 0) return
     void api
       .workspaceBackupWrite({
         version: WORKSPACE_STORE_VERSION,
@@ -541,34 +535,6 @@ function scheduleBackupWrite(): void {
         })
       })
   }, BACKUP_WRITE_DEBOUNCE_MS)
-}
-
-// Workspace fields whose change alone does not refresh the backup: the
-// keystroke clock, written on terminal input, and the visit clock, stamped
-// every few seconds while a chat is on screen. The next change that does
-// refresh it carries the clocks along.
-const BACKUP_IGNORED_WORKSPACE_FIELDS: ReadonlySet<string> = new Set(['lastTerminalActivityAt', 'lastVisitedAt'])
-
-/**
- * Whether a new workspace list differs from the previous one in anything but
- * the fields above. Cheap by construction: the store shares every workspace it
- * did not touch, so only the changed ones have their top-level fields compared.
- */
-export function workspacesChangedForBackup(previous: readonly Workspace[], next: readonly Workspace[]): boolean {
-  if (previous.length !== next.length) return true
-  for (let index = 0; index < next.length; index += 1) {
-    const before = previous[index] as Record<string, unknown> | undefined
-    const after = next[index] as unknown as Record<string, unknown>
-    if (before === after) continue
-    if (!before) return true
-    for (const key of Object.keys(after)) {
-      if (!BACKUP_IGNORED_WORKSPACE_FIELDS.has(key) && before[key] !== after[key]) return true
-    }
-    for (const key of Object.keys(before)) {
-      if (!(key in after)) return true
-    }
-  }
-  return false
 }
 
 // Two-key split persistence (T23). The custom storage adapter is the only
@@ -849,40 +815,21 @@ function readSettingsKey(): { raw: string | null; envelope: { state: SettingsEnv
   }
 }
 
-type BackupEnvelopePair = {
-  registry: string
-  settings: string | null
-}
-
-function serializeBackupEnvelopeValue(value: unknown): string | null {
-  if (typeof value === 'string') return value
-  if (value === undefined) return null
+/**
+ * The settings envelope a backup carries: `{ settings }` as a window writes
+ * it, or the settings half of the `{ registry, settings }` pair older builds
+ * wrote. Null when it carries none.
+ */
+function backupSettingsOf(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || !('settings' in data)) return null
+  const settings = (data as { settings?: unknown }).settings
+  if (typeof settings === 'string') return settings
+  if (settings === undefined || settings === null) return null
   try {
-    return JSON.stringify(value)
+    return JSON.stringify(settings)
   } catch {
     return null
   }
-}
-
-function coerceBackupEnvelopePair(data: unknown): BackupEnvelopePair | null {
-  if (typeof data === 'string') {
-    return { registry: data, settings: null }
-  }
-
-  if (data && typeof data === 'object') {
-    const split = data as { registry?: unknown; settings?: unknown }
-    if ('registry' in split) {
-      const registry = serializeBackupEnvelopeValue(split.registry)
-      if (!registry) return null
-      return {
-        registry,
-        settings: serializeBackupEnvelopeValue(split.settings),
-      }
-    }
-  }
-
-  const registry = serializeBackupEnvelopeValue(data)
-  return registry ? { registry, settings: null } : null
 }
 
 function parseSettingsEnvelopeState(raw: string | null): SettingsEnvelopeState | null {
@@ -934,10 +881,8 @@ export function flushWorkspaceSettingsWrite(): void {
     })
   }
   lastWrittenSettingsSerialized = settingsSerialized
-  // The backup carries the settings envelope too, so recovery does not
-  // restore workspaces while silently dropping recent folders, skill packs or
-  // sidebar state.
-  if (pending.state.workspaces.length > 0) scheduleBackupWrite()
+  // Kept in the data folder too, for a window whose storage is lost.
+  scheduleBackupWrite()
 }
 
 function installSettingsFlushOnExit(): void {
@@ -1068,20 +1013,6 @@ const workspaceStateStorage: PersistStorage<PersistedWorkspaceSlice> = {
       return
     }
 
-    // A changed workspace list asks main for a fresh backup. Only a non-empty
-    // one: the intentional empty case is honored locally but never promoted
-    // over the last-known-good copy. And not for the keystroke clock alone,
-    // which moves on terminal input: each backup has main serialize the whole
-    // registry, and typing is not a change worth recovering.
-    if (
-      previous &&
-      previous.workspaces !== next.workspaces &&
-      next.workspaces.length > 0 &&
-      workspacesChangedForBackup(previous.workspaces, next.workspaces)
-    ) {
-      scheduleBackupWrite()
-    }
-
     if (previous && settingsFieldsUnchanged(previous, next)) return
     pendingSettingsWrite = { state: next, version: value.version ?? WORKSPACE_STORE_VERSION }
     if (settingsWriteTimer === null) {
@@ -1103,14 +1034,14 @@ const workspaceStateStorage: PersistStorage<PersistedWorkspaceSlice> = {
   },
 }
 
-// Run after the synchronous hydrate completes. For non-dangerous classifications
-// this is a no-op that immediately emits the canonical hydration diagnostic. For
-// dangerous classifications it reads the userData backup over IPC, validates
-// that the backup classifies as `present`, and replays the recovered envelope
-// into the store before emitting the final diagnostic. Either way exactly one
-// `[workspaceStore] hydration` log entry fires per cold load, and it reflects
-// the final storageSource (`localStorage`, `backup`, or `fresh`) plus any
-// parse/recovery error.
+// Run after the synchronous hydrate completes. When this window's settings
+// key is missing or does not read (its storage was cleared or damaged), the
+// settings come back from the backup in the data folder, unless a settings
+// change landed while the backup was being read. The workspace list is never
+// taken from the backup: it is the server's, and this window mirrors it from
+// the server. Either way exactly one `[workspaceStore] hydration` log entry
+// fires per cold load, with the final storageSource (`localStorage`,
+// `backup`, or `fresh`) and any parse or recovery error.
 async function attemptBackupRecovery(): Promise<void> {
   if (typeof window === 'undefined') {
     emitHydrationDiagnostic()
@@ -1132,30 +1063,7 @@ async function attemptBackupRecovery(): Promise<void> {
   hydrationContext.storageSource = hydrationContext.classification === 'present' ? 'localStorage' : 'fresh'
   hydrationContext.recoveryError = undefined
 
-  if (!isDangerousEmptyClassification(hydrationContext.classification)) {
-    emitHydrationDiagnostic()
-    return
-  }
-
-  // Honor the in-memory or on-disk intent record: if the user explicitly
-  // removed all workspaces, do not overwrite that decision with a stale
-  // backup payload. AC6: distinguish intentional user_removed_all from
-  // hydration failure / unknown wipe.
-  const currentIntent = useWorkspaceStore.getState().workspaceRegistryEmptyState
-  let persistedIntent: WorkspaceRegistryEmptyState | null = null
-  try {
-    const parsedRegistry = raw
-      ? (JSON.parse(raw) as { state?: { workspaceRegistryEmptyState?: WorkspaceRegistryEmptyState | null } })
-      : null
-    persistedIntent = parsedRegistry?.state?.workspaceRegistryEmptyState ?? null
-  } catch {
-    persistedIntent = null
-  }
-  if (currentIntent != null || persistedIntent != null) {
-    emitHydrationDiagnostic()
-    return
-  }
-  if (!workspaceSyncReachable('workspaceBackupRead')) {
+  if (readSettingsKey().envelope || !workspaceSyncReachable('workspaceBackupRead')) {
     emitHydrationDiagnostic()
     return
   }
@@ -1169,180 +1077,35 @@ async function attemptBackupRecovery(): Promise<void> {
       emitHydrationDiagnostic()
       return
     }
-
-    // The backup IPC is async. A user can create a workspace while recovery is
-    // in flight; if that happens, the new non-empty registry is the fresher
-    // source of truth and must not be replaced by an older backup snapshot.
-    let latestRaw: string | null = null
-    try {
-      latestRaw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
-    } catch {
-      latestRaw = null
-    }
-    const latestClassification = classifyPersistedWorkspaceState({ rawLocalStorage: latestRaw })
-    const latestWorkspaceCount = getPersistedWorkspaceCount(latestRaw)
-    const latestIntent = useWorkspaceStore.getState().workspaceRegistryEmptyState
-    if (
-      useWorkspaceStore.getState().workspaces.length > 0 ||
-      latestWorkspaceCount > 0 ||
-      !isDangerousEmptyClassification(latestClassification) ||
-      latestIntent != null
-    ) {
-      hydrationContext.classification = latestClassification
-      hydrationContext.persistedWorkspaceCount = latestWorkspaceCount
-      hydrationContext.storageSource = latestClassification === 'present' ? 'localStorage' : 'fresh'
+    const settings = backupSettingsOf(result.payload.data)
+    const recovered = parseSettingsEnvelopeState(settings)
+    // A settings change made while the backup was being read is newer.
+    if (!settings || !recovered || readSettingsKey().envelope) {
       emitHydrationDiagnostic()
       return
     }
-
-    const recoveredBackup = coerceBackupEnvelopePair(result.payload.data)
-    if (!recoveredBackup) {
-      hydrationContext.recoveryError = 'backup_payload_unserializable'
-      emitHydrationDiagnostic()
-      return
-    }
-    const recovered = recoveredBackup.registry
-    const recoveredClassification = classifyPersistedWorkspaceState({ rawLocalStorage: recovered })
-    if (recoveredClassification !== 'present') {
-      // Backup exists but does not classify as a recoverable workspace list.
-      // This is expected after an intentional valid-empty persist write: the
-      // previous session ended with workspaces=[], so the backup mirrors that
-      // and we honor the user's intent by not recovering. Not an error.
-      emitHydrationDiagnostic()
-      return
-    }
-
-    let envelope: { state?: Partial<WorkspaceMigrationState> } | null = null
-    try {
-      envelope = JSON.parse(recovered) as { state?: Partial<WorkspaceMigrationState> }
-    } catch (error) {
-      hydrationContext.recoveryError = error instanceof Error ? error.message : 'recovery_parse_error'
-      emitHydrationDiagnostic()
-      return
-    }
-    if (!envelope?.state || !Array.isArray(envelope.state.workspaces)) {
-      emitHydrationDiagnostic()
-      return
-    }
-
-    // Automations is a global screen now, not a workspace type (store v62). This
-    // backup-recovery path bypasses the migrate ladder, so apply the same drop
-    // here — both in memory and in the write-back below — so we never re-persist
-    // a retired automations workspace. If dropping it empties the list there is
-    // nothing to recover, so honor the clean empty state.
-    envelope.state.workspaces = envelope.state.workspaces.filter(
-      (workspace) => (workspace as { mode?: string }).mode !== 'automations',
-    )
-    // Roadmap (store v65) and Multiloop (store v66) are retired workspace modes.
-    // This backup-recovery path bypasses the migrate ladder too, so run the same
-    // retired-mode filter here before we re-persist.
-    envelope.state.workspaces = dropRetiredModeWorkspaces(envelope.state.workspaces as Workspace[])
-    envelope.state.workspaces = (envelope.state.workspaces as Workspace[]).map(healRetiredRailLayout)
-    if (envelope.state.workspaces.length === 0) {
-      emitHydrationDiagnostic()
-      return
-    }
-
-    // App-settings salvage. New backups carry the split settings envelope
-    // beside the registry envelope. Older T22-era backups may carry
-    // appSettings/sidebarCollapsed inside the recovered registry envelope.
-    // In both cases, recovery must not bring the workspace list back while
-    // silently dropping recent folders, skill packs, or sidebar state. An old
-    // backup can still carry the agent-launch fields; those are main's, and
-    // the window keeps its copy of main's record over them.
-    const legacyState = envelope!.state as Partial<WorkspaceMigrationState> & {
-      sidebarCollapsed?: boolean
-    }
-    const legacyAppSettings = legacyState.appSettings
-    const legacySidebarCollapsed = legacyState.sidebarCollapsed
-    const recoveredSettingsState = parseSettingsEnvelopeState(recoveredBackup.settings)
 
     try {
-      // Write back the filtered envelope (automations workspaces already
-      // dropped above), never the raw backup, so the on-disk registry matches
-      // the recovered in-memory state.
-      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(envelope))
-      if (recoveredBackup.settings && recoveredSettingsState) {
-        window.localStorage.setItem(APP_SETTINGS_STORAGE_KEY, recoveredBackup.settings)
-      }
+      window.localStorage.setItem(APP_SETTINGS_STORAGE_KEY, settings)
     } catch {
       // Best-effort write-back; the in-memory recovery still proceeds.
     }
     hydrationContext.storageSource = 'backup'
-    hydrationContext.persistedWorkspaceCount = envelope.state.workspaces.length
-
     useWorkspaceStore.setState((current) => {
-      const recoveredWorkspaces = envelope!.state!.workspaces as WorkspaceStore['workspaces']
-      const recoveredSettings =
-        legacyAppSettings !== undefined
-          ? normalizeAppSettings(legacyAppSettings, recoveredWorkspaces as Workspace[])
-          : recoveredSettingsState?.appSettings !== undefined
-            ? normalizeAppSettings(
-                recoveredSettingsState.appSettings as Partial<AppSettings>,
-                recoveredWorkspaces as Workspace[],
-              )
-            : normalizeAppSettings(current.appSettings, recoveredWorkspaces as Workspace[])
-      // A backup can carry launch fields from before main owned them; main's
-      // record is what this window shows, so they stay as they are.
-      const recoveredAppSettings = withLaunchSettings(
-        recoveredSettings,
-        launchSettingsFromAppSettings(current.appSettings),
-        recoveredWorkspaces as Workspace[],
-      )
-      const normalizedWindows = normalizeWorkspaceWindows(
-        recoveredWorkspaces as Workspace[],
-        envelope!.state!.workspaceWindows,
-        envelope!.state!.primaryWorkspaceWindowId,
-        envelope!.state!.activeWorkspaceId ?? current.activeWorkspaceId,
-      )
-      // Don't let the recovered active pointer dangle at a dropped automations
-      // workspace; fall back to the first surviving (filtered) workspace.
-      const recoveredActiveId =
-        envelope!.state!.activeWorkspaceId &&
-        recoveredWorkspaces.some((workspace) => workspace.id === envelope!.state!.activeWorkspaceId)
-          ? envelope!.state!.activeWorkspaceId
-          : (recoveredWorkspaces[0]?.id ?? current.activeWorkspaceId)
-      const next: WorkspaceStore = {
+      const workspaces = current.workspaces as Workspace[]
+      const appSettings =
+        recovered.appSettings !== undefined
+          ? normalizeAppSettings(recovered.appSettings as Partial<AppSettings>, workspaces)
+          : current.appSettings
+      return {
         ...current,
-        workspaces: recoveredWorkspaces,
-        activeWorkspaceId: recoveredActiveId,
-        workspaceWindows: normalizedWindows.windows,
-        primaryWorkspaceWindowId: normalizedWindows.primaryWorkspaceWindowId,
-        workspaceRegistryEmptyState: null,
-        appSettings: recoveredAppSettings,
+        // The launch fields are main's: this window keeps its copy of main's record over a backup's.
+        appSettings: withLaunchSettings(appSettings, launchSettingsFromAppSettings(current.appSettings), workspaces),
+        ...(typeof recovered.sidebarCollapsed === 'boolean' ? { sidebarCollapsed: recovered.sidebarCollapsed } : {}),
       }
-      if (typeof legacySidebarCollapsed === 'boolean') {
-        next.sidebarCollapsed = legacySidebarCollapsed
-      } else if (typeof recoveredSettingsState?.sidebarCollapsed === 'boolean') {
-        next.sidebarCollapsed = recoveredSettingsState.sidebarCollapsed
-      }
-      return next
     })
-
-    // Mirror the recovered app-settings to sprintengine-app-settings now so the
-    // next persist write doesn't clobber recentWorkspaceFolders with the
-    // current empty state.
-    if (
-      legacyAppSettings !== undefined ||
-      typeof legacySidebarCollapsed === 'boolean' ||
-      recoveredSettingsState !== null
-    ) {
-      try {
-        const next = useWorkspaceStore.getState()
-        window.localStorage.setItem(
-          APP_SETTINGS_STORAGE_KEY,
-          JSON.stringify({
-            state: {
-              appSettings: persistableAppSettings(next.appSettings),
-              sidebarCollapsed: next.sidebarCollapsed,
-            },
-            version: WORKSPACE_STORE_VERSION,
-          }),
-        )
-      } catch {
-        // Best-effort write-back; in-memory state still carries the salvage.
-      }
-    }
+    // The dedup baseline is what is stored now, so the next settings write is compared with it.
+    lastWrittenSettingsSerialized = null
   } catch (error) {
     hydrationContext.recoveryError = error instanceof Error ? error.message : 'unknown_recovery_error'
   }
