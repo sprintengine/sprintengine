@@ -54,6 +54,11 @@ export type ConversationMoveDeps = {
   stopChats(workspaceId: string): Promise<void>
   /** Carry the chat's store folder from the store kept for one folder to the one kept for another. */
   moveStorage(workspaceId: string, fromFolder: string, toFolder: string): Promise<void>
+  /**
+   * The move is over, its record written (or put back): what `moveStorage`
+   * noted to finish a move a crash cut short goes.
+   */
+  moveSettled?(workspaceId: string): Promise<void>
   schedule?: (job: () => void, ms: number) => () => void
   log?: (message: string) => void
 }
@@ -201,9 +206,19 @@ export function createConversationMove(deps: ConversationMoveDeps) {
     if (!written.ok) {
       // Put the history back where the record still says the chat is.
       if (from) await deps.moveStorage(workspaceId, folderPath, from).catch(() => undefined)
+      await settled(workspaceId)
       return { ok: false, code: 'write_failed', message: written.message }
     }
+    await settled(workspaceId)
     return { ok: true, workspaceId, folderPath, project: projectOf(folderPath) }
+  }
+
+  async function settled(workspaceId: string): Promise<void> {
+    await deps.moveSettled?.(workspaceId).catch((error: unknown) => {
+      deps.log?.(
+        `the move of ${workspaceId} could not be noted as done: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    })
   }
 
   function dropPending(workspaceId: string): void {

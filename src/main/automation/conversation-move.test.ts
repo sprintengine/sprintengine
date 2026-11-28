@@ -52,6 +52,9 @@ function fixture(options: { record?: Partial<WorkspaceRegistryRecord>; working?:
     moveStorage: async (workspaceId, from, to) => {
       steps.push(`move ${workspaceId} ${from} -> ${to}`)
     },
+    moveSettled: async (workspaceId) => {
+      steps.push(`settled ${workspaceId}`)
+    },
     schedule: (job, ms) => {
       const timer = { job, cancelled: false, ms }
       timers.push(timer)
@@ -97,7 +100,7 @@ test('a chat at rest is moved at once: its sessions end, its history goes, then 
   const result = await f.changeProject.handler({ workspaceId: 'ws-1', folder: `${PROJECT}/` }, undefined)
   assert.equal(result.isError, undefined)
   assert.deepEqual(structured(result), { ok: true, workspaceId: 'ws-1', folderPath: PROJECT, project: PROJECT })
-  assert.deepEqual(f.steps, ['stop ws-1', `move ws-1 ${CHAT_FOLDER} -> ${PROJECT}`, 'write'])
+  assert.deepEqual(f.steps, ['stop ws-1', `move ws-1 ${CHAT_FOLDER} -> ${PROJECT}`, 'write', 'settled ws-1'])
   assert.deepEqual(f.writes, [{ workspaceId: 'ws-1', patch: { folderPath: PROJECT }, actor: 'gateway' }])
   assert.equal(f.stored.folderPath, PROJECT)
 })
@@ -115,7 +118,7 @@ test('an agent moving its own chat mid-turn is told it moves when the turn ends,
   assert.equal(f.timers[0]?.ms, OWN_SETTLE_GRACE_MS)
   f.state.working = false
   await f.elapse()
-  assert.deepEqual(f.steps, ['stop ws-1', `move ws-1 ${CHAT_FOLDER} -> ${PROJECT}`, 'write'])
+  assert.deepEqual(f.steps, ['stop ws-1', `move ws-1 ${CHAT_FOLDER} -> ${PROJECT}`, 'write', 'settled ws-1'])
   assert.equal(f.stored.folderPath, PROJECT)
   assert.equal(f.mover.movesWhenTurnEnds('ws-1'), null)
 })
@@ -220,6 +223,23 @@ test('a history that cannot be moved leaves the record as it was', async () => {
   assert.equal(result.ok, false)
   assert.equal(result.ok ? null : result.code, 'move_failed')
   assert.equal(f.stored.folderPath, CHAT_FOLDER)
+})
+
+test('a record that cannot be written puts the history back, and only then is the move settled', async () => {
+  const steps: string[] = []
+  const stored = { id: 'ws-1', name: 'Chat', folderPath: CHAT_FOLDER, agents: {} } as unknown as WorkspaceRegistryRecord
+  const mover = createConversationMove({
+    getRecord: () => stored,
+    updateWorkspaceFields: () => ({ ok: false, message: 'refused' }) as never,
+    isFolder: async () => true,
+    isWorking: () => false,
+    stopChats: async () => undefined,
+    moveStorage: async (_workspaceId, from, to) => void steps.push(`move ${from} -> ${to}`),
+    moveSettled: async () => void steps.push('settled'),
+  })
+  const result = await mover.move('ws-1', PROJECT, 'gateway')
+  assert.equal(result.ok ? null : result.code, 'write_failed')
+  assert.deepEqual(steps, [`move ${CHAT_FOLDER} -> ${PROJECT}`, `move ${PROJECT} -> ${CHAT_FOLDER}`, 'settled'])
 })
 
 // ── The store folder on disk ───────────────────────────────────────────────
