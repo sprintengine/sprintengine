@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { mkdir, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readdir, rm } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 
 import type { ConversationImageAttachment, ConversationPromptHookAs } from '../shared/conversation-runtime'
 import type { StudioDatabase } from '../server/db/database'
@@ -79,6 +79,12 @@ export type PendingFirstMessages = {
   all(): Promise<Record<string, PendingFirstMessage>>
   /** Where a kept message's picture lies on this disk. */
   imagePath(commandId: string, image: PendingFirstMessageImage): string
+  /**
+   * Remove the picture folders no kept message names: ones a stop left
+   * between writing them and keeping the message, or between letting the
+   * message go and removing them. Resolves to how many went.
+   */
+  sweep(): Promise<number>
 }
 
 /**
@@ -190,6 +196,21 @@ export function createPendingFirstMessages(options: {
         return messages
       }),
     imagePath: (commandId, image) => join(folderOf(commandId), image.file),
+    // In the same line as `keep` and `done`, so a message being kept has its row by the time this looks.
+    sweep: () =>
+      serial(async () => {
+        const names = await readdir(options.imagesRoot).catch(() => [] as string[])
+        if (names.length === 0) return 0
+        const rows = await db.all<{ command_id: string }>('SELECT command_id FROM first_messages')
+        const named = new Set(rows.map((row) => basename(folderOf(row.command_id))))
+        let removed = 0
+        for (const name of names) {
+          if (named.has(name) || !/^[0-9a-f]{32}$/u.test(name)) continue
+          await rm(join(options.imagesRoot, name), { recursive: true, force: true })
+          removed += 1
+        }
+        return removed
+      }),
   }
 }
 

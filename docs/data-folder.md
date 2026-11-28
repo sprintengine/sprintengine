@@ -126,6 +126,22 @@ each `worktree-pool/pool-<id>.json` are imported once; a file that does not
 read is skipped and counted (that pool's slots are adopted as held on next
 use), and every file stays as it was.
 
+## Moving a chat, and what a start clears away
+
+Moving a chat to another project renames its history's rows to the new
+project's store and notes the move (`chat_moves`) in one transaction, then
+moves its store folder, then writes its record; the note goes once the record
+is committed. A start that finds a note brings the rows and the folder to the
+project the chat's record names, so a crash at any step never leaves the
+history in one project and the chat in another.
+
+Once per start, in the background, the server removes what nothing in its data
+folder points at any more: picture folders of first messages no row names,
+terminal snapshots a stop left half-written more than an hour ago, and the
+chat histories written out for a hand-over in an earlier run. It never looks
+in the project stores in the home folder: those are shared with every other
+data folder on the machine.
+
 ## The first start of a new format
 
 `<data>/format.json` says which format the folder is in

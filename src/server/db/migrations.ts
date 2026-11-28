@@ -217,6 +217,21 @@ export const STUDIO_MIGRATIONS: readonly Migration[] = [
         CREATE TABLE pool_records (pool_id TEXT PRIMARY KEY, body TEXT NOT NULL);
       `),
   },
+  {
+    id: 7,
+    name: 'chat-moves',
+    // A chat's move to another project while its record is not yet written (chat-moves.ts).
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE chat_moves (
+          workspace_id TEXT PRIMARY KEY,
+          from_folder TEXT NOT NULL,
+          to_folder TEXT NOT NULL,
+          from_key TEXT NOT NULL,
+          to_key TEXT NOT NULL
+        );
+      `),
+  },
 ]
 
 /** Run the migrations `connection` has not had, in order; returns the ids it ran. */
