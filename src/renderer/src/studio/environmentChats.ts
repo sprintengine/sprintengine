@@ -1,9 +1,8 @@
+import { StudioError, type StudioClient, type StudioClientState } from '../../../../packages/client-runtime/src/public'
 import {
-  StudioError,
-  type StudioClient,
-  type StudioClientState,
-} from '../../../../packages/client-runtime/src/public'
-import { STUDIO_CONVERSATIONS_CAPABILITY, type StudioWelcomeFrame } from '../../../../packages/studio-protocol/src/public'
+  STUDIO_CONVERSATIONS_CAPABILITY,
+  type StudioWelcomeFrame,
+} from '../../../../packages/studio-protocol/src/public'
 import { formatChatAddress, isEnvironmentId } from '../../../../packages/studio-protocol/src/environment'
 import type { ConversationEvent, ConversationSessionSummary } from '../../../shared/conversation-runtime'
 import type { MeshConversation, MeshConversationAccess } from '../../../shared/tailnet-mesh'
@@ -363,7 +362,8 @@ export function createEnvironmentChatSource(
       const result = wantBrowse ? await browseEnvironmentThrough(target, ask) : null
       // Its chats too, once it has answered. A device that may not read them,
       // or a Studio that does not serve them, lists none.
-      const listed = wantList && (result === null || result.reachable) ? await listEnvironmentChatsThrough(target, ask) : null
+      const listed =
+        wantList && (result === null || result.reachable) ? await listEnvironmentChatsThrough(target, ask) : null
       // What this read says of the chats: listed (or a refusal that is the
       // answer, which lists none), or why the rows it had are kept.
       const failure: EnvironmentListFailure | null | undefined =
@@ -461,11 +461,11 @@ export function createEnvironmentChatSource(
     )
     const stopChanges =
       services.followPush?.({
-      topic: 'conversations.changed',
-      params: {},
-      capability: STUDIO_CONVERSATIONS_CAPABILITY,
-      onPayload: (change) => noteChange(change.what === 'workspaces' ? 'browse' : 'conversations'),
-    }) ?? (() => undefined)
+        topic: 'conversations.changed',
+        params: {},
+        capability: STUDIO_CONVERSATIONS_CAPABILITY,
+        onPayload: (change) => noteChange(change.what === 'workspaces' ? 'browse' : 'conversations'),
+      }) ?? (() => undefined)
     // The first open is the first read's; each one after is the environment back, which may have missed a push.
     let opened = false
     const stopOpen = watchOpen(() => {

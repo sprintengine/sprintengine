@@ -415,19 +415,6 @@ export function attachedWorkspaceFor(
 }
 
 /**
- * Whether a machine may be asked right now (epic decision 2): never while
- * main's last check says it is asleep or has revoked us. A machine never
- * checked gets one read — the check and the read race at mount, and waiting
- * on the check would leave the band empty on a quiet system.
- */
-export function shouldBrowse(reach: MeshMachineReachability | undefined): boolean {
-  if (!reach) return true
-  if (reach.unauthorized) return false
-  if (reach.checkedAt === null) return true
-  return reach.reachable
-}
-
-/**
  * A chat conversation on a paired machine, as a row: the same marks a local
  * row wears — working while a turn runs, the needs-input surface while it
  * waits on an approval or a question — titled with the chat's own name.

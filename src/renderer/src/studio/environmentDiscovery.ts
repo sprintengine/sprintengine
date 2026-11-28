@@ -119,7 +119,10 @@ export async function browseEnvironment(target: EnvironmentTarget): Promise<Envi
 }
 
 /** `browseEnvironment`, asked through the given connection (`environmentChats.ts` asks on the client it holds). */
-export async function browseEnvironmentThrough(target: EnvironmentTarget, ask: EnvironmentAsk): Promise<EnvironmentBrowse> {
+export async function browseEnvironmentThrough(
+  target: EnvironmentTarget,
+  ask: EnvironmentAsk,
+): Promise<EnvironmentBrowse> {
   const unanswered = { workspaces: [], takesFolder: false, grantScopes: [] }
   try {
     return await ask(async (client) => {
