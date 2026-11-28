@@ -21,6 +21,7 @@ import { diffShowsInWindow, popOutAddKinds } from './panePopOutHost'
 import { redirectPaneWrites } from './panePopOutRedirect'
 import { setTerminalVisible } from '../../../../studio/terminals'
 import { copy as appCopy } from '../../../../../../shared/copy'
+import { DiffWindowChromeContext, type DiffWindowChrome } from '../../../auxWindows/diffWindowChrome'
 
 // A workspace pane, or one of its tabs, in a window of its own (`?aux=pane`).
 //
@@ -258,6 +259,19 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
     })
   }
 
+  // A window holding the diff and nothing else is the diff's window: the diff
+  // draws its top itself, as the editor window does — its files column from
+  // the window's top with the lights in its corner — and there is no strip of
+  // one tab, and no card inset, above and around it (2026-11-28).
+  const lightsShowing = isMac && !windowState.isFullScreen
+  const diffChrome = useMemo<DiffWindowChrome>(
+    () => ({
+      trafficLights: lightsShowing,
+      controls: isMac ? null : <WindowControls isMaximized={windowState.isMaximized} />,
+    }),
+    [isMac, lightsShowing, windowState.isMaximized],
+  )
+
   if (workspaceGone) {
     return (
       <div className="h-screen w-screen bg-[color:var(--bg-app)]">
@@ -268,16 +282,39 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
 
   const ready = registryReady && view !== null && activeTabId !== null && tabs.length > 0
   const menuTabIndex = tabMenu ? tabs.findIndex((tab) => tab.id === tabMenu.tabId) : -1
+  const paneLabel = workspaceName
+    ? appCopy.workspace.pane.popout.panePopOutWindow.pane(workspaceName)
+    : appCopy.workspace.pane.popout.panePopOutWindow.workspacePane
   const items = tabs.map((tab) => paneTabItem(tab, { diffCount, agentPresent: agentPresentTabIds.has(tab.id) }))
-  const lightsShowing = isMac && !windowState.isFullScreen
+  const diffAlone = ready && tabs.length === 1 && tabs[0]?.kind === 'diff'
+
+  if (diffAlone) {
+    return (
+      <section
+        aria-label={paneLabel}
+        className="flex h-screen w-screen flex-col bg-[color:var(--bg-surface)] text-[color:var(--text-default)]"
+      >
+        <div className="relative min-h-0 flex-1">
+          <PaneHostContext.Provider value="pop-out">
+            <DiffWindowChromeContext.Provider value={diffChrome}>
+              <WorkspacePaneBody
+                workspaceId={workspaceId}
+                tabs={tabs}
+                activeTabId={activeTabId}
+                selectedTabId={activeTabId}
+                onDiffCountChange={setDiffCount}
+              />
+            </DiffWindowChromeContext.Provider>
+          </PaneHostContext.Provider>
+        </div>
+        <ToastRegion />
+      </section>
+    )
+  }
 
   return (
     <section
-      aria-label={
-        workspaceName
-          ? appCopy.workspace.pane.popout.panePopOutWindow.pane(workspaceName)
-          : appCopy.workspace.pane.popout.panePopOutWindow.workspacePane
-      }
+      aria-label={paneLabel}
       className="flex h-screen w-screen flex-col bg-[color:var(--bg-app)] text-[color:var(--text-default)]"
     >
       {/* The pane's strip, on the same 36px the pane draws it at: the tabs

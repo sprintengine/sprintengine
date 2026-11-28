@@ -144,11 +144,19 @@ test('reads the steps, the files and each file’s two sides from the machine th
   expect(host.textContent).toContain('Loading changes')
   far.say(ready('rev-1'))
   await settle()
-  expect(host.textContent).toContain('Count the weeks')
   expect(far.reads).toEqual(['diff:span', 'file:span:src/calendar.ts'])
+  // The far branch's commits are offered in the step select over the files.
+  const steps = host.querySelector<HTMLButtonElement>('[role="combobox"][aria-label="Branch steps"]')
+  expect(steps).not.toBeNull()
+  // jsdom lays nothing out, so it has no scrolling for the open list to do.
+  Element.prototype.scrollIntoView ??= () => {}
+  act(() => steps!.click())
+  expect(document.body.textContent).toContain('ccccccc Count the weeks')
+  act(() => steps!.click())
   expect(editor()?.dataset.original).toBe('export const days = 7\n')
   expect(editor()?.dataset.modified).toBe('export const days = 7\nexport const weeks = 52\n')
-  expect(host.textContent).toContain('src/calendar.ts')
+  // The band names the file on screen, its whole path in its tooltip.
+  expect(host.querySelector('[title^="src/calendar.ts"]')?.textContent).toContain('calendar.ts')
   // Nothing that opens a folder here is offered for a checkout that is not here.
   expect(host.querySelector('[aria-label="Open in editor"]')).toBeNull()
   expect(host.querySelector('[aria-label="Open in separate window"]')).toBeNull()

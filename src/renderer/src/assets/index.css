@@ -2556,15 +2556,38 @@ samp,
    a grey slab beside the near-black panels around it (2026-11-27). The
    library writes its colours as custom properties on its own root classes;
    these four are the grounds, restated one step more specific so they win
-   over the library's sheet whenever it is injected. Text, selection and diff
+   over the library's sheet whenever it is injected. Text and selection
    colours stay the library's, which are drawn to sit on a dark or a light
-   ground. */
+   ground.
+
+   A diff's added and removed lines are the theme's --diff-* inks, the same
+   two the file counts, the hunk gutter and a tour's callouts read
+   (2026-11-28): the library's own were an olive and a brick that belonged to
+   no theme of ours. The line is a light wash of the ink and the changed
+   words inside it a stronger one. The folded "unchanged lines" bars and the
+   line numbers sit in the panel's quiet inks rather than the library's grey. */
 :root .monaco-editor,
 :root .monaco-diff-editor {
   --vscode-editor-background: var(--bg-surface);
   --vscode-editorGutter-background: var(--bg-surface);
   --vscode-editorStickyScroll-background: var(--bg-surface);
   --vscode-minimap-background: var(--bg-surface);
+  --vscode-editorLineNumber-foreground: var(--text-subtle);
+  --vscode-editorLineNumber-activeForeground: var(--text-default);
+  --vscode-diffEditor-insertedLineBackground: color-mix(in srgb, var(--diff-added) 13%, transparent);
+  --vscode-diffEditor-removedLineBackground: color-mix(in srgb, var(--diff-removed) 13%, transparent);
+  --vscode-diffEditor-insertedTextBackground: color-mix(in srgb, var(--diff-added) 30%, transparent);
+  --vscode-diffEditor-removedTextBackground: color-mix(in srgb, var(--diff-removed) 30%, transparent);
+  --vscode-diffEditor-border: var(--border-subtle);
+  --vscode-diffEditor-diagonalFill: var(--border-subtle);
+  --vscode-diffEditor-unchangedRegionBackground: var(--bg-surface-raised);
+  --vscode-diffEditor-unchangedRegionForeground: var(--text-muted);
+  --vscode-diffEditor-unchangedCodeBackground: transparent;
+  /* The scroll thumb, and the diff's "you are here" box down its right edge,
+     which reads the same colour: a faint wash of the ink, not a grey slab. */
+  --vscode-scrollbarSlider-background: color-mix(in srgb, var(--text-default) 8%, transparent);
+  --vscode-scrollbarSlider-hoverBackground: color-mix(in srgb, var(--text-default) 14%, transparent);
+  --vscode-scrollbarSlider-activeBackground: color-mix(in srgb, var(--text-default) 20%, transparent);
 }
 
 .monaco-editor .agent-reveal-range {
