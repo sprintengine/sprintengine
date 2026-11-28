@@ -109,6 +109,9 @@ test('WorkspaceSidebar.remoteOpening', async () => {
     }),
     'conversation.visit': () => ({ lastVisitedAt: Date.now() }),
   })
+  // The window follows the machine it is paired with (`useFollowWindowEnvironments`).
+  const { followEnvironmentChats } = await import('../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
 
   const React = await import('react')
   const { act } = React
@@ -216,5 +219,6 @@ test('WorkspaceSidebar.remoteOpening', async () => {
     act(() => {
       root.unmount()
     })
+    followEnvironmentChats([])
   }
 })

@@ -99,7 +99,8 @@ const READS = new Set([
   'canvas.files',
 ])
 
-const ALL_CAPABILITIES = [
+/** What the double's Studio serves unless a test says otherwise: a Studio from before `chat-rows`. */
+export const PAIRED_STUDIO_CAPABILITIES = [
   STUDIO_CONVERSATIONS_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
@@ -169,7 +170,7 @@ export function fakePairedStudios(
     },
     calls: [],
     answers: { ...answers },
-    capabilities: new Set(options.capabilities ?? ALL_CAPABILITIES),
+    capabilities: new Set(options.capabilities ?? PAIRED_STUDIO_CAPABILITIES),
     conversationCapabilities: new Set(options.conversationCapabilities ?? []),
     scopes: options.scopes ?? ALL_SCOPES,
     refuse: () => null,
