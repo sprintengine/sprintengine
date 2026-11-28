@@ -26,7 +26,7 @@ import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type Gate
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
 import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
-import { discoveredThere } from './discover'
+import { agentDiscoveredThere, discoveredThere } from './discover'
 
 // A WSL distribution, as far as a machine without WSL can show one: `sh`
 // stands in for `wsl.exe`, in a home of the distribution's own with the pinned
@@ -161,15 +161,15 @@ async function agentSession(socketPath: string) {
   })
   let id = 0
   return {
-    /** The answer, or null when none comes within a second (a connect that binds answers none). */
-    call: (method: string, params: Record<string, unknown> = {}) =>
+    /** The answer, or null when none comes within `ms` (a connect that binds answers none). */
+    call: (method: string, params: Record<string, unknown> = {}, ms = 1_000) =>
       Promise.race([
         new Promise<Record<string, any>>((resolve) => {
           const next = ++id
           waiting.set(next, resolve)
           socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: next, method, params })}\n`)
         }),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1_000)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
       ]),
     close: () => socket.end(),
   }
@@ -483,9 +483,27 @@ export async function runWslLeg(input: {
 
     // discover: the window reads what New chat offers there of the
     // distribution's own Studio, the project's checkout read by its git.
-    await matrix.run('wsl', 'discover', async () =>
-      discoveredThere('wsl', await windowStudio(), key.workspaceId, { git: true }),
-    )
+    // An agent in the distribution asks its own Studio's gateway the same,
+    // and hears the distribution's answer, not the desktop's.
+    await matrix.run('wsl', 'discover', async () => {
+      await discoveredThere('wsl', await windowStudio(), key.workspaceId, { git: true })
+      const connection = manager.current(DISTRO)
+      if (!connection) throw new Error('wsl: the server is not running')
+      const { socketPath } = JSON.parse(
+        readFileSync(join(connection.dataDir, 'sprintengine-studio-mcp-info.json'), 'utf8'),
+      ) as { socketPath: string }
+      const session = await agentSession(socketPath)
+      try {
+        await agentDiscoveredThere(
+          'wsl',
+          (name, args) => session.call('tools/call', { name, arguments: args }, 15_000),
+          key.workspaceId,
+          { git: true },
+        )
+      } finally {
+        session.close()
+      }
+    })
 
     // No paired device reaches the distribution through this desktop: the
     // relay route is gone. Each of the gate's devices, on its own connection

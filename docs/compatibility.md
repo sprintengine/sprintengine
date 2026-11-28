@@ -774,10 +774,11 @@ its chat surface (`STUDIO_CHAT_CAPABILITIES`), and a client asks for none its
 Studio leaves out.
 `workspaces` is what a client reads before it starts a chat:
 `workspaces.list`, `cliRuntimes.list`, `workspaces.checkout` and
-`workspaces.extensions`, answered by the gateway tools of the same purpose
-(`workspace.list`, `cli.runtime.list`, `workspace.checkout`,
-`workspace.extensions`), so the two read one thing; it is served beside the
-conversation contract, not only with the chat surface. Every Studio answers
+`workspaces.extensions`, which read the same core methods as the gateway
+tools of the same purpose (`workspace.list`, `cli.runtime.list`,
+`workspace.checkout`, `workspace.extensions`), so the two read one thing,
+and every Studio's agents get those tools from its own gateway; it is served
+beside the conversation contract, not only with the chat surface. Every Studio answers
 all four from its own records and its own machine, an SSH machine's and a WSL
 distribution's included: `workspaces.list` is the chats it holds,
 `cliRuntimes.list` the CLIs it runs, and `workspaces.checkout` and

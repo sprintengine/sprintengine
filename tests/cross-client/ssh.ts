@@ -20,7 +20,7 @@ import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type Gate
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
 import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
-import { discoveredThere } from './discover'
+import { agentDiscoveredThere, discoveredThere, type AgentToolCall } from './discover'
 
 // An SSH machine, for real: the dockerized sshd the SSH machine suites use,
 // the desktop's SSH environment (ssh-environment.ts) installing the server tree
@@ -118,6 +118,37 @@ export async function runSshLeg(input: {
   const otherParts = createStudioConversationParts(async () =>
     machineStudioClient((await other.connect({ interactive: true })).owner, machineSpellingOf('ssh:gate')!),
   )
+  /**
+   * One tool call by an agent on build-box: a script run by the server's own
+   * Node there, on the gateway socket the server's discovery file names, as
+   * an agent's MCP bridge reaches it.
+   */
+  const agentCallOnMachine: AgentToolCall = async (name, args) => {
+    const script = [
+      "const net = require('node:net')",
+      "const info = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'))",
+      "const params = JSON.parse(Buffer.from(process.argv[3], 'base64').toString('utf8'))",
+      'setTimeout(() => process.exit(2), 15000)',
+      'const socket = net.createConnection(info.socketPath, () =>',
+      "  socket.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params }) + '\\n'))",
+      "let buffer = ''",
+      "socket.setEncoding('utf8')",
+      "socket.on('data', (chunk) => {",
+      '  buffer += chunk',
+      "  const end = buffer.indexOf('\\n')",
+      '  if (end !== -1) process.stdout.write(buffer.slice(0, end), () => process.exit(0))',
+      '})',
+    ].join('\n')
+    const encoded = (text: string) => Buffer.from(text, 'utf8').toString('base64')
+    const out = sshd.exec(
+      `echo ${encoded(script)} | base64 -d > /tmp/gate-agent-call.cjs && ` +
+        `"$(readlink /proc/${serverPid()}/exe)" /tmp/gate-agent-call.cjs ` +
+        `/home/dev/.local/share/sprintengine-studio/data/sprintengine-studio-mcp-info.json ` +
+        encoded(JSON.stringify({ name, arguments: args })),
+      'dev',
+    )
+    return JSON.parse(out) as Record<string, any>
+  }
   const serverPid = () =>
     Number(
       sshd.exec(
@@ -427,9 +458,12 @@ export async function runSshLeg(input: {
 
     // discover: the window reads what New chat offers there of the machine's
     // own Studio. Its image has no git, so the project is not a repository.
-    await matrix.run('ssh', 'discover', async () =>
-      discoveredThere('ssh', await windowStudio(), key.workspaceId, { git: false }),
-    )
+    // An agent on build-box asks its own Studio's gateway the same, and hears
+    // the machine's answer.
+    await matrix.run('ssh', 'discover', async () => {
+      await discoveredThere('ssh', await windowStudio(), key.workspaceId, { git: false })
+      await agentDiscoveredThere('ssh', agentCallOnMachine, key.workspaceId, { git: false })
+    })
   } finally {
     stopFollowing()
     const lastWindow = windowClient as Promise<StudioClient> | null
