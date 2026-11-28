@@ -61,7 +61,7 @@ function mount(answers: { list?: () => unknown } = {}) {
   })
   const window = fakeActivity()
   const source: EnvironmentChatSource = createEnvironmentChatSource(target, {
-    hold: (given) => holdEnvironmentStudio(given, { api }),
+    hold: (given) => holdEnvironmentStudio(given, { api: api as never }),
     activity: window.activity,
   })
   source.subscribe(() => undefined)
@@ -198,7 +198,7 @@ test('an environment that refused the connection is asked again when a person co
   studio.refuse = () => new StudioError('revoked', 'This device was revoked.')
   const window = fakeActivity()
   const source = createEnvironmentChatSource(target, {
-    hold: (given) => holdEnvironmentStudio(given, { api }),
+    hold: (given) => holdEnvironmentStudio(given, { api: api as never }),
     activity: window.activity,
   })
   source.subscribe(() => undefined)
