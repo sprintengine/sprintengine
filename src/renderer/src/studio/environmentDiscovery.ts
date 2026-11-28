@@ -29,6 +29,7 @@ import {
   environmentRefusal,
   environmentStudioOutdated,
   withEnvironmentStudio,
+  type EnvironmentAsk,
   type EnvironmentTarget,
 } from './environmentStudio'
 import { copy } from '../../../shared/copy'
@@ -114,9 +115,17 @@ export type EnvironmentBrowse = {
  * not answer keeps nothing here; one that refuses this desktop says so.
  */
 export async function browseEnvironment(target: EnvironmentTarget): Promise<EnvironmentBrowse> {
+  return browseEnvironmentThrough(target, (work) => withEnvironmentStudio(target, work))
+}
+
+/** `browseEnvironment`, asked through the given connection (`environmentChats.ts` asks on the client it holds). */
+export async function browseEnvironmentThrough(
+  target: EnvironmentTarget,
+  ask: EnvironmentAsk,
+): Promise<EnvironmentBrowse> {
   const unanswered = { workspaces: [], takesFolder: false, grantScopes: [] }
   try {
-    return await withEnvironmentStudio(target, async (client) => {
+    return await ask(async (client) => {
       const gaps: MeshGap[] = []
       let workspaces: MeshWorkspace[] = []
       // Asked for only when the grant allows it. A refusal is a real answer and is

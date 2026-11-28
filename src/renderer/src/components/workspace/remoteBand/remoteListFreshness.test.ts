@@ -5,16 +5,7 @@ import { test } from 'vitest'
 import type { MeshConnection, MeshConversation, MeshMachineReachability } from '../../../../../shared/tailnet-mesh'
 import type { EnvironmentConnectionState, EnvironmentEntry } from '../../../../../shared/environments'
 import type { Workspace } from '../../../../../shared/workspace'
-import {
-  listFailureOf,
-  remoteLastKnownOf,
-  remoteLastKnownWords,
-  remoteReadDue,
-  remoteRereadDelayMs,
-  REMOTE_FOCUS_REREAD_GAP_MS,
-  REMOTE_REREAD_MAX_MS,
-  REMOTE_REREAD_MS,
-} from './remoteListFreshness'
+import { remoteLastKnownOf, remoteLastKnownWords } from './remoteListFreshness'
 import {
   attachedConversations,
   buildRemoteBand,
@@ -95,16 +86,6 @@ function entry(over: Partial<RemoteBrowseEntry> = {}): RemoteBrowseEntry {
   }
 }
 
-test('a refusal that is the answer is not a failure; a refused pairing and a broken read are', () => {
-  assert.equal(listFailureOf('conversations_unsupported', 'x'), null, 'a machine that does not serve them lists none')
-  assert.equal(listFailureOf('scope_required', 'x'), null, 'a pairing that may not read them lists none')
-  assert.deepEqual(listFailureOf('revoked', 'Revoked.'), { kind: 'unauthorized', message: 'Revoked.' })
-  assert.deepEqual(listFailureOf('unauthorized', 'No.'), { kind: 'unauthorized', message: 'No.' })
-  assert.deepEqual(listFailureOf('peer_mismatch', 'No.'), { kind: 'unauthorized', message: 'No.' })
-  assert.deepEqual(listFailureOf('unavailable', 'Gone.'), { kind: 'unavailable', message: 'Gone.' })
-  assert.deepEqual(listFailureOf('timeout', 'Slow.'), { kind: 'unavailable', message: 'Slow.' })
-})
-
 test('the window’s own failed read makes the list last-known, whatever the background check says', () => {
   // The case that hid a revoked pairing: main's check passes, the read is refused.
   assert.deepEqual(
@@ -136,24 +117,6 @@ test('how the machine stands decides when the window has not read it since', () 
     null,
     'a list read after the check that refused it is current',
   )
-})
-
-test('the clock reads a machine every few minutes, further apart while it fails, and focus no more than once in a while', () => {
-  assert.equal(remoteRereadDelayMs(0), REMOTE_REREAD_MS)
-  assert.equal(remoteRereadDelayMs(1), REMOTE_REREAD_MS * 2)
-  assert.equal(remoteRereadDelayMs(2), REMOTE_REREAD_MS * 4)
-  assert.equal(remoteRereadDelayMs(50), REMOTE_REREAD_MAX_MS, 'the backoff has a ceiling')
-  assert.ok(REMOTE_REREAD_MS >= 2 * MINUTE && REMOTE_REREAD_MS <= 10 * MINUTE, 'a slow clock: a few minutes')
-
-  assert.equal(remoteReadDue(undefined, 'clock', 0), true, 'a machine never asked is due')
-  const answered = { askedAt: 0, failures: 0 }
-  assert.equal(remoteReadDue(answered, 'clock', REMOTE_REREAD_MS - 1), false)
-  assert.equal(remoteReadDue(answered, 'clock', REMOTE_REREAD_MS), true)
-  const failing = { askedAt: 0, failures: 2 }
-  assert.equal(remoteReadDue(failing, 'clock', REMOTE_REREAD_MS * 2), false, 'a failing machine waits longer')
-  assert.equal(remoteReadDue(failing, 'clock', REMOTE_REREAD_MS * 4), true)
-  assert.equal(remoteReadDue(answered, 'focus', REMOTE_FOCUS_REREAD_GAP_MS - 1), false, 'focus flapping asks nothing')
-  assert.equal(remoteReadDue(failing, 'focus', REMOTE_FOCUS_REREAD_GAP_MS), true, 'a person back at the window is')
 })
 
 test('a last-known row says why in words, and offers Pair again where a pairing is the remedy', () => {

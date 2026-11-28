@@ -21,7 +21,14 @@ import type {
   MeshSettleConversationResult,
   MeshVisitConversationResult,
 } from '../../../shared/tailnet-mesh'
-import { askEnvironment, environmentCommandId, type EnvironmentTarget } from './environmentStudio'
+import {
+  askEnvironment,
+  environmentCommandId,
+  environmentRefusal,
+  withEnvironmentStudio,
+  type EnvironmentAsk,
+  type EnvironmentTarget,
+} from './environmentStudio'
 import { copy } from '../../../shared/copy'
 
 // The records of the chats another environment holds (a paired desktop, an SSH
@@ -45,21 +52,34 @@ const lifecycleUnsupported = (doing: string) => (machineName: string) => ({
  * that machine, the one its chat source follows.
  */
 export async function listEnvironmentChats(target: EnvironmentTarget): Promise<MeshConversationListResult> {
-  const answer = await askEnvironment(
-    target,
-    STUDIO_CONVERSATIONS_CAPABILITY,
-    (machineName) => ({
-      code: 'conversations_unsupported',
-      message: copy.studio.pairedChats.canTListItsChats(machineName),
-    }),
-    async (client) => ({ listed: await client.request('conversation.list', {}), grant: client.welcome?.grant ?? null }),
-  )
-  if (!answer.ok) return answer
-  const { listed, grant } = answer.value
-  return {
-    ok: true,
-    conversations: listed.conversations,
-    access: grant && studioGrantAllows(grant, 'conversation.send') ? 'operate' : 'read',
+  return listEnvironmentChatsThrough(target, (work) => withEnvironmentStudio(target, work))
+}
+
+/** `listEnvironmentChats`, asked through the given connection (`environmentChats.ts` asks on the client it holds). */
+export async function listEnvironmentChatsThrough(
+  target: EnvironmentTarget,
+  ask: EnvironmentAsk,
+): Promise<MeshConversationListResult> {
+  const unsupported = {
+    ok: false as const,
+    code: 'conversations_unsupported',
+    message: copy.studio.pairedChats.canTListItsChats(target.name),
+  }
+  try {
+    const answer = await ask(async (client) => {
+      if (!client.supports(STUDIO_CONVERSATIONS_CAPABILITY)) return null
+      return { listed: await client.request('conversation.list', {}), grant: client.welcome?.grant ?? null }
+    })
+    if (!answer) return unsupported
+    const { listed, grant } = answer
+    return {
+      ok: true,
+      conversations: listed.conversations,
+      access: grant && studioGrantAllows(grant, 'conversation.send') ? 'operate' : 'read',
+    }
+  } catch (error) {
+    const refused = environmentRefusal(target, error)
+    return refused.kind === 'outdated' ? unsupported : { ok: false, code: refused.code, message: refused.message }
   }
 }
 

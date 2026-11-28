@@ -300,6 +300,9 @@ function settle(api: EnvironmentApi, route: string, entry: Held): void {
   }, IDLE_CLOSE_MS)
 }
 
+/** One way to ask an environment's Studio something: the window's connection to it, or a source's held client. */
+export type EnvironmentAsk = <T>(work: (client: StudioClient) => Promise<T>) => Promise<T>
+
 /** A route's connection kept open while something here needs it (a board or a chat on screen). */
 export type EnvironmentHold = {
   /** The connection, once open. Rejects as an ask does. */

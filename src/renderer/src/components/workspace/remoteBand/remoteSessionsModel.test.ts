@@ -6,7 +6,6 @@ import {
   type MeshBrowse,
   type MeshConnection,
   type MeshConversation,
-  type MeshMachineReachability,
 } from '../../../../../shared/tailnet-mesh'
 import type { Workspace } from '../../../../../shared/workspace'
 import type { EnvironmentConnectionState, EnvironmentEntry } from '../../../../../shared/environments'
@@ -26,7 +25,6 @@ import {
   remoteRowFinishUnseen,
   remotePaneTabLabel,
   remoteWorkspaceName,
-  shouldBrowse,
   unattachedConversations,
   interleaveChats,
   chatRecencyOf,
@@ -120,24 +118,6 @@ test('remoteSessionsModel', async () => {
       ],
     },
   })
-
-  // ── shouldBrowse ─────────────────────────────────────────────────────────
-  const reach = (over: Partial<MeshMachineReachability>): MeshMachineReachability => ({
-    connectionId: 'c1',
-    machineName: 'air',
-    checking: false,
-    reachable: false,
-    unauthorized: false,
-    checkedAt: 1,
-    lastReachedAt: null,
-    detail: null,
-    ...over,
-  })
-  assert.equal(shouldBrowse(undefined), true, 'a machine main has not reported on gets its one read')
-  assert.equal(shouldBrowse(reach({ checkedAt: null, checking: true })), true, 'never checked: read rather than wait')
-  assert.equal(shouldBrowse(reach({ reachable: true })), true)
-  assert.equal(shouldBrowse(reach({ reachable: false })), false, 'asleep is never dialled')
-  assert.equal(shouldBrowse(reach({ reachable: true, unauthorized: true })), false, 'revoked is never dialled')
 
   // ── attachedWorkspaceFor ─────────────────────────────────────────────────
   const stamped = workspace('w1', {

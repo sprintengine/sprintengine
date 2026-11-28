@@ -31,7 +31,8 @@ import {
   type EnvironmentStatusKind,
 } from '../../../../../../packages/client-runtime/src/environments/environmentStatus'
 import { copy as appCopy } from '../../../../../shared/copy'
-import { remoteLastKnownOf, type RemoteLastKnown, type RemoteListFailure } from './remoteListFreshness'
+import { remoteLastKnownOf, type RemoteLastKnown } from './remoteListFreshness'
+import type { EnvironmentListFailure } from '../../../studio/environmentChatsFreshness'
 
 // The sidebar's Remote band (remote-sessions-in-the-sidebar): the sessions
 // that live on each paired machine, as rows a person can open here. DOM-free,
@@ -74,7 +75,7 @@ export type RemoteBrowseEntry = {
    * Why the newest read of its chats did not replace them, or null when it
    * did: the rows are then a last-known list (`remoteLastKnownOf`).
    */
-  listFailure?: RemoteListFailure | null
+  listFailure?: EnvironmentListFailure | null
 }
 
 /** No chat management from here: a machine before it, or a pairing that may only follow. */
@@ -411,19 +412,6 @@ export function attachedWorkspaceFor(
     }
   }
   return null
-}
-
-/**
- * Whether a machine may be asked right now (epic decision 2): never while
- * main's last check says it is asleep or has revoked us. A machine never
- * checked gets one read — the check and the read race at mount, and waiting
- * on the check would leave the band empty on a quiet system.
- */
-export function shouldBrowse(reach: MeshMachineReachability | undefined): boolean {
-  if (!reach) return true
-  if (reach.unauthorized) return false
-  if (reach.checkedAt === null) return true
-  return reach.reachable
 }
 
 /**

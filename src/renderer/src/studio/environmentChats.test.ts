@@ -33,11 +33,15 @@ function fakeEnvironment(environmentId: string, listed: ConversationSessionSumma
     state: 'open' as StudioClientState,
     welcome: { environment: { id: environmentId } },
     supports: () => true,
+    grant: { scopes: ['workspaces:read'] },
     request: async (method: string) => {
+      // Its rows are read too (`environmentChats.rows.test.ts`); these tests count its sessions.
+      if (method === 'conversation.list') return { conversations: [] }
       assert.equal(method, 'session.list')
       lists += 1
-      return { ok: true, sessions: listed }
+      return { ok: true, sessions: [...listed] }
     },
+    rpc: { 'workspaces.list': async () => ({ workspaces: [] }) },
     subscribe: (_topic: string, _params: unknown, listener: { onPayload(payload: unknown): void }) => {
       pushes.add(listener.onPayload)
       return () => pushes.delete(listener.onPayload)

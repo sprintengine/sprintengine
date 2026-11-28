@@ -1,11 +1,26 @@
-import type { StudioClient, StudioClientState } from '../../../../packages/client-runtime/src/public'
-import type { StudioWelcomeFrame } from '../../../../packages/studio-protocol/src/public'
+import { StudioError, type StudioClient, type StudioClientState } from '../../../../packages/client-runtime/src/public'
+import {
+  STUDIO_CONVERSATIONS_CAPABILITY,
+  type StudioWelcomeFrame,
+} from '../../../../packages/studio-protocol/src/public'
 import { formatChatAddress, isEnvironmentId } from '../../../../packages/studio-protocol/src/environment'
 import type { ConversationEvent, ConversationSessionSummary } from '../../../shared/conversation-runtime'
+import type { MeshConversation, MeshConversationAccess } from '../../../shared/tailnet-mesh'
 import { createStudioChatServices } from '../components/panels/agentChat/studioChat'
+import { windowActivity, type WindowActivity } from '../utils/windowActivity'
+import { listEnvironmentChatsThrough } from './environmentChatRecords'
+import {
+  ANSWER_GRACE_MS,
+  listFailureOf,
+  readDue,
+  type EnvironmentListFailure,
+  type ReadHistory,
+} from './environmentChatsFreshness'
+import { browseEnvironmentThrough, type EnvironmentBrowse } from './environmentDiscovery'
 import {
   environmentRefusal,
   holdEnvironmentStudio,
+  type EnvironmentAsk,
   type EnvironmentHold,
   type EnvironmentRefusal,
   type EnvironmentTarget,
@@ -13,17 +28,27 @@ import {
 
 // The chats one environment holds, as this window follows them: one source per
 // route the window shows chats of, fed by that environment's own Studio over
-// the window's client of it (`environmentStudio.ts`): its `session.list`, read
-// again whenever its `conversation.events` push says a session moved, and once
-// more after every reconnect. Keyed by chat address
-// (`<environmentId>:<workspaceId>`), the environment's own id as its welcome
-// says it, so a chat is never taken for another machine's chat of the same id.
+// the window's client of it (`environmentStudio.ts`). Two lists:
+//
+// - its sessions (`session.list`), read again whenever its
+//   `conversation.events` push says a session moved, and once more after every
+//   reconnect, keyed by chat address (`<environmentId>:<workspaceId>`), the
+//   environment's own id as its welcome says it, so a chat is never taken for
+//   another machine's chat of the same id;
+// - its rows (`rows`): what it holds (`workspaces.list`) and its chats
+//   (`conversation.list`), read again for what its `conversations.changed`
+//   push names, whole once more whenever the window reaches it again, and on
+//   the slow clock and focus of `environmentChatsFreshness.ts`.
 //
 // Nothing here knows what kind of machine the route reaches: an SSH machine's
 // server, a paired desktop, a WSL distribution are each a route and a client.
 // While the client is away (reconnecting, parked, the machine asleep) the
-// source keeps the last list it read and says it is stale, so the rows it
-// feeds stay where they are, dimmed, rather than vanish.
+// source keeps the last lists it read and says they are stale, so the rows
+// they feed stay where they are, dimmed, rather than vanish; nothing is asked
+// of it on the clock until it is reached again, and that reconnect is what
+// reads it. A read that fails keeps the rows it had and says why
+// (`listFailure`). A window nobody can see reads no rows on a push: it
+// remembers what moved and reads it once it is seen again.
 
 /** One environment's sessions as last read: who they belong to, and whether they are still current. */
 export type EnvironmentChatsSnapshot = {
@@ -42,6 +67,34 @@ export type EnvironmentChatsSnapshot = {
    * `outdated`, and says to update it there.
    */
   refusal?: EnvironmentRefusal
+  /** What it holds and its chats, as the newest reads left them. */
+  rows: EnvironmentRows
+}
+
+/** What an environment holds and its chats, as the window last read them of its Studio. */
+export type EnvironmentRows = {
+  /** What it holds, as the newest read that reached it said; kept across a read that did not. */
+  browse: EnvironmentBrowse | null
+  /** A read of what it holds is out. */
+  loading: boolean
+  /** Why the newest read of what it holds did not reach it; null when it did. */
+  error: string | null
+  /** Epoch ms of the newest read that settled; null before the first. */
+  at: number | null
+  /**
+   * Its chats as the newest read that could list them listed them; absent
+   * before one has. A device that may not read them, or a Studio that does not
+   * serve them, simply has none.
+   */
+  conversations?: MeshConversation[]
+  /** What this device may do with its chats, as its newest list said. Absent before a list. */
+  access?: MeshConversationAccess
+  /** What of its chats' records its Studio keeps for this one, as the newest browse that reached it said. */
+  chatRecord?: { lifecycle: boolean; unwatchPullRequest: boolean }
+  /** Epoch ms of the newest read that listed its chats (or got a refusal that is the answer); absent before one. */
+  listedAt?: number
+  /** Why the newest read of its chats did not replace them, or null when it did: they are then a last-known list. */
+  listFailure?: EnvironmentListFailure | null
 }
 
 export type EnvironmentChatSource = {
@@ -51,8 +104,15 @@ export type EnvironmentChatSource = {
   subscribe(listener: () => void): () => void
   /** Hear each of the environment's lifecycle events, and each reconnect. Returns the unsubscriber. */
   onLifecycleEvent(listener: (event: ConversationEvent) => void, onReconnected?: () => void): () => void
-  /** Read the list again now. */
+  /** Read both lists again now, whatever the clock says. */
   refresh(): void
+  /**
+   * The slow clock's tick, or a person coming back to the window: read its
+   * rows if they are due. The clock asks only an environment the window is
+   * connected to; coming back also asks one whose connection was let go or
+   * refused, which may take this device again by now.
+   */
+  reread(trigger: 'clock' | 'focus'): void
   /** This window's client of the environment, held open while the source lives. */
   client(): Promise<StudioClient>
   /** The environment's latest welcome, once its client has opened. */
@@ -65,6 +125,18 @@ export type EnvironmentChatSource = {
 
 /** How long a burst of lifecycle events is folded into one read. */
 const REFRESH_SETTLE_MS = 300
+/** A change push arrives already folded; this folds the workspace and conversation pushes of one change into one read. */
+const CHANGE_SETTLE_MS = 250
+/** How often the slow clock looks for an environment due a read; it asks only those whose delay has passed. */
+const REREAD_TICK_MS = 60_000
+/** How long a read of the rows waits for an answer before it is one that did not come. */
+const ROWS_ASK_TIMEOUT_MS = 15_000
+
+/** The two reads behind an environment's rows: what it holds (a browse), and its chats (a conversation list). */
+type RowsPart = 'browse' | 'conversations'
+const EVERY_PART: ReadonlySet<RowsPart> = new Set(['browse', 'conversations'])
+
+const NO_ROWS: EnvironmentRows = Object.freeze({ browse: null, loading: false, error: null, at: null })
 
 const EMPTY_SESSIONS: readonly ConversationSessionSummary[] = Object.freeze([])
 
@@ -96,10 +168,13 @@ export function createEnvironmentChatSource(
     /** How the connection is held; the window's own unless a test says otherwise. */
     hold?: (target: EnvironmentTarget) => EnvironmentHold
     settleMs?: number
+    /** Whether anyone can see the window and is at it; the window's own unless a test says otherwise. */
+    activity?: WindowActivity
   } = {},
 ): EnvironmentChatSource {
   const holdOf = options.hold ?? ((given: EnvironmentTarget) => holdEnvironmentStudio(given))
   const settleMs = options.settleMs ?? REFRESH_SETTLE_MS
+  const activity = options.activity ?? windowActivity()
   const listeners = new Set<() => void>()
   const openListeners = new Set<() => void>()
   let closed = false
@@ -176,6 +251,7 @@ export function createEnvironmentChatSource(
     sessions: EMPTY_SESSIONS,
     byAddress: new Map(),
     stale: true,
+    rows: NO_ROWS,
   }
   const publish = (next: EnvironmentChatsSnapshot): void => {
     snapshot = next
@@ -203,6 +279,7 @@ export function createEnvironmentChatSource(
         if (closed || !listed.ok) return
         const environmentId = connected.welcome?.environment?.id ?? null
         publish({
+          ...snapshot,
           route: target.route,
           environmentId,
           sessions: listed.sessions,
@@ -225,14 +302,195 @@ export function createEnvironmentChatSource(
     }, settleMs)
   }
 
+  // ── Its rows ────────────────────────────────────────────────────────────
+
+  const publishRows = (update: (rows: EnvironmentRows) => EnvironmentRows): void => {
+    if (closed) return
+    publish({ ...snapshot, rows: update(snapshot.rows) })
+  }
+  // Asked on the client the source holds, given up on after a while: a read
+  // that never comes back must not hold every later read behind it.
+  const ask: EnvironmentAsk = async (work) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        client().then(work),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new StudioError('unavailable', `${target.name} did not answer in time.`)),
+            ROWS_ASK_TIMEOUT_MS,
+          )
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  let rowsOut = false
+  let rowsWaiting = new Set<RowsPart>()
+  let history: ReadHistory | undefined
+  const readRows = (parts: ReadonlySet<RowsPart> = EVERY_PART): void => {
+    if (closed) return
+    if (rowsOut) {
+      // A read is out, and may have left before whatever prompted this one:
+      // what is asked now runs when it lands, once.
+      for (const part of parts) rowsWaiting.add(part)
+      return
+    }
+    const wantBrowse = parts.has('browse')
+    const wantList = parts.has('conversations')
+    if (!wantBrowse && !wantList) return
+    rowsOut = true
+    if (wantBrowse) publishRows((rows) => ({ ...rows, loading: true }))
+    // The clock and its backoff are about the chats: a browse on its own (a
+    // workspace push) leaves them alone.
+    if (wantList) history = { askedAt: Date.now(), failures: history?.failures ?? 0 }
+    // A read that hangs is an environment not answering, said once the grace
+    // has passed; the read landing later replaces it either way.
+    let landed = false
+    const grace = wantList
+      ? setTimeout(() => {
+          if (landed) return
+          publishRows((rows) =>
+            rows.listFailure ? rows : { ...rows, listFailure: { kind: 'unavailable', message: 'Not answering.' } },
+          )
+        }, ANSWER_GRACE_MS)
+      : undefined
+    let failed = false
+    void (async () => {
+      const result = wantBrowse ? await browseEnvironmentThrough(target, ask) : null
+      // Its chats too, once it has answered. A device that may not read them,
+      // or a Studio that does not serve them, lists none.
+      const listed =
+        wantList && (result === null || result.reachable) ? await listEnvironmentChatsThrough(target, ask) : null
+      // What this read says of the chats: listed (or a refusal that is the
+      // answer, which lists none), or why the rows it had are kept.
+      const failure: EnvironmentListFailure | null | undefined =
+        result && !result.reachable
+          ? {
+              kind: result.unauthorized ? 'unauthorized' : 'unavailable',
+              message: result.unreachableReason ?? 'Not answering.',
+            }
+          : !wantList
+            ? undefined
+            : listed === null
+              ? { kind: 'unavailable', message: 'Not answering.' }
+              : listed.ok
+                ? null
+                : listFailureOf(listed.code, listed.message)
+      failed = failure !== null && failure !== undefined
+      const answered = wantList && failure === null
+      publishRows((rows) => {
+        const next: EnvironmentRows = { ...rows, at: Date.now() }
+        if (result) {
+          // One that did not answer keeps its last rows; only an answer replaces them.
+          if (result.reachable) next.browse = result
+          next.loading = false
+          next.error = result.reachable ? null : (result.unreachableReason ?? 'Not answering.')
+          if (result.chatRecord) next.chatRecord = result.chatRecord
+        }
+        if (answered) {
+          next.conversations = listed?.ok ? listed.conversations : []
+          next.listedAt = Date.now()
+        }
+        if (listed?.ok) next.access = listed.access
+        if (failure !== undefined) next.listFailure = failure
+        return next
+      })
+    })()
+      .catch((error: unknown) => {
+        failed = true
+        const message = error instanceof Error ? error.message : String(error)
+        publishRows((rows) => ({
+          ...rows,
+          loading: false,
+          error: message,
+          at: Date.now(),
+          listFailure: { kind: 'unavailable', message },
+        }))
+      })
+      .finally(() => {
+        landed = true
+        if (grace !== undefined) clearTimeout(grace)
+        if (history && wantList) history = { ...history, failures: failed ? history.failures + 1 : 0 }
+        rowsOut = false
+        const waiting = rowsWaiting
+        rowsWaiting = new Set()
+        // Its chats did not answer, and it has just answered a browse: they
+        // are read now, rather than left saying it is not answering until the
+        // clock comes round.
+        if (!wantList && !failed && snapshot.rows.listFailure?.kind === 'unavailable') waiting.add('conversations')
+        if (waiting.size > 0) readRows(waiting)
+      })
+  }
+
+  // What its pushes and its reconnects said moved, waiting for the burst to
+  // settle, or for the window to be seen again.
+  const changed = new Set<RowsPart>()
+  let changeTimer: ReturnType<typeof setTimeout> | null = null
+  const flushChanges = (): void => {
+    if (closed || changeTimer !== null || changed.size === 0 || !activity.get().visible) return
+    changeTimer = setTimeout(() => {
+      changeTimer = null
+      if (closed || !activity.get().visible) return
+      const parts = new Set(changed)
+      changed.clear()
+      readRows(parts)
+    }, CHANGE_SETTLE_MS)
+  }
+  const noteChange = (...parts: RowsPart[]): void => {
+    for (const part of parts) changed.add(part)
+    flushChanges()
+  }
+
+  const reread = (trigger: 'clock' | 'focus'): void => {
+    if (closed || rowsOut) return
+    // Away is the connection's to notice: it reads again once it is back. A
+    // connection let go or refused is asked again when a person comes back.
+    const askable = state === 'open' || (trigger === 'focus' && hold === null)
+    if (askable && readDue(history, trigger, Date.now())) readRows()
+  }
+
   let following: (() => void) | null = null
   const follow = (): void => {
     if (following || closed) return
-    following = services.sessions.onLifecycleEvent(
+    const stopSessions = services.sessions.onLifecycleEvent(
       () => schedule(),
       () => read(),
     )
+    const stopChanges =
+      services.followPush?.({
+        topic: 'conversations.changed',
+        params: {},
+        capability: STUDIO_CONVERSATIONS_CAPABILITY,
+        onPayload: (change) => noteChange(change.what === 'workspaces' ? 'browse' : 'conversations'),
+      }) ?? (() => undefined)
+    // The first open is the first read's; each one after is the environment back, which may have missed a push.
+    let opened = false
+    const stopOpen = watchOpen(() => {
+      if (opened) noteChange(...EVERY_PART)
+      opened = true
+    })
+    const clock = setInterval(() => {
+      if (activity.get().visible) reread('clock')
+    }, REREAD_TICK_MS)
+    let front = activity.get().visible && activity.get().focused
+    const stopActivity = activity.subscribe((now) => {
+      const atFront = now.visible && now.focused
+      if (atFront && !front) reread('focus')
+      front = atFront
+      if (now.visible) flushChanges()
+    })
+    following = () => {
+      stopSessions()
+      stopChanges()
+      stopOpen()
+      clearInterval(clock)
+      stopActivity()
+    }
     read()
+    readRows()
   }
 
   return {
@@ -247,7 +505,11 @@ export function createEnvironmentChatSource(
       follow()
       return services.sessions.onLifecycleEvent(listener, onReconnected)
     },
-    refresh: read,
+    refresh() {
+      read()
+      readRows()
+    },
+    reread,
     client,
     welcome: () => current?.welcome ?? null,
     watchOpen,
@@ -256,6 +518,8 @@ export function createEnvironmentChatSource(
       closed = true
       if (timer !== null) clearTimeout(timer)
       timer = null
+      if (changeTimer !== null) clearTimeout(changeTimer)
+      changeTimer = null
       following?.()
       following = null
       listeners.clear()
