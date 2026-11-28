@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
 import { authorizeStudioAccess } from '../../../../packages/studio-protocol/src/permissions'
-import { launchWhereItLives } from '../../../server/core/environment-chat-calls'
+import { chatEnvironments } from '../../../server/core/environment-chat-calls'
 import { createFileViewTools } from '../../../server/file-views/file-view-tools'
 import { createLocalServerTools } from '../../../server/local-servers/local-server-tools'
 import { createPullRequestTools } from '../../../server/pull-requests/pull-request-tools'
@@ -368,10 +368,11 @@ async function startListener() {
     ...createWorkspaceTools(backends),
     ...createBrowserTools({ manager: pane, control: pane, recorder: pane, hasWorkspace: () => true } as never),
     ...createConversationTools({
-      launch: launchWhereItLives(clients, recordOf, async (request) => {
+      launch: async (request) => {
         launchedHere.push(request)
         return { ok: false, code: 'launched_here', message: 'launched on this machine' }
-      }),
+      },
+      environments: chatEnvironments({ clients, ownEnvironmentId: () => 'env-here', routesOf: null, recordOf }),
       resolveAgentPermissionPreset: () => null,
       lifecycle: {} as never,
       moveChat: async (workspaceId, folder) => {
