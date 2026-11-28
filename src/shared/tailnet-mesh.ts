@@ -10,6 +10,7 @@ import type {
   ConversationWireHighlight,
 } from '../../packages/conversation-protocol/src/public'
 import { readableConversationPhase } from '../../packages/conversation-protocol/src/public'
+import type { StudioChatSeen } from '../../packages/studio-protocol/src/public'
 import { conversationPhaseWorking, phaseWithBackgroundWork } from './conversation/phase'
 import type { RepositoryIdentity } from './repository-identity'
 import type { CliPermissionPreset } from './cli-permission-preset'
@@ -80,6 +81,8 @@ export type MeshWorkspaceRow = {
   createdAt?: number
   recencyAt?: number
   lastUserMessageAt?: number
+  /** When anything last happened in it, which a Settle or Snooze sends back as `seen` (`chat-rest-seen`). */
+  activityAt?: number
   lastTurnEndedAt?: number
   lastVisitedAt?: number
   visitRewoundAt?: number
@@ -230,7 +233,7 @@ export type MeshVisitConversationResult =
  * is), Auto-settle, and Mark unread.
  */
 export type MeshConversationChange =
-  | { kind: 'snooze'; until: number | null }
+  | { kind: 'snooze'; until: number | null; seen?: StudioChatSeen }
   | { kind: 'highlight'; starred?: boolean; color?: ConversationHighlightColor | null }
   | { kind: 'auto-settle'; enabled: boolean }
   | { kind: 'mark-unread' }

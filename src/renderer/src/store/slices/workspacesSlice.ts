@@ -1,3 +1,4 @@
+import type { StudioChatSeen } from '../../../../../packages/studio-protocol/src/public'
 import type { IJsonModel } from 'flexlayout-react'
 import { current, isDraft } from 'immer'
 import { nanoid } from 'nanoid'
@@ -7,6 +8,7 @@ import { isSettledWorkspace, settleWorkspacePatch, wakeWorkspacePatch } from '..
 import { hasSnooze, snoozeWorkspacePatch, wakeSnoozedWorkspacePatch } from '../../utils/workspaceSnooze'
 import type { WorkspaceFieldsPatch } from '../../../../shared/workspace-sync'
 import {
+  chatRestSeen,
   workspaceLifecycleSnapshot,
   type WorkspaceLifecycleRequest,
   type WorkspaceLifecycleResult,
@@ -655,12 +657,23 @@ export function createWorkspacesSlice(
       if (ws) Object.assign(ws, { settledAt, settledOverride, snoozedUntil })
     })
   }
-  const sendLifecycleIntent = (request: WorkspaceLifecycleRequest): Promise<WorkspaceLifecycleResult> => {
+  // The chat as its row was drawn goes with the gesture (`seen`), so its
+  // Studio refuses one asked on a chat that has moved on since. A gesture
+  // queued behind this window's own earlier one was asked on the window's own
+  // optimistic reading, which that answer's stamps replace: it goes without.
+  const sendLifecycleIntent = (
+    request: WorkspaceLifecycleRequest,
+    seen: StudioChatSeen,
+  ): Promise<WorkspaceLifecycleResult> => {
     const { workspaceId } = request
     const before = inFlight.get(workspaceId)
     const ask = async (): Promise<WorkspaceLifecycleResult> => {
       if (before) await before
-      const answer = await restLocalChat(chatOf(workspaceId), request.intent)
+      const lastInputAt = request.intent.kind === 'settle' ? request.intent.lastInputAt : undefined
+      const answer = await restLocalChat(chatOf(workspaceId), request.intent, {
+        seen: before ? null : seen,
+        lastInputAt,
+      })
       if (!answer.ok) {
         if (answer.code !== 'unavailable' && inFlight.get(workspaceId) === sent)
           adoptRest(workspaceId, request.snapshot)
@@ -1049,11 +1062,13 @@ export function createWorkspacesSlice(
     // (`fromWindow`), which puts the row back where main has it.
     setWorkspaceSettled: (id, settled) => {
       let request: WorkspaceLifecycleRequest | null = null
+      let seen: StudioChatSeen | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
         const snapshot = workspaceLifecycleSnapshot(ws)
         const now = Date.now()
+        seen = chatRestSeen(ws, now)
         Object.assign(ws, settled ? settleWorkspacePatch(ws, now, 'settled') : wakeWorkspacePatch('active', ws, now))
         request = {
           workspaceId: id,
@@ -1066,7 +1081,7 @@ export function createWorkspacesSlice(
         }
       })
       // A hand gesture is this window's to report, whichever window routes the row.
-      return request ? sendLifecycleIntent(request) : Promise.resolve(null)
+      return request && seen ? sendLifecycleIntent(request, seen) : Promise.resolve(null)
     },
 
     // Not a hand gesture: the primary window's cleanup sweep stamps it when it
@@ -1142,6 +1157,7 @@ export function createWorkspacesSlice(
     // window made it, and main decides it, exactly as Settle does.
     setWorkspaceSnoozed: (id, wakeAt) => {
       let request: WorkspaceLifecycleRequest | null = null
+      let seen: StudioChatSeen | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
@@ -1151,6 +1167,7 @@ export function createWorkspacesSlice(
         // say nothing.
         if (wakeAt === null && !hasSnooze(ws)) return
         const snapshot = workspaceLifecycleSnapshot(ws)
+        seen = chatRestSeen(ws, Date.now())
         Object.assign(ws, wakeAt === null ? wakeSnoozedWorkspacePatch() : snoozeWorkspacePatch(wakeAt))
         request = {
           workspaceId: id,
@@ -1158,7 +1175,7 @@ export function createWorkspacesSlice(
           intent: wakeAt === null ? { kind: 'wake' } : { kind: 'snooze', until: wakeAt },
         }
       })
-      return request ? sendLifecycleIntent(request) : Promise.resolve(null)
+      return request && seen ? sendLifecycleIntent(request, seen) : Promise.resolve(null)
     },
 
     // Monotonic: `lastTerminalActivityAt` only moves forward, and is fed from the

@@ -27,6 +27,7 @@ import {
   type ConversationSubagentsFrame,
   type ConversationUsageLimitsFrame,
 } from './conversation.js'
+import { studioChatSeenParams, type StudioChatSeen } from './chat-lifecycle.js'
 import type { ConversationAddress } from './environment.js'
 import { STUDIO_CONVERSATIONS_CAPABILITY } from './handshake.js'
 import { parseStudioConversationKey, type StudioConversationKey } from './key.js'
@@ -142,11 +143,14 @@ export type StudioFollowedMethodMap = {
    * Settle the chat, as its row menu's Settle does (`conversation-lifecycle`):
    * it leaves the list, its agents' processes end, and the next message
    * resumes it. `settled: false` brings it back. Refused `conflict` while an
-   * agent in it works. Settling a settled chat changes nothing. Addressed by
-   * the chat's workspace, whose record its rest is (`chat-lifecycle.ts`).
+   * agent in it works, or when the chat has moved on since `seen`
+   * (`chat-rest-seen`; `lastInputAt` is the asking window's keystroke clock,
+   * which a settle writes so the chat is never older than the decision).
+   * Settling a settled chat changes nothing. Addressed by the chat's
+   * workspace, whose record its rest is (`chat-lifecycle.ts`).
    */
   'conversation.settle': {
-    params: { workspaceId: string; commandId: string; settled?: boolean }
+    params: { workspaceId: string; commandId: string; settled?: boolean; seen?: StudioChatSeen; lastInputAt?: number }
     result: { settledAt: number | null }
     errors: 'not_found' | 'conflict'
   }
@@ -341,10 +345,13 @@ export const STUDIO_FOLLOWED_METHODS: StudioMethodTable<StudioFollowedMethodMap>
       if (!id(value.commandId)) return refuse(COMMAND_ID)
       if (value.settled !== undefined && typeof value.settled !== 'boolean')
         return refuse('"settled" is true or false.')
+      const seen = studioChatSeenParams(value, value.settled !== false)
+      if (!seen.ok) return seen
       return studioParams({
         ...at.params,
         commandId: value.commandId,
         ...(value.settled === undefined ? {} : { settled: value.settled }),
+        ...seen.params,
       })
     },
   },

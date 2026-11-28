@@ -2,7 +2,7 @@ import type { MeshConversationChange } from '../../../shared/tailnet-mesh'
 import type { Workspace } from '../../../shared/workspace'
 import type { WorkspaceLifecycleIntent } from '../../../shared/workspace-lifecycle'
 import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
-import { changeEnvironmentChat, settleEnvironmentChat } from '../studio/environmentChatRecords'
+import { changeEnvironmentChat, settleEnvironmentChat, type ChatRestAsked } from '../studio/environmentChatRecords'
 import { environmentRouteAvailable, WINDOW_STUDIO_ROUTE, type EnvironmentTarget } from '../studio/environmentStudio'
 
 // A chat of this computer is changed as any other environment's chat is: by
@@ -50,17 +50,19 @@ export async function changeLocalChat(
   }
 }
 
-/** Ask a gesture on a chat's rest of its Studio: Settle, Un-settle, Snooze or Wake. */
+/** Ask a gesture on a chat's rest of its Studio: Settle, Un-settle, Snooze or Wake, on the row it was asked from. */
 export async function restLocalChat(
   record: Pick<Workspace, 'id' | 'environment'>,
   intent: WorkspaceLifecycleIntent,
+  asked: ChatRestAsked = {},
 ): Promise<LocalChatAnswer> {
-  if (intent.kind === 'snooze') return changeLocalChat(record, { kind: 'snooze', until: intent.until })
-  if (intent.kind === 'wake') return changeLocalChat(record, { kind: 'snooze', until: null })
+  const seen = asked.seen ?? undefined
+  if (intent.kind === 'snooze') return changeLocalChat(record, { kind: 'snooze', until: intent.until, seen })
+  if (intent.kind === 'wake') return changeLocalChat(record, { kind: 'snooze', until: null, seen })
   const studio = studioOf(record)
   if (!environmentRouteAvailable(studio.route)) return NO_STUDIO
   try {
-    const answer = await settleEnvironmentChat(studio, record.id, intent.kind === 'settle')
+    const answer = await settleEnvironmentChat(studio, record.id, intent.kind === 'settle', asked)
     return answer.ok ? { ok: true } : { ok: false, code: answer.code, message: answer.message }
   } catch (error) {
     return refusalOf(error)

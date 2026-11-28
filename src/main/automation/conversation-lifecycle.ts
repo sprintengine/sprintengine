@@ -1,10 +1,12 @@
 import { STUDIO_CHAT_NAME_MAX_CHARS } from '../../../packages/studio-protocol/src/public'
+import type { StudioChatSeen } from '../../../packages/studio-protocol/src/public'
 import type { WorkspaceRegistryActor, WorkspaceRegistryRecord } from '../../shared/workspace-registry'
 import type { WorkspaceFieldsPatch, WorkspaceSyncCommandResult, WorkspaceSyncEvent } from '../../shared/workspace-sync'
 import {
   highlightWorkspacePatch,
   isSettledWorkspace,
   isStarred,
+  chatRestSeenIsStale,
   lifecycleSnapshotIsStale,
   settleWorkspacePatch,
   wakeSnoozedWorkspacePatch,
@@ -23,10 +25,10 @@ import { backgroundTasksWakeAgent } from '../../shared/conversation/backgroundTa
 // last wrote to it and of when one last looked at it: a window's row menu, a
 // phone, a second desktop and the rest sweep (`workspace-settlement-sweep.ts`)
 // all ask, and the answer is written to the registry record with the shared
-// patches, stamped with this process's clock. A request may carry the reading
-// of the chat it was decided on (`WorkspaceLifecycleSnapshot`); one decided on
-// a chat that has moved on since is refused rather than applied to a chat it
-// was not about. Windows learn the change from main's broadcast like any
+// patches, stamped with this process's clock. A request may carry the chat as
+// its row drew it (`seen`), and the sweep the reading it decided on
+// (`WorkspaceLifecycleSnapshot`); one decided on a chat that has moved on since
+// is refused rather than applied to a chat it was not about. Windows learn the change from main's broadcast like any
 // other, and the window showing a chat settled from elsewhere carries out the
 // rest of a Settle there (WorkspaceSidebar's `settledElsewhere`).
 
@@ -49,14 +51,6 @@ export type ConversationLifecycleDeps = {
    * menu's Settle does.
    */
   isWorking(workspaceId: string): boolean
-  /**
-   * Whether an agent in the workspace is at work, leaving out one stopped on
-   * the person's answer: the reading a window's own row menu holds Settle and
-   * Snooze to (`workspaceIsWorking`), since a question waits in the CLI
-   * session and is asked again on resume. What a window's request is gated on;
-   * absent, `isWorking`.
-   */
-  isBusy?(workspaceId: string): boolean
   /**
    * Whether the one piece of work in the workspace is `agentId`'s own chat
    * turn: its chat is mid-turn, nothing it launched works on in the
@@ -107,16 +101,14 @@ export type ConversationLifecycleFailure = {
 
 /**
  * How a decision about a chat's rest was taken, beside what it decided: the
- * reading of the chat it was taken on, refused when the chat has moved on
- * since (absent: a caller with no reading, such as a paired phone, which is
- * answered on the chat as it stands); the person's keystroke clock as the
- * deciding window knows it, which main's copy lags; and what an agent at work
- * means for it (`isBusy` for a window's row menu, `isWorking` for the rest).
+ * chat as the asking row drew it (`seen`, `chat-rest-seen`), refused when the
+ * chat has moved on since (absent: a caller with no row, such as an agent's
+ * tool, which is answered on the chat as it stands); and the person's
+ * keystroke clock as the asking window knows it, which this Studio's copy lags.
  */
 export type LifecycleDecision = {
-  snapshot?: WorkspaceLifecycleSnapshot
+  seen?: StudioChatSeen
   lastInputAt?: number
-  refuseWhile?: 'working' | 'busy'
 }
 
 /**
@@ -219,9 +211,8 @@ export function createConversationLifecycle(deps: ConversationLifecycleDeps) {
     message: 'This chat changed since that was decided. Look at it again.',
   })
   const decidedOnStale = (record: WorkspaceRegistryRecord, decided: LifecycleDecision | undefined): boolean =>
-    decided?.snapshot !== undefined && lifecycleSnapshotIsStale(record, decided.snapshot)
-  const atWork = (workspaceId: string, decided: LifecycleDecision | undefined): boolean =>
-    decided?.refuseWhile === 'busy' ? (deps.isBusy ?? deps.isWorking)(workspaceId) : deps.isWorking(workspaceId)
+    decided?.seen !== undefined && chatRestSeenIsStale(record, decided.seen, now())
+  const atWork = (workspaceId: string): boolean => deps.isWorking(workspaceId)
 
   /**
    * Settle a chat, or bring it back: the row menu's Settle and Un-settle,
@@ -261,7 +252,7 @@ export function createConversationLifecycle(deps: ConversationLifecycleDeps) {
       pending.set(workspaceId, { agentId: caller.agentId, actor, cancel: null })
       return { ok: true, workspaceId, settledAt: null, settlesWhenTurnEnds: true }
     }
-    if (settled && atWork(workspaceId, decided))
+    if (settled && atWork(workspaceId))
       return {
         ok: false,
         code: 'working',
@@ -287,7 +278,8 @@ export function createConversationLifecycle(deps: ConversationLifecycleDeps) {
    */
   function withInputClock(record: WorkspaceRegistryRecord, decided: LifecycleDecision | undefined) {
     const known = record.lastTerminalActivityAt ?? null
-    const told = decided?.lastInputAt
+    // Never past this Studio's clock: a device's word moves the chat's place in every list.
+    const told = typeof decided?.lastInputAt === 'number' ? Math.min(decided.lastInputAt, now()) : undefined
     if (typeof told !== 'number' || !Number.isFinite(told) || (known !== null && known >= told)) return record
     return { ...record, lastTerminalActivityAt: told }
   }
@@ -409,7 +401,7 @@ export function createConversationLifecycle(deps: ConversationLifecycleDeps) {
       return { ok: false, code: 'invalid_arguments', message: 'A chat sleeps until a time that is still ahead.' }
     if (isSettledWorkspace(record))
       return { ok: false, code: 'settled', message: 'This chat is settled. Bring it back before snoozing it.' }
-    if (!asleep && atWork(workspaceId, decided))
+    if (!asleep && atWork(workspaceId))
       return {
         ok: false,
         code: 'working',

@@ -68,6 +68,7 @@ const EPOCH_FACTS = [
   'createdAt',
   'recencyAt',
   'lastUserMessageAt',
+  'activityAt',
   'lastTurnEndedAt',
   'lastVisitedAt',
   'visitRewoundAt',

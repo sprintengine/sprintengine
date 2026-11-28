@@ -25,7 +25,14 @@ import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER, type GateClient } from './client'
 import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
-import { agentTidyReadsBack, listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import {
+  agentTidyReadsBack,
+  listedAtItsAddress,
+  markReadsBack,
+  settleReadsBack,
+  staleSettleRefused,
+  type ListReach,
+} from './list'
 import { agentCreatesThere, desktopAgentReaching, type DesktopAgent } from './agent-by-address'
 import { linkTo, openedByLink } from './open'
 import { agentDiscoveredThere, discoveredThere } from './discover'
@@ -491,6 +498,7 @@ export async function runWslLeg(input: {
       const window: ListReach = { who: 'wsl', ask: async (work) => work(await windowStudio()) }
       await listedAtItsAddress([window], key.workspaceId)
       await markReadsBack(window, [window], key.workspaceId)
+      await staleSettleRefused(window, [window], key.workspaceId)
       await settleReadsBack(window, [window], key.workspaceId)
       // An agent on the desktop unstars and brings it back by its address: the machine's record moves.
       await byDesktopAgent((agent) => agentTidyReadsBack(agent, [window], key.workspaceId))

@@ -3,7 +3,7 @@ import { test } from 'vitest'
 
 import type { WorkspaceRegistryActor, WorkspaceRegistryRecord } from '../../shared/workspace-registry'
 import { applyWorkspaceFieldsPatch, type WorkspaceFieldsPatch } from '../../shared/workspace-sync'
-import { workspaceLifecycleSnapshot } from '../../shared/workspace-lifecycle'
+import { chatRestSeen, workspaceLifecycleSnapshot } from '../../shared/workspace-lifecycle'
 import { createConversationLifecycle } from './conversation-lifecycle'
 
 // Every decision about a chat's rest is main's, taken on the reading of the
@@ -13,7 +13,7 @@ import { createConversationLifecycle } from './conversation-lifecycle'
 const DAY = 24 * 60 * 60 * 1000
 const BORN = 1_000_000_000_000
 
-function fixture(record: Partial<WorkspaceRegistryRecord> = {}, options: { working?: boolean; busy?: boolean } = {}) {
+function fixture(record: Partial<WorkspaceRegistryRecord> = {}, options: { working?: boolean } = {}) {
   const stored = {
     id: 'ws-1',
     name: 'Fix the login',
@@ -33,7 +33,6 @@ function fixture(record: Partial<WorkspaceRegistryRecord> = {}, options: { worki
     },
     rewindVisit: () => assert.fail('nothing here moves the visit clock'),
     isWorking: () => options.working === true,
-    ...(options.busy !== undefined ? { isBusy: () => options.busy === true } : {}),
     now: () => clock,
   })
   return {
@@ -41,6 +40,7 @@ function fixture(record: Partial<WorkspaceRegistryRecord> = {}, options: { worki
     writes,
     lifecycle,
     snapshot: () => workspaceLifecycleSnapshot(stored),
+    seen: () => chatRestSeen(stored, clock),
     advance: (ms: number) => {
       clock += ms
     },
@@ -111,4 +111,30 @@ test('a wake while resting spends the kept snooze: activity, or a snooze woken b
   g.lifecycle.noteUserMessage('ws-1', g.now(), 'gateway')
   assert.equal(g.stored.settledAt, null, 'a message wakes the chat')
   assert.equal(g.stored.snoozedUntil ?? null, null, 'and the chat is back now, not asleep')
+})
+
+test('a settle or snooze sent with the row it was asked on is refused once the chat has moved on since', () => {
+  const f = fixture({ lastTurnEndedAt: BORN + DAY })
+  const seen = f.seen()
+  f.advance(1_000)
+  f.stored.lastUserMessageAt = f.now()
+  const settled = f.lifecycle.settle('ws-1', true, 'gateway', null, { seen })
+  assert.equal(settled.ok, false)
+  assert.equal(settled.ok ? null : settled.code, 'stale')
+  assert.equal(f.stored.settledAt ?? null, null, 'nothing written')
+  const snoozed = f.lifecycle.snooze('ws-1', f.now() + DAY, 'gateway', { seen })
+  assert.equal(snoozed.ok ? null : snoozed.code, 'stale')
+  // Asked again on the chat as it reads now, it goes through.
+  assert.equal(f.lifecycle.settle('ws-1', true, 'gateway', null, { seen: f.seen() }).ok, true)
+})
+
+test('a settle carries the asking window’s keystroke clock, never past this Studio’s own', () => {
+  const f = fixture()
+  const ahead = f.now() + DAY
+  assert.equal(f.lifecycle.settle('ws-1', true, 'gateway', null, { seen: f.seen(), lastInputAt: ahead }).ok, true)
+  assert.equal(f.stored.lastTerminalActivityAt, f.now(), 'clamped to now')
+  const g = fixture()
+  const typed = g.now() - 1_000
+  assert.equal(g.lifecycle.settle('ws-1', true, 'gateway', null, { lastInputAt: typed }).ok, true)
+  assert.equal(g.stored.lastTerminalActivityAt, typed)
 })

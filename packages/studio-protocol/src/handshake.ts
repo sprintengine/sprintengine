@@ -459,6 +459,20 @@ export const STUDIO_NEW_CHAT_FOLDER_CAPABILITY = 'new-chat-folder' as const
 export const STUDIO_NEW_CHAT_MODE_CAPABILITY = 'new-chat-mode' as const
 
 /**
+ * `conversation.settle` and `conversation.snooze` take `seen`: the chat's rest,
+ * sleep and activity clock as the asking row drew them (`StudioChatSeen`, which
+ * `workspaces.list` rows and `conversation.list` threads carry as `activityAt`
+ * beside their `settledAt` and `snoozedUntil`). The Studio refuses the change
+ * `conflict` when the chat has moved on since: someone else settled, woke or
+ * snoozed it, or something happened in it the person did not see. A settle may
+ * also carry `lastInputAt`, the person's last keystroke in the chat's
+ * terminals as the asking window knows it. Served with `chat-lifecycle`; a
+ * Studio before it does not list it, and a client sends neither to it, so the
+ * change is decided on the chat as it stands there.
+ */
+export const STUDIO_CHAT_REST_SEEN_CAPABILITY = 'chat-rest-seen' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -533,6 +547,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_NEW_CHAT_FOLDER_CAPABILITY,
   STUDIO_WEB_TAB_CAPABILITY,
   STUDIO_NEW_CHAT_MODE_CAPABILITY,
+  STUDIO_CHAT_REST_SEEN_CAPABILITY,
 ] as const
 
 /**

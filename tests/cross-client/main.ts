@@ -14,7 +14,7 @@ import { phoneClient, type PhoneProtocol } from './clients/phone'
 import { startCutter, type Cutter } from './cutter'
 import { approvalAfter, isReplyTo, isUserMessage, resolvedAfter, type Feed, type GateEvent } from './feed'
 import type { HostConfig, HostReady } from './host'
-import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { listedAtItsAddress, markReadsBack, settleReadsBack, staleSettleRefused, type ListReach } from './list'
 import { linkTo, openedByLink } from './open'
 import { Matrix } from './matrix'
 import { runSshLeg } from './ssh'
@@ -592,17 +592,27 @@ async function main(): Promise<number> {
 
     // list: a chat of its own, so its settle leaves the others' chat alone.
     // The window sees it at its address with its row's facts; the paired
-    // desktop stars it and the phone settles it, and every list says so.
+    // desktop stars it and the phone settles it, and every list says so. Each
+    // first asks a settle on a reading older than the chat, which is refused.
     const listed = await desktop.createChat!(project, 'gate-list-chat')
     const reaches: ListReach[] = [
       { who: 'desktop', ask: async (work) => work(await desktop.studio()) },
       { who: 'peer', ask: (work) => peer.device!.ask(work) },
       { who: 'phone', ask: (work) => phone.device!.ask(work) },
     ]
-    const [, byPeer, byPhone] = reaches as [ListReach, ListReach, ListReach]
-    await matrix.run('desktop', 'list', () => listedAtItsAddress(reaches, listed.workspaceId))
-    await matrix.run('peer', 'list', () => markReadsBack(byPeer, reaches, listed.workspaceId))
-    await matrix.run('phone', 'list', () => settleReadsBack(byPhone, reaches, listed.workspaceId))
+    const [byDesktop, byPeer, byPhone] = reaches as [ListReach, ListReach, ListReach]
+    await matrix.run('desktop', 'list', async () => {
+      await listedAtItsAddress(reaches, listed.workspaceId)
+      await staleSettleRefused(byDesktop, reaches, listed.workspaceId)
+    })
+    await matrix.run('peer', 'list', async () => {
+      await markReadsBack(byPeer, reaches, listed.workspaceId)
+      await staleSettleRefused(byPeer, reaches, listed.workspaceId)
+    })
+    await matrix.run('phone', 'list', async () => {
+      await staleSettleRefused(byPhone, reaches, listed.workspaceId)
+      await settleReadsBack(byPhone, reaches, listed.workspaceId)
+    })
 
     // open: each client is handed the link Copy link writes for the shared
     // chat, finds the Studio it reaches that the link names and opens it there.

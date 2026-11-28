@@ -1,5 +1,6 @@
 import type { HighlightColor, Workspace, WorkspaceHighlight } from './workspace'
 import type { WorkspaceFieldsPatch } from './workspace-sync'
+import type { StudioChatSeen } from '../../packages/studio-protocol/src/public'
 
 // A chat's rest and its ordering key, as pure functions of the registry
 // record. They began in the renderer, which was the only writer of rest; they
@@ -137,19 +138,36 @@ export function lifecycleSnapshotIsStale(workspace: LifecycleRecord, snapshot: W
   )
 }
 
-/** A snapshot from across a process boundary, or null when it is not one. */
-export function parseWorkspaceLifecycleSnapshot(value: unknown): WorkspaceLifecycleSnapshot | null {
-  if (typeof value !== 'object' || value === null) return null
-  const raw = value as Record<string, unknown>
-  const nullableStamp = (field: unknown) => field === null || stamp(field) !== null
-  if (!nullableStamp(raw.settledAt) || !nullableStamp(raw.snoozedUntil) || stamp(raw.activityAt) === null) return null
-  if (raw.settledOverride !== null && override(raw.settledOverride) === null) return null
+/**
+ * A chat's rest as its row draws it (`chat-rest-seen`): what `workspaces.list`
+ * and `conversation.list` say of it (a snooze only while still ahead and not
+ * under a settle), and its activity clock. A client sends back the reading
+ * its row was drawn from with a Settle or Snooze, and the chat's Studio
+ * refuses the change when the chat reads otherwise now.
+ */
+export function chatRestSeen(workspace: LifecycleRecord, now: number): StudioChatSeen {
+  const settledAt = isSettledWorkspace(workspace) ? Math.trunc(workspace.settledAt!) : null
+  const snooze = stamp(workspace.snoozedUntil)
   return {
-    settledAt: stamp(raw.settledAt),
-    settledOverride: override(raw.settledOverride),
-    snoozedUntil: stamp(raw.snoozedUntil),
-    activityAt: raw.activityAt as number,
+    settledAt,
+    snoozedUntil: snooze !== null && snooze > now && settledAt === null ? Math.trunc(snooze) : null,
+    activityAt: Math.trunc(workspaceLastActiveAt(workspace)),
   }
+}
+
+/**
+ * Whether the chat has moved on since a row drew it as `seen`: its rest or
+ * sleep reads otherwise, or something happened in it after. A reading AHEAD
+ * of the record is not stale: a window learns the person's keystrokes before
+ * its Studio does.
+ */
+export function chatRestSeenIsStale(workspace: LifecycleRecord, seen: StudioChatSeen, now: number): boolean {
+  const current = chatRestSeen(workspace, now)
+  return (
+    current.settledAt !== seen.settledAt ||
+    current.snoozedUntil !== seen.snoozedUntil ||
+    current.activityAt > seen.activityAt
+  )
 }
 
 /**

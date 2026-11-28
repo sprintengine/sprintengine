@@ -128,6 +128,7 @@ import {
   remoteWatchedPullRequest,
   type ChatListEntry,
   type PendingRemoteMarks,
+  remoteChatSeen,
   type RemoteChatMarks,
   type RemoteChatPending,
   type RemoteConversation,
@@ -1591,6 +1592,8 @@ function WorkspaceSidebar({
       void settleEnvironmentChat(
         { route: conversation.route, name: conversation.machineName },
         conversation.workspaceId,
+        true,
+        { seen: remoteChatSeen(conversation) },
       )
         .then((answer) => {
           if (!answer.ok) {
@@ -1691,11 +1694,14 @@ function WorkspaceSidebar({
           { autoSettle: !current.autoSettle },
         )
       } else if (action === 'wake') {
-        changeRemoteChat(target, { kind: 'snooze', until: null }, { snoozedUntil: null })
+        const seen = remoteChatSeen(current) ?? undefined
+        changeRemoteChat(target, { kind: 'snooze', until: null, seen }, { snoozedUntil: null })
       } else if (action.startsWith('snooze:')) {
         const presetId = action.slice('snooze:'.length)
         const preset = resolveSnoozePresets(Date.now()).find((candidate) => candidate.id === presetId)
-        if (preset) changeRemoteChat(target, { kind: 'snooze', until: preset.wakeAt }, { snoozedUntil: preset.wakeAt })
+        const seen = remoteChatSeen(current) ?? undefined
+        if (preset)
+          changeRemoteChat(target, { kind: 'snooze', until: preset.wakeAt, seen }, { snoozedUntil: preset.wakeAt })
       }
     },
     [changeRemoteChat],

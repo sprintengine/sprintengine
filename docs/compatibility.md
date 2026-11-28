@@ -245,6 +245,17 @@ title as its other reads are redacted); offered only by a desktop
 whose shell has the browser pane. A Studio before it does not list it, and a
 client shows no tabs for it.
 
+A Settle or Snooze from a chat's row carries the chat as the row drew it
+(capability `chat-rest-seen`, 2026-11-28): `conversation.settle` and
+`conversation.snooze` take `seen` (`settledAt`, `snoozedUntil`, and
+`activityAt`, which `workspaces.list` rows and `conversation.list` threads now
+list), and a settle may take `lastInputAt`, the asking window's last keystroke
+in the chat (never moved past the Studio's own clock). The chat's Studio
+refuses the change `conflict` when the chat reads otherwise now or has had
+activity since. It is additive: a Studio before it does not list the
+capability, and a client sends neither member to it, so the change is decided
+on the chat as it stands there, as before.
+
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is
 already parsing. Nothing a capability flag can describe should bump the version,

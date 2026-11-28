@@ -43,7 +43,7 @@ import {
   conversationSummaryPhase,
   conversationTurnInProgress,
 } from '../../shared/conversation/phase'
-import { isSettledWorkspace, workspaceLastUserMessageAt } from '../../shared/workspace-lifecycle'
+import { isSettledWorkspace, workspaceLastActiveAt, workspaceLastUserMessageAt } from '../../shared/workspace-lifecycle'
 import type {
   ConversationContextBreakdownResult,
   ConversationKey,
@@ -1664,7 +1664,13 @@ export function createConversationGatewayHost(
         .map((thread) => {
           const record = registry.lifecycleList ? recordOf(thread.workspaceId) : null
           const recencyAt = record ? workspaceLastUserMessageAt(record) : null
-          return epoch(recencyAt) ? { ...thread, recencyAt: Math.trunc(recencyAt) } : thread
+          // What a settle or snooze from this thread's row sends back as `seen` (`chat-rest-seen`).
+          const activityAt = record ? workspaceLastActiveAt(record) : null
+          return {
+            ...thread,
+            ...(epoch(recencyAt) ? { recencyAt: Math.trunc(recencyAt) } : {}),
+            ...(epoch(activityAt) ? { activityAt: Math.trunc(activityAt) } : {}),
+          }
         })
         .sort((a, b) =>
           registry.lifecycleList ? orderOf(b) - orderOf(a) || b.updatedAt - a.updatedAt : b.updatedAt - a.updatedAt,

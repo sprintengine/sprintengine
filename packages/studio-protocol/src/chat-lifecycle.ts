@@ -30,6 +30,45 @@ import { STUDIO_CHAT_LIFECYCLE_CAPABILITY } from './handshake.js'
 type Chat = { workspaceId: string }
 type Commanded = Chat & { commandId: string }
 
+/**
+ * A chat's rest as a row drew it when the person asked to change it
+ * (`chat-rest-seen`): when it was settled (null while in the list), when it
+ * wakes while it is snoozed (null when awake), and when anything last happened
+ * in it (`activityAt`: made, written to, a turn finished, its terminal typed
+ * into). A settle or snooze sent with it is refused `conflict` when the chat
+ * reads otherwise now, or has had activity since; one ahead of the Studio's
+ * own clock is not stale (the asking window may know a keystroke first).
+ */
+export type StudioChatSeen = { settledAt: number | null; snoozedUntil: number | null; activityAt: number }
+
+const SEEN =
+  '"seen" is the chat as its row was drawn: { settledAt, snoozedUntil } (epoch ms or null) and activityAt (epoch ms).'
+const LAST_INPUT_AT = '"lastInputAt" is the person\'s last keystroke in the chat, in epoch milliseconds.'
+
+const epochMs = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+
+/** `seen` and, on a settle, `lastInputAt`, each absent when not sent; refused when sent malformed. */
+export function studioChatSeenParams(
+  value: Record<string, unknown>,
+  withInput: boolean,
+): StudioParsed<{ seen?: StudioChatSeen; lastInputAt?: number }> {
+  const out: { seen?: StudioChatSeen; lastInputAt?: number } = {}
+  if (value.seen !== undefined) {
+    const seen = value.seen
+    if (typeof seen !== 'object' || seen === null) return refuse(SEEN)
+    const { settledAt, snoozedUntil, activityAt } = seen as Record<string, unknown>
+    if (!(settledAt === null || epochMs(settledAt))) return refuse(SEEN)
+    if (!(snoozedUntil === null || epochMs(snoozedUntil))) return refuse(SEEN)
+    if (!epochMs(activityAt)) return refuse(SEEN)
+    out.seen = { settledAt, snoozedUntil, activityAt }
+  }
+  if (withInput && value.lastInputAt !== undefined) {
+    if (!epochMs(value.lastInputAt)) return refuse(LAST_INPUT_AT)
+    out.lastInputAt = value.lastInputAt
+  }
+  return studioParams(out)
+}
+
 /** The longest name a chat takes: far more than any list shows. */
 export const STUDIO_CHAT_NAME_MAX_CHARS = 500
 /** A search is two characters at least, and no longer than a palette question. */
@@ -104,11 +143,11 @@ export type StudioChatLifecycleMethodMap = {
   }
   /**
    * Snooze the chat until `until` (epoch ms, still ahead), or wake it now
-   * with null. Refused `conflict` while an agent in it works, or for a
-   * settled chat.
+   * with null. Refused `conflict` while an agent in it works, for a settled
+   * chat, or for one that has moved on since `seen` (`chat-rest-seen`).
    */
   'conversation.snooze': {
-    params: Commanded & { until: number | null }
+    params: Commanded & { until: number | null; seen?: StudioChatSeen }
     result: { snoozedUntil: number | null }
     errors: 'not_found' | 'conflict'
   }
@@ -200,11 +239,14 @@ export const STUDIO_CHAT_LIFECYCLE_METHODS: StudioMethodTable<StudioChatLifecycl
   'conversation.markUnread': { ...operating, params: commanded },
   'conversation.snooze': {
     ...operating,
-    params: withMember((value) =>
-      value.until === null || (typeof value.until === 'number' && Number.isSafeInteger(value.until) && value.until > 0)
-        ? studioParams({ until: value.until as number | null })
-        : refuse('"until" is when it wakes, in epoch milliseconds, or null to wake it now.'),
-    ),
+    params: withMember((value) => {
+      if (
+        !(value.until === null || (typeof value.until === 'number' && Number.isSafeInteger(value.until) && value.until > 0))
+      )
+        return refuse('"until" is when it wakes, in epoch milliseconds, or null to wake it now.')
+      const seen = studioChatSeenParams(value, false)
+      return seen.ok ? studioParams({ until: value.until as number | null, ...seen.params }) : seen
+    }),
   },
   'conversation.highlight': {
     ...operating,

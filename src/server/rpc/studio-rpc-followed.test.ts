@@ -93,8 +93,10 @@ function fakeFollowed(calls: Calls): Required<StudioFollowedBackend> & { tell(ki
       calls.push(['listCommands', key.agentId, refresh])
       return { ok: true, answer: { cli: 'claude-code', commands: [], fetchedAt: 1 } }
     },
-    settle(workspaceId, settled, byOwner) {
-      calls.push(['settle', workspaceId, settled, byOwner])
+    settle(workspaceId, settled, byOwner, asked) {
+      calls.push(['settle', workspaceId, settled, byOwner, ...(asked && Object.keys(asked).length ? [asked] : [])])
+      if (asked?.seen && asked.seen.activityAt < 5_000)
+        return { ok: false, code: 'stale', message: 'This chat changed since that was decided. Look at it again.' }
       if (workspaceId === 'ws-busy')
         return { ok: false, code: 'working', message: 'An agent in this chat is working. Settle it once it stops.' }
       if (workspaceId === 'ws-gone') return { ok: false, code: 'unknown_workspace', message: 'No such chat.' }
@@ -448,6 +450,42 @@ test('settle says when an agent is working; visit is not audited and carries no 
   assert.deepEqual(resultOf(visited), { lastVisitedAt: 1_500 })
   assert.equal(started.audit.filter((entry) => entry.tool === 'conversation.visit').length, 0)
   assert.equal(started.audit.filter((entry) => entry.tool === 'conversation.settle').length, 3)
+})
+
+test('a settle carries the row it was asked on to the chat’s Studio, which refuses it conflict once stale', async () => {
+  const started = await serve()
+  const tablet = await client(
+    started.path,
+    pairFakeClient(started.auth, 'tablet', ['conversation:read', 'conversation:operate']),
+  )
+  const seen = { settledAt: null, snoozedUntil: null, activityAt: 4_000 }
+  const stale = await ask(tablet, 'conversation.settle', { workspaceId: KEY.workspaceId, commandId: 'g1', seen })
+  assert.equal(errorOf(stale), 'conflict')
+  assert.match(stale.t === 'res' && !stale.ok ? stale.error.message : '', /changed/u)
+  const fresh = { ...seen, activityAt: 6_000 }
+  const done = await ask(tablet, 'conversation.settle', {
+    workspaceId: KEY.workspaceId,
+    commandId: 'g2',
+    seen: fresh,
+    lastInputAt: 5_500,
+  })
+  assert.deepEqual(resultOf(done), { settledAt: 1_000 })
+  assert.deepEqual(started.calls.at(-1), ['settle', KEY.workspaceId, true, false, { seen: fresh, lastInputAt: 5_500 }])
+  // A reading in the wrong shape is refused before it reaches the chat.
+  const junk = await ask(tablet, 'conversation.settle', {
+    workspaceId: KEY.workspaceId,
+    commandId: 'g3',
+    seen: { settledAt: 'yesterday', snoozedUntil: null, activityAt: 1 },
+  })
+  assert.equal(errorOf(junk), 'invalid_params')
+  // An un-settle takes no keystroke clock.
+  await ask(tablet, 'conversation.settle', {
+    workspaceId: KEY.workspaceId,
+    commandId: 'g4',
+    settled: false,
+    lastInputAt: 1,
+  })
+  assert.deepEqual(started.calls.at(-1), ['settle', KEY.workspaceId, false, false])
 })
 
 test('the changes reads name a step and a file it lists; anything else is refused', async () => {

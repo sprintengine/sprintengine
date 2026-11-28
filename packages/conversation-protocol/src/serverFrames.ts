@@ -180,6 +180,14 @@ export type ConversationThread = Omit<ConversationWireThread, 'capabilities'> & 
    */
   recencyAt?: number
   /**
+   * When anything last happened in the chat on the desktop's record: made,
+   * written to, a turn finished, its terminal typed into. A client's Settle
+   * or Snooze from the row sends it back with the row's `snoozedUntil` as
+   * `seen` (Studio capability `chat-rest-seen`), and is refused when the chat
+   * has moved on since. Absent from a desktop built before it was listed.
+   */
+  activityAt?: number
+  /**
    * When the turn the chat is running now began, for a "working for" count
    * that does not restart when an approval resolves or the model changes, as
    * `updatedAt` does. Absent while no turn runs, and from a desktop built
@@ -971,6 +979,7 @@ function thread(value: unknown): ConversationListedThread | null {
     ...(chatTitle ? { chatTitle } : {}),
     ...(clock(value.lastUserMessageAt) ? { lastUserMessageAt: value.lastUserMessageAt } : {}),
     ...(clock(value.recencyAt) ? { recencyAt: value.recencyAt } : {}),
+    ...(clock(value.activityAt) ? { activityAt: value.activityAt } : {}),
     ...(clock(value.turnStartedAt) ? { turnStartedAt: value.turnStartedAt } : {}),
     ...(clock(value.workingSince) ? { workingSince: value.workingSince } : {}),
     ...(clock(value.lastTurnEndedAt) ? { lastTurnEndedAt: value.lastTurnEndedAt } : {}),
