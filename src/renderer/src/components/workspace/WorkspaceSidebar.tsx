@@ -109,12 +109,10 @@ import { useWorkspaceMachineRef } from '../../hooks/useMachineIdentity'
 import { distroOfHostId, isWslHostId } from '../../../../shared/execution-host'
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useRemoteSessions } from './remoteBand/useRemoteSessions'
-import { formatEnvironmentRoute } from '../../../../../packages/studio-protocol/src/environment'
 import type { WorkspaceMode } from '../../../../shared/workspace-mode'
 import { workspaceLastUserMessageAt } from '../../utils/workspaceRecency'
 import { useEnvironments } from '../../hooks/useEnvironments'
-import { publishRemoteChatLinkTargets } from './remoteBand/remoteChatLinks'
-import { publishRemoteSearchMachines } from './remoteBand/remoteChatSearch'
+import { environmentIdOfRoute } from './remoteBand/environmentChatsNow'
 import {
   chatRecordsByAddress,
   environmentChatRows,
@@ -1437,14 +1435,10 @@ function WorkspaceSidebar({
   // The records here of other environments' chats, by address: what opening a
   // row focuses. A route's environment id is the one its rows are keyed by:
   // its own Studio's, else the list's.
-  const idOfRoute = useMemo(() => {
-    const ids = new Map<string, string>()
-    for (const entry of environments)
-      if (entry.environmentId)
-        for (const route of entry.routes) ids.set(formatEnvironmentRoute(route), entry.environmentId)
-    for (const source of environmentSources) if (source.environmentId) ids.set(source.route, source.environmentId)
-    return (route: string) => ids.get(route) ?? null
-  }, [environments, environmentSources])
+  const idOfRoute = useMemo(
+    () => environmentIdOfRoute(environments, environmentSources),
+    [environments, environmentSources],
+  )
   const chatRecords = useMemo(() => chatRecordsByAddress(workspaces, idOfRoute), [workspaces, idOfRoute])
   const environmentRows = useMemo(
     () =>
@@ -1461,8 +1455,6 @@ function WorkspaceSidebar({
       ),
     [environmentSources, environments, chatRecords, moduleOverrides, remoteLink, pendingRemoteMarks],
   )
-  // What a link to one of their chats opens (`remoteChatLinks.ts`).
-  useEffect(() => publishRemoteChatLinkTargets(environmentRows), [environmentRows])
   const readAtOfRoute = useCallback(
     (route: string) => environmentSources.find((source) => source.route === route)?.entry.at ?? null,
     [environmentSources],
@@ -1510,22 +1502,6 @@ function WorkspaceSidebar({
         .catch(() => {})
     },
     [refreshRemoteScheduled],
-  )
-  // …and which of them the palette may search, off the tailnet none
-  // (`remoteChatSearch.ts`). A search is a read, so a pairing that may only
-  // follow their chats may search them too.
-  useEffect(
-    () =>
-      publishRemoteSearchMachines(
-        remoteLink === 'down'
-          ? []
-          : environmentSources.flatMap((source) =>
-              source.connectionId && source.entry.manage?.search === true
-                ? [{ connectionId: source.connectionId, machineName: source.machineName }]
-                : [],
-            ),
-      ),
-    [environmentSources, remoteLink],
   )
   useEffect(() => {
     if (pendingRemoteMarks.size === 0) return

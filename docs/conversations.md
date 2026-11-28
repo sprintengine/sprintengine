@@ -1049,11 +1049,12 @@ chat's workspace, every change under a command id and answered once:
   each hit an `agentId`, the `seq` of its message, a `snippet` and who said it
   (`from`), at most 50 chats and 20 hits each, and `truncated` once it stopped
   early, at that limit or after eight seconds. A query is 2 to 200
-  characters. It is a read, on `conversation:read`. A paired desktop's palette
-  asks each machine that serves it beside its own search, lists one row per
-  chat with the machine's name, and opens a row as the chat's sidebar row
-  opens it, landing on the matching message as a match in one of its own
-  chats does.
+  characters. It is a read, on `conversation:read`. A desktop's palette asks
+  every environment this way, its own Studio first, then each paired desktop,
+  SSH machine and WSL distribution it follows that serves it and is connected
+  now. It lists one row per chat, another environment's with its name, and
+  opens a row as the chat's sidebar row opens it, landing on the matching
+  message.
 - **`conversation.approvalRules`** `{}` and
   **`conversation.revokeApprovalRule`** `{ commandId, ruleId }`
   (`approval-rules`) are the "always allow" rules the desktop's chats run

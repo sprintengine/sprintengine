@@ -4465,6 +4465,7 @@ export const en = {
     },
     // src/renderer/src/studio/environmentChatRecords.ts
     pairedChats: {
+      thisComputer: 'This computer',
       canTFromHereYet: (machineName: unknown, doing: unknown) =>
         `${machineName} can’t ${doing} from here yet. Update Studio there.`,
       canTListItsChats: (machineName: unknown) => `${machineName} can’t list its chats here yet. Update Studio there.`,

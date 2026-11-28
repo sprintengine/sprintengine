@@ -1,132 +1,110 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import type { ConversationSearchHit } from '../../../../shared/conversation-index'
-import { createConversationHistoryProvider, type SearchableChat } from './conversationHistoryProvider'
-import { openConversationMatch } from '../../utils/conversationHistoryNavigation'
-import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
-vi.mock('../../utils/conversationHistoryNavigation', () => ({ openConversationMatch: vi.fn(async () => true) }))
-afterEach(() => {
-  vi.unstubAllGlobals()
-  vi.clearAllMocks()
+import type { MeshConversationSearchResult } from '../../../../shared/tailnet-mesh'
+import { createConversationHistoryProvider, type ChatSearchPlace } from './conversationHistoryProvider'
+
+// One provider finds what was said in every environment's chats: each is
+// asked once, through its own Studio, and its chats are one row each.
+
+afterEach(() => vi.clearAllMocks())
+
+const context = { workspaceRoot: null, workspaceId: null, scope: 'conversations' as const, close: vi.fn() }
+
+const answer = (...chats: Array<[string, string, number]>): MeshConversationSearchResult => ({
+  ok: true,
+  truncated: false,
+  chats: chats.map(([workspaceId, chatTitle, count]) => ({
+    workspaceId,
+    chatTitle,
+    count,
+    hits: [
+      { agentId: 'agent-1', seq: 9, snippet: `agent said in ${chatTitle}`, from: 'agent' as const },
+      { agentId: 'agent-1', seq: 4, snippet: `you said in ${chatTitle}`, from: 'person' as const },
+    ],
+  })),
 })
 
-const chat = (id: string, root = '/Users/dev/app'): SearchableChat => ({
-  workspaceId: id,
-  workspaceRoot: root,
-  name: `Chat ${id}`,
-  mode: 'standard' as SearchableChat['mode'],
-})
-const context = { workspaceRoot: '/Users/dev/app', workspaceId: 'one', scope: 'conversations' as const, close: vi.fn() }
-const hit = (seq: number, snippet: string, from: ConversationSearchHit['from'] = 'agent'): ConversationSearchHit => ({
-  agentId: 'agent',
-  seq,
-  snippet,
-  from,
-})
+function place(badge: string | null, search: ChatSearchPlace['search'], opened: string[] = []): ChatSearchPlace {
+  return {
+    badge,
+    search,
+    rowOf: (chat) =>
+      chat.workspaceId === 'hidden'
+        ? null
+        : {
+            id: `switch-${badge ?? 'here'}:${chat.workspaceId}`,
+            mark: { kind: 'chat', workspaceId: chat.workspaceId, mode: 'standard' },
+            open: (match) => void opened.push(`${badge ?? 'here'}:${chat.workspaceId}@${match.agentId}/${match.seq}`),
+          },
+  }
+}
 
-test('every chat the sidebar lists is searched, and a chat is one row however many of its messages match', async () => {
-  const search = vi.fn(async ({ workspaceId }: { workspaceId: string; workspaceRoot: string }) => ({
-    ok: true as const,
-    hits:
-      workspaceId === 'one'
-        ? [hit(3, 'the wave model'), hit(9, 'is the wave model right?', 'person'), hit(12, 'wave again')]
-        : workspaceId === 'two'
-          ? [hit(5, 'a wave forecast')]
-          : [],
-  }))
-  vi.stubGlobal('window', { api: { conversationSearch: search, conversationCancelSearch: vi.fn(async () => {}) } })
-  installStudioLoopback(globalThis.window as never)
-  const rows = await createConversationHistoryProvider({
-    getChats: () => [chat('one'), chat('two', '/Users/dev/other'), chat('three')],
-  }).load('wave', context)
-
-  expect(search.mock.calls.map(([input]) => [input.workspaceId, input.workspaceRoot])).toEqual([
-    ['one', '/Users/dev/app'],
-    ['two', '/Users/dev/other'],
-    ['three', '/Users/dev/app'],
+test('two environments answer and one fails: the answers are rows, and the failure costs only its own', async () => {
+  const opened: string[] = []
+  const asked: string[] = []
+  const places = [
+    place(
+      null,
+      async (query) => (asked.push(`here ${query}`), answer(['ws1', 'Parser', 3], ['hidden', 'Kept off', 1])),
+      opened,
+    ),
+    place(
+      'mac-mini',
+      async (query) => (
+        asked.push(`mini ${query}`),
+        { ok: false, code: 'unavailable', message: 'mac-mini is not connected.' }
+      ),
+    ),
+    place('build-box', async (query) => (asked.push(`box ${query}`), answer(['rw1', 'Lexer', 5])), opened),
+  ]
+  const provider = createConversationHistoryProvider({ getPlaces: () => places })
+  const published: number[] = []
+  const rows = await provider.load('parser', context, (next) => void published.push(next.length))
+  expect(asked).toEqual(['here parser', 'mini parser', 'box parser'])
+  // Each environment's rows are published as it answers.
+  expect(published).toEqual([1, 2])
+  expect(rows.map((row) => [row.id, row.label, row.badge])).toEqual([
+    ['switch-here:ws1', 'Parser', undefined],
+    ['switch-build-box:rw1', 'Lexer', 'build-box'],
   ])
-  expect(rows.map((row) => row.id)).toEqual(['switch-one', 'switch-two'])
-  // The person's own words outrank the agent's, then the newest.
-  expect(rows[0].conversationMatch).toEqual({ snippet: 'is the wave model right?', from: 'person', count: 3 })
-  expect(rows[0].mark).toEqual({ kind: 'chat', workspaceId: 'one', mode: 'standard' })
-
-  rows[0].run()
-  expect(context.close).toHaveBeenCalledOnce()
-  expect(openConversationMatch).toHaveBeenCalledWith({
-    workspaceRoot: '/Users/dev/app',
-    workspaceId: 'one',
-    agentId: 'agent',
-    seq: 9,
-  })
+  expect(rows[1]).toMatchObject({ conversationMatch: { snippet: 'you said in Lexer', from: 'person', count: 5 } })
+  rows[1]!.run()
+  expect(context.close).toHaveBeenCalled()
+  expect(opened).toEqual(['build-box:rw1@agent-1/4'])
 })
 
-test('a chat whose history cannot be read costs its own matches, not the others', async () => {
-  vi.stubGlobal('window', {
-    api: {
-      conversationSearch: async ({ workspaceId }: { workspaceId: string }) =>
-        workspaceId === 'broken'
-          ? { ok: false as const, message: 'Conversation storage must be a real directory.' }
-          : { ok: true as const, hits: [hit(1, 'wave')] },
-      conversationCancelSearch: vi.fn(async () => {}),
-    },
-  })
-  installStudioLoopback(globalThis.window as never)
-  const rows = await createConversationHistoryProvider({ getChats: () => [chat('broken'), chat('fine')] }).load(
-    'wave',
-    context,
-  )
-  expect(rows.map((row) => row.id)).toEqual(['switch-fine'])
-
-  // Every chat failing is a failure, not "no matches".
-  await expect(
-    createConversationHistoryProvider({ getChats: () => [chat('broken')] }).load('wave', context),
-  ).rejects.toThrow('real directory')
-})
-
-test('superseding a search cancels the chat in flight and searches no further', async () => {
-  let resolve!: (value: unknown) => void
-  let signal: AbortSignal | undefined
-  const search = vi.fn(
-    (_input: unknown, options?: { signal?: AbortSignal }) =>
-      new Promise((done) => {
-        signal = options?.signal
-        resolve = done
+test('no environment able to answer is said as the palette says a failed search', async () => {
+  const provider = createConversationHistoryProvider({
+    getPlaces: () => [
+      place(null, async () => {
+        throw new Error('The Studio is not answering.')
       }),
-  )
-  vi.stubGlobal('window', { api: { conversationSearch: search } })
-  installStudioLoopback(globalThis.window as never)
-  const provider = createConversationHistoryProvider({ getChats: () => [chat('one'), chat('two')] })
-  const pending = provider.load('wave', context)
-  await vi.waitFor(() => expect(resolve).toBeDefined())
-  provider.cancel?.()
-  // The Studio calls off the search it is running for this window.
-  await vi.waitFor(() => expect(signal?.aborted).toBe(true))
-  resolve({ ok: true, hits: [hit(1, 'wave')] })
-  expect(await pending).toEqual([])
-  expect(search).toHaveBeenCalledOnce()
+      place('mac-mini', async () => ({ ok: false, code: 'unavailable', message: 'mac-mini is not connected.' })),
+    ],
+  })
+  await expect(provider.load('parser', context, undefined)).rejects.toThrow('The Studio is not answering.')
+  const none = createConversationHistoryProvider({ getPlaces: () => [] })
+  expect(await none.load('parser', context, undefined)).toEqual([])
 })
 
-test('each chat’s rows are published as that chat is answered, before the next is read', async () => {
-  const publish = vi.fn()
-  const search = vi.fn(async ({ workspaceId }: { workspaceId: string }) => {
-    // The first chat's row is up while the second is read.
-    if (workspaceId === 'two') expect(publish).toHaveBeenCalledTimes(1)
-    return { ok: true as const, hits: [hit(2, `${workspaceId} wave`)] }
+test('a superseded search asks no further environment and returns nothing', async () => {
+  let release: () => void = () => {}
+  const second = vi.fn(async () => answer(['rw1', 'Lexer', 1]))
+  const provider = createConversationHistoryProvider({
+    getPlaces: () => [
+      place(null, () => new Promise((done) => (release = () => done(answer(['ws1', 'Parser', 1]))))),
+      place('build-box', second),
+    ],
   })
-  vi.stubGlobal('window', { api: { conversationSearch: search } })
-  installStudioLoopback(globalThis.window as never)
-  const rows = await createConversationHistoryProvider({ getChats: () => [chat('one'), chat('two')] }).load(
-    'wave',
-    context,
-    publish,
-  )
-  expect(rows).toHaveLength(2)
-  expect(publish).toHaveBeenCalledTimes(2)
+  const first = provider.load('parser', context, undefined)
+  provider.cancel?.()
+  release()
+  expect(await first).toEqual([])
+  expect(second).not.toHaveBeenCalled()
 })
 
 test('it waits for a second character and for a pause in typing', () => {
-  const provider = createConversationHistoryProvider({ getChats: () => [] })
+  const provider = createConversationHistoryProvider({ getPlaces: () => [] })
   expect(provider.minQueryLength).toBe(2)
-  expect(provider.respondsToEmptyQuery).toBeFalsy()
   expect(provider.debounceMs).toBeGreaterThan(0)
 })

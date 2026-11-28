@@ -151,10 +151,9 @@ import { confirmNewChatWith, type NewChatExtension } from './manager/newChatConf
 import { obtainNewChatWorktree, prepareNewChatWorktree, takeReadyNewChatWorktree } from '../../utils/newChatWorktree'
 import type { AgentState } from '../../../../shared/agent-state'
 import { openChatLink } from './manager/chatLinkOpener'
-import { remoteChatLinkTargets, remoteChatOnConnection } from './remoteBand/remoteChatLinks'
+import { chatsAtAddress, environmentChatsNow } from './remoteBand/environmentChatsNow'
 import { environmentIdsOf, environmentRouteOfMeshConnection } from '../../../../shared/environment-keys'
 import { currentEnvironments } from '../../hooks/useEnvironments'
-import { registerRemoteChatOpener } from './remoteBand/remoteChatSearch'
 import { setAppCommandRunner } from '../../commands/appCommandRunner'
 import { runCommandForWorker, runReplaceable } from '../../modules/extension-replacements'
 import {
@@ -5150,8 +5149,10 @@ export default function WorkspaceManager() {
                 ids?.ofRoute(environmentRouteOfMeshConnection(workspace.remoteOrigin.connectionId)) ===
                   address.environmentId,
             )?.id ?? null,
+          // Another environment's chat, as its row in the environments' rows
+          // opens it (`environmentChatsNow.ts`).
           remoteChats: (wanted) =>
-            remoteChatLinkTargets(wanted).map((target) => ({
+            chatsAtAddress(environmentChatsNow(state.workspaces), wanted).map((target) => ({
               environmentId: target.environmentId,
               machineName: target.machineName,
               open: () => void openRemoteSession(target.spec),
@@ -5176,27 +5177,6 @@ export default function WorkspaceManager() {
       unsubscribe?.()
     }
   }, [workspaceWindowId, moveWorkspaceToWindow, sidebarSelectWorkspace, openRemoteSession])
-  // A match the palette found in a paired machine's chat opens it here as
-  // its sidebar row opens it, on the agent the match is in
-  // (`remoteChatSearch.ts`).
-  useEffect(
-    () =>
-      registerRemoteChatOpener((target) => {
-        const spec = remoteChatOnConnection(target.connectionId, target.workspaceId)
-        if (!spec) return null
-        if (spec.attachedWorkspaceId || !spec.agent || spec.agent.agentId === target.agentId)
-          return openRemoteSession(spec)
-        return openRemoteSession({
-          ...spec,
-          agent: {
-            ...spec.agent,
-            agentId: target.agentId,
-            sessionId: meshConversationSessionId(target.workspaceId, target.agentId),
-          },
-        })
-      }),
-    [openRemoteSession],
-  )
   const sidebarMoveToNewWindow = useStableCallback(
     (id: WorkspaceId, placement: Parameters<typeof moveWorkspaceToNewWindow>[1]) =>
       void moveWorkspaceToNewWindow(id, placement),
@@ -5882,6 +5862,7 @@ export default function WorkspaceManager() {
             }}
             onRunCommand={runPersonCommand}
             onOpenRemoteConnections={() => openSettings(false, 'remote')}
+            onOpenEnvironmentChat={sidebarOpenRemoteSession}
             workspaceWindowId={workspaceWindowId}
             workspaces={visibleWorkspaces}
             activeWorkspaceId={windowActiveWorkspaceId}

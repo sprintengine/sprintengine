@@ -1,125 +1,100 @@
-import type { ConversationSearchHit } from '../../../../shared/conversation-index'
-import type { Workspace } from '../../../../shared/workspace'
-import { workspaceSwitchRowId } from '../commandPaletteSearch'
-import { openConversationMatch } from '../../utils/conversationHistoryNavigation'
+import type { MeshConversationSearchResult } from '../../../../shared/tailnet-mesh'
 import { bestConversationHit } from './conversationSnippet'
-import { windowChatServices } from '../panels/agentChat/windowChat'
-import type { PaletteCommand, PaletteResultProvider } from './paletteProvider'
+import type { PaletteCommand, PaletteResultProvider, PaletteRowMark } from './paletteProvider'
 
-/** A chat whose transcripts the palette searches: the sidebar's row, by the store it is kept in. */
-export type SearchableChat = {
-  workspaceId: string
-  workspaceRoot: string
-  name: string
-  mode: Workspace['mode']
+export const CONVERSATION_SEARCH_MIN_QUERY = 2
+const CONVERSATION_SEARCH_DEBOUNCE_MS = 250
+
+/** A matching message, as an environment's search answers it. */
+export type ConversationSearchMatch = { agentId: string; seq: number }
+
+/** A chat an environment's search found, as the palette draws and opens it. */
+export type ChatSearchRow = {
+  /** Its switch row's id, so a match folds into the chat's own row when that matched too. */
+  id: string
+  mark: PaletteRowMark
+  /** Open the chat at the matching message. */
+  open: (match: ConversationSearchMatch) => void
 }
 
-// Every row is one chat, however many of its messages matched, so the list
-// stops well before it is the sidebar again.
-export const CONVERSATION_MATCH_CHAT_LIMIT = 50
-// A single letter matches nearly every message ever written, and each search
-// reads every transcript the sidebar lists. The titles still answer from the
-// first letter; what was said waits for a second.
-export const CONVERSATION_SEARCH_MIN_QUERY = 2
-const CONVERSATION_SEARCH_DEBOUNCE_MS = 200
+/**
+ * One environment whose chats the palette searches: this computer's own, a
+ * paired desktop's, an SSH machine's or a WSL distribution's. Each answers
+ * its own `conversation.searchChats`.
+ */
+export type ChatSearchPlace = {
+  /** What a row of another environment wears beside its title; null for this computer's. */
+  badge: string | null
+  search: (query: string) => Promise<MeshConversationSearchResult>
+  /** How one of its chats is drawn and opened; null for a chat the palette does not list (a hidden one). */
+  rowOf: (chat: { workspaceId: string; chatTitle: string }) => ChatSearchRow | null
+}
 
 /**
- * What was said in the chats the sidebar lists, one row per chat.
+ * What was said in every environment's chats, one row per chat
+ * (design-environments PR 3).
  *
- * It used to search the open chat's own transcripts and list every matching
- * message as a row of its own: the chat you were in, four times over, under
- * its first message's title, while the chat you were looking for — in another
- * project — was never read. A chat is one row now, wearing the message that
- * matched (the person's own words first, then the newest) and how many others
- * did; the palette folds it into the chat's switch row when that matched too.
- *
- * The chats are searched one at a time, most recently spoken in first, each
- * answered whole, so the likely answer is on screen while the rest are read,
- * and a superseded run stops at the chat it is in.
+ * Each environment is asked once for the question, through its own Studio,
+ * as its own palette would ask it: this computer first, then the others in
+ * the order the window follows them. Its chats are rows as soon as it
+ * answers, each wearing the message that matched (the person's own words
+ * first, then the newest) and how many others did. An environment that cannot
+ * answer costs its own rows, not the others'; when none answers, the palette
+ * says why.
  */
 export function createConversationHistoryProvider(options: {
-  getChats: () => readonly SearchableChat[]
+  getPlaces: () => readonly ChatSearchPlace[]
 }): PaletteResultProvider {
-  let requestId: string | null = null
   let generation = 0
-  const cancel = (): void => {
-    generation++
-    if (requestId)
-      void windowChatServices()
-        .history.cancelSearch(requestId)
-        .catch(() => undefined)
-    requestId = null
-  }
   return {
     id: 'conversation-history',
     group: 'agents',
     debounceMs: CONVERSATION_SEARCH_DEBOUNCE_MS,
     minQueryLength: CONVERSATION_SEARCH_MIN_QUERY,
-    cancel,
+    cancel: () => {
+      generation++
+    },
     async load(query, context, publish) {
-      cancel()
-      const epoch = generation
-      const found = new Map<string, { chat: SearchableChat; hits: ConversationSearchHit[] }>()
-      const rows = (): PaletteCommand[] =>
-        [...found.values()].flatMap(({ chat, hits }) => {
-          const best = bestConversationHit(hits)
-          if (!best) return []
-          return [
-            {
-              // The chat's own row id: the palette folds this into the switch
-              // row when both are up, and a row that keeps its id as matches
-              // stream in keeps the highlight on it.
-              id: workspaceSwitchRowId(chat.workspaceId),
-              label: chat.name,
-              keywords: best.snippet,
-              group: 'agents',
-              mark: { kind: 'chat', workspaceId: chat.workspaceId, mode: chat.mode },
-              conversationMatch: { snippet: best.snippet, from: best.from, count: hits.length },
-              run: () => {
-                context.close()
-                void openConversationMatch({
-                  workspaceRoot: chat.workspaceRoot,
-                  workspaceId: chat.workspaceId,
-                  agentId: best.agentId,
-                  seq: best.seq,
-                })
-              },
-            },
-          ]
-        })
+      const epoch = ++generation
+      const rows: PaletteCommand[] = []
       let failure: string | null = null
       let answered = false
-      try {
-        for (const chat of options.getChats()) {
-          if (found.size >= CONVERSATION_MATCH_CHAT_LIMIT) break
-          const id = crypto.randomUUID()
-          requestId = id
-          const search = await windowChatServices()
-            .history.search({
-              workspaceRoot: chat.workspaceRoot,
-              workspaceId: chat.workspaceId,
-              query,
-              requestId: id,
-            })
-            .catch((error: unknown) => ({ ok: false as const, message: String(error) }))
-          if (epoch !== generation) return []
-          // One chat whose history cannot be read costs its own matches, not
-          // every other chat's.
-          if (!search.ok) {
-            failure ??= search.message
-            found.delete(chat.workspaceId)
-            continue
-          }
-          answered = true
-          if (search.hits.length > 0) found.set(chat.workspaceId, { chat, hits: search.hits })
-          else found.delete(chat.workspaceId)
-          publish?.(rows())
+      for (const place of options.getPlaces()) {
+        const found = await place
+          .search(query)
+          .catch((error: unknown): MeshConversationSearchResult => ({
+            ok: false,
+            code: 'failed',
+            message: String(error),
+          }))
+        if (epoch !== generation) return []
+        if (!found.ok) {
+          failure ??= found.message
+          continue
         }
-        if (!answered && failure) throw new Error(failure)
-        return rows()
-      } finally {
-        if (epoch === generation) requestId = null
+        answered = true
+        for (const chat of found.chats) {
+          const best = bestConversationHit(chat.hits)
+          const row = best ? place.rowOf(chat) : null
+          if (!best || !row) continue
+          rows.push({
+            id: row.id,
+            label: chat.chatTitle,
+            keywords: best.snippet,
+            group: 'agents',
+            mark: row.mark,
+            ...(place.badge ? { badge: place.badge } : {}),
+            conversationMatch: { snippet: best.snippet, ...(best.from ? { from: best.from } : {}), count: chat.count },
+            run: () => {
+              context.close()
+              row.open({ agentId: best.agentId, seq: best.seq })
+            },
+          })
+        }
+        publish?.([...rows])
       }
+      if (!answered && failure) throw new Error(failure)
+      return rows
     },
   }
 }
