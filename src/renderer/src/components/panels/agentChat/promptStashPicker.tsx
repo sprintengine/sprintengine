@@ -307,11 +307,12 @@ function PromptStashList({
           )
         })}
       </ScrollArea>
-      <div className="px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
-        {copy.panels.agentChat.promptStashPicker.chooseEnterRestore}
-        {renderKeybinding('Primary+Backspace', platform)}
-        {copy.panels.agentChat.promptStashPicker.deleteEscClose}
-      </div>
+      {/* The one key with no button: arrows, Enter and Esc are a list's own. */}
+      {entries.length ? (
+        <div className="px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
+          {copy.panels.agentChat.promptStashPicker.pressToDelete(renderKeybinding('Primary+Backspace', platform))}
+        </div>
+      ) : null}
     </div>
   )
 }

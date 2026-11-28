@@ -211,19 +211,15 @@ export function NewProjectStep({
           spellCheck={false}
           autoComplete="off"
           aria-invalid={nameProblem ? true : undefined}
-          aria-describedby={`${fieldId}-name-note`}
+          aria-describedby={nameProblem ? `${fieldId}-name-note` : undefined}
           disabled={creating}
           className="font-mono"
         />
-        <p id={`${fieldId}-name-note`} className="px-0.5 text-micro leading-4">
-          {nameProblem ? (
-            <span className="text-[color:var(--tone-error)]">{nameProblem}</span>
-          ) : (
-            <span className="text-[color:var(--text-subtle)]">
-              {copy.workspace.newWorkspace.newProjectStep.aLocalFolderWithA}
-            </span>
-          )}
-        </p>
+        {nameProblem ? (
+          <p id={`${fieldId}-name-note`} className="px-0.5 text-micro leading-4 text-[color:var(--tone-error)]">
+            {nameProblem}
+          </p>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2">

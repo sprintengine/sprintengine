@@ -183,9 +183,9 @@ test('source-updates', async () => {
     assert.equal(describeCheckAge(MINUTE), '1 minute ago')
     assert.equal(describeCheckAge(2 * HOUR), '2 hours ago')
     assert.equal(describeCheckAge(50 * HOUR), '2 days ago')
-    assert.match(sourceUpdateCadenceLine(false), /once a day/)
-    assert.match(sourceUpdateCadenceLine(false), /GitHub token/)
-    assert.match(sourceUpdateCadenceLine(true), /once an hour/)
+    assert.match(sourceUpdateCadenceLine(false) ?? '', /once a day/)
+    assert.match(sourceUpdateCadenceLine(false) ?? '', /GitHub token/)
+    assert.equal(sourceUpdateCadenceLine(true), null)
 
     await overGit()
 
@@ -269,13 +269,7 @@ test('source-updates', async () => {
       'Checked 2 hours ago; without a GitHub token the studio checks each source once a day.',
       'the API fallback keeps every word it had',
     )
-    assert.match(sourceUpdateCadenceLine(false, 'git'), /once an hour/)
-    assert.match(sourceUpdateCadenceLine(false, 'git'), /git ls-remote/)
-    assert.match(
-      sourceUpdateCadenceLine(false, 'git'),
-      /not what decides the cadence/,
-      'it names the token only to say it decides nothing here',
-    )
+    assert.equal(sourceUpdateCadenceLine(false, 'git'), null, 'over git the token decides nothing, so nothing is said')
   }
 
   const suiteRun = main().catch((error) => {

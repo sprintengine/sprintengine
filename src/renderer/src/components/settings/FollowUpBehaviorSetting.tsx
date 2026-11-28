@@ -21,7 +21,7 @@ export function FollowUpBehaviorSetting() {
   return (
     <SettingRow
       label={copy.settings.followUpBehaviorSetting.whenISendWhileAn}
-      help={`Queue sends the message when the agent's turn ends. Steer hands it to the agent while it works, where its CLI can take one; any other chat queues it. ${chord} does the other for one message.`}
+      help={copy.settings.followUpBehaviorSetting.queueSendsYourMessage(chord)}
     >
       <SegmentedControl<FollowUpBehavior>
         ariaLabel={copy.settings.followUpBehaviorSetting.whenISendWhileAn}

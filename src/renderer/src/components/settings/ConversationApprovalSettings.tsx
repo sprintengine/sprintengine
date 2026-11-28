@@ -43,9 +43,6 @@ export function ConversationApprovalSettings() {
       <SettingsSectionTitle id="conversation-permissions-title" count={rules?.length}>
         {copy.settings.conversationApprovalSettings.rememberedChatPermissions}
       </SettingsSectionTitle>
-      <p className="text-body text-[color:var(--sem-color-text-muted)]">
-        {copy.settings.conversationApprovalSettings.eachGrantCoversOneTool}
-      </p>
       {error ? (
         <InlineNotice
           tone="error"

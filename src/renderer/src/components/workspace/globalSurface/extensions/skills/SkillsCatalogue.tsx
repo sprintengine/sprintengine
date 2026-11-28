@@ -442,14 +442,7 @@ export function SkillsCatalogue({
   const head = crossSearch ? (
     <CatalogueHead name="All sources" stateLine={crossSourceStateLine(crossSearch)} />
   ) : tabId === INSTALLED_TAB_ID ? (
-    <CatalogueHead
-      name="Installed"
-      stateLine={
-        workspaceRoot
-          ? 'The skills installed for every project and in this one, grouped by where they came from.'
-          : 'The skills installed for every project, grouped by where they came from.'
-      }
-    />
+    <CatalogueHead name="Installed" />
   ) : activeSource ? (
     <CatalogueHead
       monogram={<SourceAvatar source={activeSource} monogram={catalogueMonogram(activeSource)} />}

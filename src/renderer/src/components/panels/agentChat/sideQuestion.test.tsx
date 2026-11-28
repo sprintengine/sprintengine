@@ -141,8 +141,8 @@ test('closing the drawer calls off the question still out and lets the aside go'
   await frames()
   expect(current!.entries).toEqual([])
   expect(drawerText()).not.toContain('Because.')
-  expect(drawerText()).toContain('stay out of the agent’s conversation')
-  expect(drawerText()).toContain('the chat keeps them')
+  expect(drawerText()).toContain('stays out of its conversation')
+  expect(drawerText()).not.toContain('does not keep side questions')
 })
 
 test('a machine that keeps no side questions is said to, in the empty drawer', async () => {
@@ -150,8 +150,8 @@ test('a machine that keeps no side questions is said to, in the empty drawer', a
   await mount(<Harness api={f.api} kept={false} />)
   await act(async () => current!.show())
   await frames()
-  expect(drawerText()).toContain('does not keep side questions yet')
-  expect(drawerText()).not.toContain('the chat keeps them')
+  expect(drawerText()).toContain('does not keep side questions')
+  expect(drawerText()).not.toContain('stays out of its conversation')
 })
 
 test('a kept side question opens again as it was answered, and a follow-up leans on it', async () => {

@@ -38,7 +38,7 @@ export function BrowserTabAutoCloseSetting() {
     label: choice === null ? words.never : words.afterHours(choice),
   }))
   return (
-    <SettingsRow label={words.closeUnusedTabs} help={words.closeUnusedTabsHelp}>
+    <SettingsRow label={words.closeUnusedTabs}>
       <Select
         ariaLabel={words.closeUnusedTabsAfter}
         items={items}

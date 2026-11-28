@@ -158,8 +158,7 @@ function useMeshToastBridge(): void {
       if (event.kind === 'machine-paired') {
         showToast({
           tone: 'good',
-          title: copy.workspace.toastHost.machinePaired,
-          description: copy.workspace.toastHost.isInYourMesh(event.connection.machineName),
+          title: copy.workspace.toastHost.machinePaired(event.connection.machineName),
         })
         return
       }
@@ -169,8 +168,7 @@ function useMeshToastBridge(): void {
         }
         showToast({
           tone: 'neutral',
-          title: copy.workspace.toastHost.machineRemoved,
-          description: copy.workspace.toastHost.wasRemovedFromYourMesh(event.machineName),
+          title: copy.workspace.toastHost.machineRemoved(event.machineName),
         })
         return
       }
@@ -183,13 +181,12 @@ function useMeshToastBridge(): void {
           showToast({
             tone: 'error',
             title: copy.workspace.toastHost.declined(machine),
-            description: event.detail ?? copy.workspace.toastHost.someoneThereSaidNo,
+            description: event.detail,
           })
         } else if (event.phase === 'expired') {
           showToast({
             tone: 'neutral',
             title: copy.workspace.toastHost.didNotAnswerInTime(machine),
-            description: copy.workspace.toastHost.askAgainWhenSomeoneIs,
           })
         } else if (event.phase === 'failed') {
           showToast({

@@ -151,7 +151,6 @@ export function ArtifactsSettingsTab(): JSX.Element {
   return (
     <div role="tabpanel" id="settings-panel-artifacts" aria-labelledby="settings-tab-artifacts" className="space-y-6">
       <SettingsPageHeader title={copy.settings.artifactsSettingsTab.artifacts} />
-      <p className={MUTED}>{copy.settings.artifactsSettingsTab.agentsPublishMockupsPrototypesAnd}</p>
       {view === undefined ? null : view === null || !draft ? (
         <p className={MUTED}>{copy.settings.artifactsSettingsTab.setUpArtifactsInThe}</p>
       ) : (
@@ -166,9 +165,6 @@ export function ArtifactsSettingsTab(): JSX.Element {
               value={draft.host}
               onChange={(host) => update({ host })}
             />
-            {draft.host === 'off' ? (
-              <p className={MUTED}>{copy.settings.artifactsSettingsTab.offAgentsCanTPublish}</p>
-            ) : null}
           </section>
           {draft.host === 'github-pages' ? (
             <GitHubSection view={view} draft={draft} update={update} invalid={failedField} />
@@ -240,11 +236,7 @@ function GitHubSection({
   return (
     <section className="space-y-3" aria-label={copy.settings.artifactsSettingsTab.gitHubPages}>
       <SettingCard>
-        <SettingsRow
-          label={copy.settings.artifactsSettingsTab.repository}
-          htmlFor={id}
-          help="On github.com or your company’s GitHub. Studio pushes with the sign-in this machine already has for that host, turns Pages on if it is off, and uses the address GitHub gives the site."
-        >
+        <SettingsRow label={copy.settings.artifactsSettingsTab.repository} htmlFor={id}>
           <Input
             id={id}
             value={draft.repositoryUrl}
@@ -301,8 +293,10 @@ function CloudflareSection({
           htmlFor={tokenInputVisible ? ids.token : undefined}
           help={
             <>
-              {copy.settings.artifactsSettingsTab.needsCloudflarePagesEditPermission}
-              {view.cloudflareToken.encryptionAvailable ? '' : ' (unavailable now: kept for this session only)'}.{' '}
+              {copy.settings.artifactsSettingsTab.needsCloudflarePagesEditPermission}{' '}
+              {view.cloudflareToken.encryptionAvailable
+                ? ''
+                : `${copy.settings.artifactsSettingsTab.keptForThisSession} `}
               <LinkButton size="inherit" onClick={() => void window.api.openExternal(CLOUDFLARE_TOKEN_URL)}>
                 {copy.settings.artifactsSettingsTab.createAToken}
               </LinkButton>
@@ -348,11 +342,7 @@ function CloudflareSection({
           )}
         </SettingsRow>
         {accounts.length > 1 ? (
-          <SettingsRow
-            label={copy.settings.artifactsSettingsTab.account}
-            htmlFor={ids.account}
-            help="The token can see several accounts. Pick the one to publish to."
-          >
+          <SettingsRow label={copy.settings.artifactsSettingsTab.account} htmlFor={ids.account}>
             <Select
               id={ids.account}
               ariaLabel={copy.settings.artifactsSettingsTab.cloudflareAccount}
@@ -364,7 +354,7 @@ function CloudflareSection({
             />
           </SettingsRow>
         ) : savedHere && view.cloudflare.accountName ? (
-          <SettingsRow label={copy.settings.artifactsSettingsTab.account} help="The account the token publishes to.">
+          <SettingsRow label={copy.settings.artifactsSettingsTab.account}>
             <span className="text-body text-[color:var(--text-default)]">{view.cloudflare.accountName}</span>
           </SettingsRow>
         ) : null}
@@ -382,11 +372,7 @@ function CloudflareSection({
       {advanced ? (
         <div id={ids.advanced}>
           <SettingCard>
-            <SettingsRow
-              label={copy.settings.artifactsSettingsTab.project}
-              htmlFor={ids.project}
-              help={`The Pages project to publish to, made if there is none. ${DEFAULT_CLOUDFLARE_PROJECT} when left empty.`}
-            >
+            <SettingsRow label={copy.settings.artifactsSettingsTab.project} htmlFor={ids.project}>
               <Input
                 id={ids.project}
                 value={draft.projectName}
@@ -405,7 +391,7 @@ function CloudflareSection({
             <SettingsRow
               label={copy.settings.artifactsSettingsTab.sourceRepository}
               htmlFor={ids.repository}
-              help="A git repository to keep the site’s source and history in. Without one, the source is kept on this computer and read back from the live site on another, which cannot be done through a Cloudflare Access sign-in."
+              help={copy.settings.artifactsSettingsTab.studioKeepsTheSiteSource}
             >
               <Input
                 id={ids.repository}

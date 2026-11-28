@@ -62,7 +62,7 @@ function ImageAgents({ plan }: { plan: ContainerImagePlan }): React.JSX.Element 
     <div data-container-agents="true" className="space-y-1">
       <p className={MUTED}>
         {plan.agents.length > 0
-          ? `Agents: ${plan.agents.map((agent) => `${agent.name} (${agent.version})`).join(', ')}, and the GitHub CLI. Each signs in once on this machine's logins, which every container here shares.`
+          ? `Agents: ${plan.agents.map((agent) => `${agent.name} (${agent.version})`).join(', ')}, and the GitHub CLI.`
           : 'No agent is set up in Studio, so a container gets only git and the GitHub CLI. Set one up in Settings › Agents.'}
       </p>
       {plan.refused.map((each) => (
@@ -176,10 +176,7 @@ export function NewContainerForm({
   return (
     <div data-new-container="true" className="space-y-3">
       <div className="divide-y divide-[color:var(--border-subtle)]">
-        <SettingsRow
-          label={copy.settings.containerMachinesSection.runsOn}
-          help="This computer, or an SSH machine with Docker."
-        >
+        <SettingsRow label={copy.settings.containerMachinesSection.runsOn}>
           {hosts.length > 0 ? (
             <Select
               ariaLabel={copy.settings.containerMachinesSection.whereTheContainerRuns}
@@ -213,11 +210,7 @@ export function NewContainerForm({
             ) : null}
           </span>
         </SettingsRow>
-        <SettingsRow
-          label={copy.settings.containerMachinesSection.name}
-          help="How it reads in the machine picker."
-          htmlFor={nameId}
-        >
+        <SettingsRow label={copy.settings.containerMachinesSection.name} htmlFor={nameId}>
           <Input
             id={nameId}
             value={label}
@@ -230,16 +223,12 @@ export function NewContainerForm({
             disabled={making}
           />
         </SettingsRow>
-        <SettingsRow
-          label={copy.settings.containerMachinesSection.clone}
-          help="A repository to clone into it, if any: owner/repo on GitHub, or its address."
-          htmlFor={cloneId}
-        >
+        <SettingsRow label={copy.settings.containerMachinesSection.clone} htmlFor={cloneId}>
           <Input
             id={cloneId}
             value={clone}
             onChange={(event) => setClone(event.target.value)}
-            placeholder="owner/repo"
+            placeholder={copy.settings.containerMachinesSection.ownerRepoOrAddress}
             size="md"
             variant="well"
             fullWidth={false}
@@ -493,7 +482,7 @@ export function ContainerMachineDetail({
   return (
     <div className="space-y-4">
       <div className="divide-y divide-[color:var(--border-subtle)]">
-        <SettingsRow label={copy.settings.containerMachinesSection.runsOn} help="Reached with docker exec there.">
+        <SettingsRow label={copy.settings.containerMachinesSection.runsOn}>
           <span className="text-body text-[color:var(--text-default)]">
             {containerHostWords(container.host, machines)}
           </span>
@@ -504,18 +493,14 @@ export function ContainerMachineDetail({
         {outdated ? (
           <SettingsRow
             label={copy.settings.containerMachinesSection.image}
-            help="The agents set up in Studio, or their versions, changed since it was made. Rebuild makes it again on the new image and keeps its repositories, worktrees and logins."
+            help="The agents set up in Studio have changed since this container was made. Rebuilding it keeps its repositories, worktrees and logins."
           >
             <OutlineButton size="sm" disabled={busy !== null} onClick={() => void rebuild()}>
               {busy === 'rebuilding' ? 'Rebuilding…' : 'Rebuild'}
             </OutlineButton>
           </SettingsRow>
         ) : null}
-        <SettingsRow
-          label={copy.settings.containerMachinesSection.signIn}
-          help="Each agent's own login, and GitHub's for git and pull requests, kept on this machine's logins: every container here shares them."
-          stacked
-        >
+        <SettingsRow label={copy.settings.containerMachinesSection.signIn} stacked>
           <span data-container-sign-in="true" className="flex flex-wrap gap-2">
             {(container.agents ?? []).map((cli) => (
               <OutlineButton
@@ -537,24 +522,17 @@ export function ContainerMachineDetail({
           </span>
         </SettingsRow>
         {machine.server ? (
-          <SettingsRow
-            label={copy.settings.containerMachinesSection.studioServer}
-            help="Installed in the container, and kept running there."
-          >
+          <SettingsRow label={copy.settings.containerMachinesSection.studioServer}>
             <span className="font-mono text-body text-[color:var(--text-default)]">{machine.server.version}</span>
           </SettingsRow>
         ) : null}
-        <SettingsRow
-          label={copy.settings.containerMachinesSection.cloneARepository}
-          help="Into ~/work in the container: owner/repo on GitHub, or its address."
-          htmlFor={cloneId}
-        >
+        <SettingsRow label={copy.settings.containerMachinesSection.cloneARepository} htmlFor={cloneId}>
           <span className="flex items-center gap-2">
             <Input
               id={cloneId}
               value={clone}
               onChange={(event) => setClone(event.target.value)}
-              placeholder="owner/repo"
+              placeholder={copy.settings.containerMachinesSection.ownerRepoOrAddress}
               size="md"
               variant="well"
               fullWidth={false}

@@ -177,7 +177,6 @@ test('the other machines fill in behind this one’s figures, each with its part
   expect(rows()[1]).toContain('$234.50')
   expect(rows()[1]).not.toContain('Asking')
   expect(rows()[2]).toContain('Offline, figures from Oct 19')
-  expect(view.textContent).toContain('2 sessions counted once across machines')
 })
 
 test('a machine still reading its logs is asked once more, waiting for the read', async () => {

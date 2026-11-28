@@ -412,12 +412,10 @@ async function probeDiffItem(repoRoot: string, item: DiffFileItem): Promise<stri
 
 // The window's way home: the same diff in the workspace's own Diff tab, which
 // shows in a window of its own (diffShowsInWindow) with the branch steps, tours
-// and changelist default this one lacks. Its neighbour is Escape,
-// which only closes the window and decides nothing — the tooltip says so,
-// because "close" and "put it back" are different intentions.
+// and changelist default this one lacks.
 function ShowInAppButton({ onClick }: { onClick: () => void }) {
   return (
-    <Tooltip content={appCopy.auxWindows.diffViewer.showInTheAppEsc} placement="bottom">
+    <Tooltip content={appCopy.auxWindows.diffViewer.showInTheApp} placement="bottom">
       <ToolbarButton ariaLabel={appCopy.auxWindows.diffViewer.showInTheApp} onClick={onClick}>
         <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
           <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5" />

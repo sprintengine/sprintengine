@@ -1314,7 +1314,7 @@ test('Edit from here over there leaves the files alone where that machine does n
     await chat.act(async () => buttons(chat, 'Edit from here')[0]!.click())
     await settle(chat)
     expect(chat.far['conversation.revert']).not.toHaveBeenCalled()
-    expect(dialog(chat)!.textContent).toContain('Files are left as they are.')
+    expect(dialog(chat)!.textContent).not.toContain('Also restore')
     await chat.act(async () => dialogButton(chat, 'Edit from here')!.click())
     await settle(chat)
     expect(chat.far['conversation.rewind']).toHaveBeenCalledOnce()
@@ -2533,7 +2533,7 @@ test('a pairing that may only read has no box in a sub-agent over there, only th
     await chat.act(async () => chat.emit({ type: 'subagents', subagents: [farChild] }))
     await chat.act(async () => panelRow(chat.host, 'Reviewer')!.click())
     const bar = chat.host.querySelector('[data-subagent-blocked]')
-    expect(bar?.textContent).toContain('may follow this chat on mac-mini but not drive it')
+    expect(bar?.textContent).toContain('lets you read this chat on mac-mini but not send to it')
     await chat.act(async () => bar!.querySelector('button')!.click())
     expect(chat.host.querySelector('[data-subagent-header]')).toBeNull()
   } finally {

@@ -192,7 +192,7 @@ test('files stay as they are unless asked, and a refused rewind leaves the compo
   try {
     await view.click(view.buttons('Edit from here')[0])
     await view.settle()
-    expect(view.dom.window.document.body.textContent).toContain('Files are left as they are.')
+    expect(view.dom.window.document.body.textContent).not.toContain('Also restore')
     await view.click(view.buttons('Edit from here').at(-1)!)
     await view.settle()
     expect(view.calls.reverts).toEqual([])

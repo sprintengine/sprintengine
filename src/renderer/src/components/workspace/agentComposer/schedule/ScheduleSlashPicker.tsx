@@ -110,9 +110,6 @@ export const ScheduleSlashPicker = React.forwardRef<
               ))}
             </>
           )}
-          <div className="mt-1 px-2.5 pt-1.5 text-micro text-[color:var(--text-subtle)]">
-            {copy.workspace.agentComposer.schedule.scheduleSlashPicker.chooseScheduleEscDismiss}
-          </div>
         </div>
       </Popover>
     </div>

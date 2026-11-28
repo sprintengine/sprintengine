@@ -334,7 +334,7 @@ export function NewChatScreen({
       busy: picking,
       files: offers.attachFiles,
     },
-    schedule: scheduleOffered ? { on: scheduled !== null, busy: picking, repeats: true } : null,
+    schedule: scheduleOffered ? { on: scheduled !== null, busy: picking } : null,
   });
 
   // The "+"'s Schedule: on, it opens on a one-time run at the next whole hour
@@ -871,7 +871,7 @@ export function NewChatScreen({
               setEffort(null);
             }}
             selected={selection.cli === null}
-            sub="Whichever CLI and model this desktop last used"
+            sub={appCopy.phone.conversations.newChatScreen.desktopDefaultModel}
           />
         }
         onClose={() => setSheet(null)}
@@ -894,7 +894,6 @@ export function NewChatScreen({
             closeAccess();
           }}
           selected={preset === null}
-          sub="The desktop's own setting for this CLI."
         />
         {presetOptions.map((entry) => (
           <SheetOption
@@ -922,7 +921,6 @@ export function NewChatScreen({
       ) : null}
 
       <BottomSheet onClose={() => setSheet(null)} title={appCopy.phone.conversations.newChatScreen.runOn} visible={sheet === "machine"}>
-        <Text style={styles.sheetLede}>{appCopy.phone.conversations.newChatScreen.theChatSAgentRuns}</Text>
         {machines.map((candidate) => {
           const paired = sessions.find((entry) => entry.deviceId === candidate.deviceId) ?? null;
           const status = paired ? desktopStatus(paired) : null;
@@ -1051,12 +1049,6 @@ const createStyles = ({ colors }: Theme) =>
     errorBlock: {
       gap: space.xs,
       alignItems: "center",
-    },
-    sheetLede: {
-      ...typography.meta,
-      color: colors.textSubtle,
-      paddingHorizontal: space.xs,
-      paddingBottom: space.sm,
     },
     sheetError: {
       ...typography.meta,

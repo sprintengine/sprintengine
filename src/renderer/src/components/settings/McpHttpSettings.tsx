@@ -78,13 +78,7 @@ export function McpHttpSettings() {
       <SettingCard>
         <SettingsRow
           label={copy.settings.mcpHttpSettings.mCPOverHTTP}
-          help={
-            status.url ? (
-              <span className="break-all font-mono text-meta">{status.url}</span>
-            ) : (
-              'For an MCP client that takes a URL. Listens on this computer only, once a client has a token.'
-            )
-          }
+          help={status.url ? <span className="break-all font-mono text-meta">{status.url}</span> : undefined}
         >
           <span className="text-body text-[color:var(--text-muted)]">{status.running ? 'On' : 'Off'}</span>
         </SettingsRow>
@@ -100,11 +94,7 @@ export function McpHttpSettings() {
           </SettingsRow>
         ))}
         {name !== null ? (
-          <SettingsRow
-            label={copy.settings.mcpHttpSettings.copyMCPURL}
-            help="Name the client this token is for."
-            stacked
-          >
+          <SettingsRow label={copy.settings.mcpHttpSettings.copyMCPURL} stacked>
             <div className="space-y-3">
               <Field label={copy.settings.mcpHttpSettings.client} htmlFor={nameId}>
                 <Input

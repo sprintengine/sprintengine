@@ -167,25 +167,28 @@ export function pairRequestAnswerable(
   return { canAnswer: true, note: null }
 }
 
-/** The help line under the MCP URL: what to do with it, and what it cannot do over plain HTTP. */
-export function mcpUrlHelp(mcp: TailnetMcpAccess | null): string {
+/**
+ * The help line under the MCP URL, only when something stands in the way: no
+ * URL until remote control is on, and most clients cannot finish signing in
+ * over plain HTTP.
+ */
+export function mcpUrlHelp(mcp: TailnetMcpAccess | null): string | null {
   if (!mcp?.url) return 'Turn on remote control to get the URL an MCP client connects to.'
-  if (mcp.https.state === 'on')
-    return 'Give this URL to Claude Code, Codex or any MCP client that signs in with OAuth. You approve each one here.'
-  return 'Give this URL to an MCP client that signs in with OAuth. Most clients finish signing in only over HTTPS: turn it on below.'
+  if (mcp.https.state === 'on') return null
+  return 'Most MCP clients can finish signing in only over HTTPS, so turn HTTPS on below.'
 }
 
-/** The help line under the HTTPS switch, by what last happened when it was applied. */
-export function mcpHttpsHelp(https: TailnetHttpsState | null): string {
+/** The help line under the HTTPS switch, by what last happened when it was applied; nothing while it is off. */
+export function mcpHttpsHelp(https: TailnetHttpsState | null): string | undefined {
   switch (https?.state) {
     case 'on':
-      return `Published at ${https.origin ?? 'this machine’s tailnet name'} with this tailnet’s certificate.`
+      return `Published at ${https.origin ?? 'this machine’s tailnet name'}.`
     case 'starting':
       return 'Asking Tailscale to publish it…'
     case 'error':
       return https.message ?? 'Tailscale did not publish it.'
     default:
-      return 'Publishes the listener at https://<this machine>.<tailnet>.ts.net on port 443, through Tailscale Serve. Only your tailnet can reach it.'
+      return undefined
   }
 }
 

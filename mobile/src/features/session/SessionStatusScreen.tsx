@@ -21,13 +21,13 @@ const statusCopy: Record<
   DesktopSessionStatus,
   {
     title: string;
-    body: string;
+    /** Why the desktop needs pairing again; a connected desktop needs no words. */
+    body?: string;
     primaryLabel: string;
   }
 > = {
   online: {
     title: appCopy.phone.session.sessionStatusScreen.desktopConnected,
-    body: appCopy.phone.session.sessionStatusScreen.pairedOverYourTailnet,
     primaryLabel: appCopy.phone.session.sessionStatusScreen.continue,
   },
   offline: {
@@ -70,7 +70,7 @@ export function SessionStatusScreen({
       <Card variant="hero">
         <View accessibilityRole={status === "revoked" ? "alert" : "text"} style={styles.copyBlock}>
           <Text style={styles.desktopName}>{session.desktopName}</Text>
-          <Text style={styles.body}>{copy.body}</Text>
+          {copy.body ? <Text style={styles.body}>{copy.body}</Text> : null}
         </View>
         <View style={styles.actions}>
           <PrimaryButton label={copy.primaryLabel} onPress={shouldPair ? onStartPairing : onOpenSettings} />

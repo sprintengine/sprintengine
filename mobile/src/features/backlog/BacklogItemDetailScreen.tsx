@@ -236,12 +236,11 @@ export function BacklogItemDetailScreen({
           // The excerpt is the only body the snapshot carries (280-char cap, no
           // item-read command yet — gap on the mobile-control-parity epic). It is
           // rendered through the shared T5 renderer so any markdown reads
-          // correctly, and always labeled as an excerpt, never the full document.
+          // correctly, under the Excerpt label, never as the full document.
           <DocumentView body={item.excerpt} kind="markdown" title={item.title} />
         ) : (
           <Text style={styles.excerptEmpty}>{copy.phone.backlog.backlogItemDetailScreen.noExcerptOpenItOn}</Text>
         )}
-        <Text style={styles.excerptNote}>{copy.phone.backlog.backlogItemDetailScreen.excerptOnlyTheFullDocument}</Text>
       </View>
 
       {/* The triage header above renders these three axes read-only; this is
@@ -281,9 +280,6 @@ export function BacklogItemDetailScreen({
             options={backlogCriticalityOptions}
             selected={shownCriticality}
           />
-          {/* Said once, not implied by a chip that quietly does nothing: the wire
-              has no way to express "clear this axis". */}
-          <Text style={styles.excerptNote}>{copy.phone.backlog.backlogItemDetailScreen.eachChangeIsSentOn}</Text>
         </View>
       ) : null}
 
@@ -396,11 +392,6 @@ const createStyles = ({ colors, ...theme }: Theme) =>
       ...typography.body,
       color: colors.textMuted,
       fontStyle: "italic",
-    },
-    excerptNote: {
-      ...typography.micro,
-      fontWeight: fontWeight.regular,
-      color: colors.textSubtle,
     },
     actions: {
       gap: space.md,

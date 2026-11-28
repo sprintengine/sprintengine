@@ -55,7 +55,8 @@ import { copy } from '../../../../shared/copy'
 //
 // Cost is an API estimate: what the tokens would have cost at list price. A
 // subscription is billed by plan, so on one the figure says what the plan was
-// worth, not what was charged. The view says so where the figure is.
+// worth, not what was charged. The words "API estimate" beside the figure say
+// so; how it was priced is not spelled out on screen.
 
 const VIEWS: Array<{ value: UsageView; label: string }> = [
   { value: 'cost', label: copy.usage.usageDashboard.cost },
@@ -139,7 +140,7 @@ export default function UsageDashboard(): JSX.Element {
           setRange(next)
         }}
       />
-      <Tooltip content={copy.usage.usageDashboard.readTheLogsAgain} placement="bottom">
+      <Tooltip content={copy.usage.usageDashboard.refreshUsage} placement="bottom">
         <IconButton
           size="md"
           aria-label={copy.usage.usageDashboard.refreshUsage}
@@ -285,11 +286,10 @@ function UsageOverview({
             {metric === 'cost' ? (
               <>
                 <span aria-hidden="true">·</span>
-                <EstimateNote report={report} />
+                <span>{copy.usage.usageDashboard.aPIEstimate}</span>
               </>
             ) : null}
           </div>
-          {report.sharedSessions > 0 ? <SharedSessionsNote count={report.sharedSessions} /> : null}
         </div>
         <ul className="m-0 flex list-none flex-col gap-4 p-0" aria-label={copy.usage.usageDashboard.byAgent}>
           {agents.map((agent) => {
@@ -331,54 +331,6 @@ function UsageOverview({
         muted={muted}
       />
     </section>
-  )
-}
-
-/** "API estimate", with what that means and where the prices came from on hover or focus. */
-function EstimateNote({ report }: { report: UsageReport }): JSX.Element {
-  const unpriced = report.totals.unpricedTokens
-  const total = usageTokenTotal(report.totals.tokens)
-  const prices =
-    report.pricing.source === 'bundled'
-      ? 'Prices are the app’s own table; the live price list could not be reached.'
-      : `Prices are the public list fetched ${
-          report.pricing.fetchedAt
-            ? `${MONTH_DAY.format(report.pricing.fetchedAt)}, ${formatTimeOfDay(report.pricing.fetchedAt)}`
-            : 'earlier'
-        }.`
-  const content = [
-    'What these tokens would cost at each provider’s API list price. A subscription is billed by its plan, not per token.',
-    prices,
-    unpriced > 0
-      ? `${formatUsageShare(unpriced, total)} of tokens are on models with no known price and are left out.`
-      : null,
-  ]
-    .filter(Boolean)
-    .join('\n\n')
-  return (
-    <Tooltip content={content} multiline placement="bottom">
-      <span
-        tabIndex={0}
-        className="inline-flex items-center gap-1 rounded-sm underline decoration-dotted underline-offset-2 focus-visible:focus-ring"
-      >
-        {copy.usage.usageDashboard.aPIEstimate}
-      </span>
-    </Tooltip>
-  )
-}
-
-/** "3 sessions counted once across machines", with why on hover or focus. */
-function SharedSessionsNote({ count }: { count: number }): JSX.Element {
-  return (
-    <Tooltip content={copy.usage.usageDashboard.fromASyncedFolderRestored} multiline placement="bottom">
-      <span
-        tabIndex={0}
-        className="self-start rounded-sm text-meta tabular-nums text-[color:var(--text-muted)] underline decoration-dotted underline-offset-2 focus-visible:focus-ring"
-      >
-        {count.toLocaleString()} {count === 1 ? 'session' : 'sessions'}
-        {copy.usage.usageDashboard.countedOnceAcrossMachines}
-      </span>
-    </Tooltip>
   )
 }
 

@@ -54,7 +54,6 @@ export function startWebBuildWatch(): () => void {
         id: TOAST_ID,
         tone: 'good',
         title: copy.web.webBuildWatch.studioWasUpdated,
-        description: copy.web.webBuildWatch.reloadThisTabToUse,
         autoDismissMs: false,
         actions: [
           {

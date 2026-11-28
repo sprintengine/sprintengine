@@ -53,11 +53,7 @@ export function ChatAppearanceRows(): JSX.Element {
   const current = CONTRAST_STOPS[contrastIndex(contrast)]!
   return (
     <>
-      <SettingRow
-        label={copy.settings.chatAppearanceRows.chatTextContrast}
-        labelId={labelId}
-        help="Soften or strengthen the text in conversations and the composer, against the chat's own background."
-      >
+      <SettingRow label={copy.settings.chatAppearanceRows.chatTextContrast} labelId={labelId}>
         <div className="w-40">
           <Slider
             ariaLabelledBy={labelId}
@@ -87,10 +83,7 @@ export function ChatAppearanceRows(): JSX.Element {
           ) : null}
         </span>
       </SettingRow>
-      <SettingRow
-        label={copy.settings.chatAppearanceRows.chatWidth}
-        help="How wide conversations and the composer grow in a wide pane. Full uses the whole pane."
-      >
+      <SettingRow label={copy.settings.chatAppearanceRows.chatWidth}>
         <SegmentedControl<ChatWidth>
           ariaLabel={copy.settings.chatAppearanceRows.chatWidth}
           items={[
@@ -102,10 +95,7 @@ export function ChatAppearanceRows(): JSX.Element {
           onChange={setWidth}
         />
       </SettingRow>
-      <SettingRow
-        label={copy.settings.chatAppearanceRows.clock}
-        help="How times of day are written. System follows your language and region."
-      >
+      <SettingRow label={copy.settings.chatAppearanceRows.clock}>
         <SegmentedControl<ClockFormat>
           ariaLabel={copy.settings.chatAppearanceRows.clock}
           items={[
@@ -117,10 +107,7 @@ export function ChatAppearanceRows(): JSX.Element {
           onChange={setClockFormat}
         />
       </SettingRow>
-      <SettingRow
-        label={copy.settings.chatAppearanceRows.showReplies}
-        help="A paragraph at a time holds each paragraph, list item or code block until it is finished, so text never moves while you read it. The working line stays up meanwhile, and the whole reply shows once it ends."
-      >
+      <SettingRow label={copy.settings.chatAppearanceRows.showReplies}>
         <SegmentedControl<ReplyStreaming>
           ariaLabel={copy.settings.chatAppearanceRows.showReplies}
           items={[

@@ -187,11 +187,9 @@ test('CanvasBoardPicker', async () => {
     {
       listBoards = async () => ({ ok: true, value: [] })
       const view = await mount()
-      run('a project with no boards is told what a board is and where it goes', () => {
+      run('a project with no boards says one will be listed once it is made', () => {
         assert.match(view.text(), /No boards yet/)
-        assert.match(view.text(), /outside your repository/)
-        assert.match(view.text(), /Export one to a folder/)
-        assert.match(view.text(), /you and your agents can both draw on them/)
+        assert.match(view.text(), /When you or an agent makes a board, it will be listed here/)
         assert.ok(view.newBoard(), 'and is still offered one')
         assert.equal(view.container.querySelector('ul'), null, 'with no empty card standing in for a list')
       })

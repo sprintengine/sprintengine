@@ -310,7 +310,6 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
             workspaceRoot={workspaceRoot}
             selection={pickerSelection}
             onSelect={setPickerSelection}
-            variant="settings"
           />
           <div className="flex items-center gap-2">
             <PrimaryButton

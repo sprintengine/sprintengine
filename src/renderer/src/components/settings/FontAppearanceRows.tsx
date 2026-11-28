@@ -20,10 +20,7 @@ export function FontAppearanceRows(): JSX.Element {
   const setCodeFont = useWorkspaceStore((s) => s.setAppearanceCodeFont)
   return (
     <>
-      <SettingRow
-        label={copy.settings.fontAppearanceRows.interfaceFont}
-        help="Menus, the sidebar, conversations and everything else that isn’t code."
-      >
+      <SettingRow label={copy.settings.fontAppearanceRows.interfaceFont}>
         <FontFamilyPicker
           label={copy.settings.fontAppearanceRows.interfaceFont}
           value={interfaceFont}
@@ -32,10 +29,7 @@ export function FontAppearanceRows(): JSX.Element {
           defaultStack={UI_FONT_STACK}
         />
       </SettingRow>
-      <SettingRow
-        label={copy.settings.fontAppearanceRows.codeFont}
-        help="Terminals, editors, diffs and code in conversations. Monospace fonts only."
-      >
+      <SettingRow label={copy.settings.fontAppearanceRows.codeFont}>
         <FontFamilyPicker
           label={copy.settings.fontAppearanceRows.codeFont}
           value={codeFont}

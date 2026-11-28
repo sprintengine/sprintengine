@@ -3101,11 +3101,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     showToast(
       result.notice
         ? { tone: 'neutral', title: appCopy.panels.agentChatView.noAgentSessionToRestart, description: result.notice }
-        : {
-            tone: 'good',
-            title: appCopy.panels.agentChatView.agentSessionRestarted,
-            description: appCopy.panels.agentChatView.yourNextMessageStartsIt,
-          },
+        : { tone: 'good', title: appCopy.panels.agentChatView.agentSessionRestarted },
     )
   }
   // Typing or pasting in the chat away from the composer lands in it
@@ -4398,7 +4394,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
               chatName={agent?.name || 'this chat'}
               canAsk={sideQuestionApi !== null}
               kept={transport.capabilities.keepsSideQuestions}
-              shortcut={sideQuestionShortcutLabel}
               continueInChat={sideQuestionApi ? continueSideQuestion : undefined}
             />
           ) : null}

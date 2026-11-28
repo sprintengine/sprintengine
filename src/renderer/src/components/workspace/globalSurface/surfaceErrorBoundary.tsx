@@ -66,7 +66,6 @@ export class GlobalSurfaceErrorBoundary extends React.Component<
           <SurfaceCanvasState
             kind="error"
             title={appCopy.workspace.globalSurface.surfaceErrorBoundary.hitAProblemAndStopped(this.props.surfaceLabel)}
-            hint={appCopy.workspace.globalSurface.surfaceErrorBoundary.theRestOfTheApp}
             onRetry={() => this.setState({ failed: false })}
             retryLabel={appCopy.workspace.globalSurface.surfaceErrorBoundary.reloadSurface}
             extraAction={

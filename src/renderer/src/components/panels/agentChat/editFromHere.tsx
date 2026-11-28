@@ -191,9 +191,7 @@ function EditFromHereBody({
             </ul>
           ) : null}
         </div>
-      ) : (
-        <p className="mt-2 text-[color:var(--text-muted)]">{copy.panels.agentChat.editFromHere.filesAreLeftAsThey}</p>
-      )}
+      ) : null}
     </>
   )
 }

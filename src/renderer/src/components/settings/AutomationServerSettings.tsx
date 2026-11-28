@@ -56,10 +56,7 @@ export function AutomationServerSettings() {
           <span className="text-body text-[color:var(--text-muted)]">{status.running ? 'Always on' : 'Off'}</span>
         </SettingsRow>
         {bridgeCommand ? (
-          <SettingsRow
-            label={appCopy.settings.automationServerSettings.bridgeCommand}
-            help="For an MCP client outside Studio."
-          >
+          <SettingsRow label={appCopy.settings.automationServerSettings.bridgeCommand}>
             <Tooltip content={appCopy.settings.automationServerSettings.copyTheBridgeCommand}>
               <IconButton
                 aria-label={appCopy.settings.automationServerSettings.copyTheBridgeCommand}

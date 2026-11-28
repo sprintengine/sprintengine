@@ -109,9 +109,6 @@ export function SkillPage({
       </div>
       <div>
         <ModalFooter>
-          <p className="mr-auto min-w-0 text-meta leading-5 text-[color:var(--text-subtle)]">
-            {appCopy.workspace.globalSurface.extensions.skills.skillPage.installsToYourHomeFolder}
-          </p>
           {installed ? (
             <span className="text-meta font-medium text-[color:var(--accent-primary)]">
               {appCopy.workspace.globalSurface.extensions.skills.skillPage.installed}

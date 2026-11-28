@@ -255,9 +255,6 @@ const InlineMentionPicker = forwardRef<
             </MenuOption>
           ))}
         </ScrollArea>
-        <div className="px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
-          {copy.panels.agentChat.composerContextPicker.chooseEnterOrTabAttach}
-        </div>
       </Popover>
     </div>
   )

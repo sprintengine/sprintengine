@@ -250,7 +250,7 @@ export function LocalAppsSettings() {
         {empty ? (
           <SettingsRow
             label={copy.settings.localAppsSettings.noAppsArePaired}
-            help="Scripts and apps built with @sprintengine/agent-sdk can start and drive chats here once paired."
+            help="When a script or app built with @sprintengine/agent-sdk pairs with Studio, it will be listed here."
           >
             <span className="text-body text-[color:var(--text-muted)]">{status.running ? 'Ready' : 'Off'}</span>
           </SettingsRow>
@@ -274,11 +274,7 @@ export function LocalAppsSettings() {
 
       {draft ? (
         <SettingCard>
-          <SettingsRow
-            label={copy.settings.localAppsSettings.pairAnApp}
-            help="Name it, and choose what it may do."
-            stacked
-          >
+          <SettingsRow label={copy.settings.localAppsSettings.pairAnApp} stacked>
             <div className="space-y-3">
               <Field label={copy.settings.localAppsSettings.name} htmlFor={nameId}>
                 <Input

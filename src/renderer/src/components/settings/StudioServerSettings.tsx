@@ -44,7 +44,7 @@ export function SshMachinesPreviewSwitch() {
         help={
           status.fromEnvironment
             ? 'Set for this launch by SPRINTENGINE_SSH_MACHINES.'
-            : 'Run chats on machines you reach over SSH, from Settings › Machines. Still being built: some views do not work for them yet. Takes effect after a restart.'
+            : 'This is still being built, so some views do not work for SSH machines yet.'
         }
       >
         <Switch

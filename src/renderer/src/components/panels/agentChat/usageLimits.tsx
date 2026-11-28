@@ -252,12 +252,7 @@ export function UsageLimitsDialog({ onClose }: { onClose: () => void }): JSX.Ele
   const state = useUsageLimitsState()
   return (
     <Modal open onClose={onClose} labelledBy={titleId} size="confirm">
-      <ModalHeader
-        title={copy.panels.agentChat.usageLimits.usageLimits}
-        subtitle={copy.panels.agentChat.usageLimits.claudeAndCodexSubscriptionsAs}
-        titleId={titleId}
-        onClose={onClose}
-      />
+      <ModalHeader title={copy.panels.agentChat.usageLimits.usageLimits} titleId={titleId} onClose={onClose} />
       <ModalBody>
         <UsageLimitsPanel state={state} />
       </ModalBody>

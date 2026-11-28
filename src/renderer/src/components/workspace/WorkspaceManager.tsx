@@ -4958,7 +4958,6 @@ export default function WorkspaceManager() {
         items.length === 1
           ? appCopy.workspace.workspaceManager.stopTheSessionIn(group.label)
           : appCopy.workspace.workspaceManager.stopAllSessionsIn(items.length, group.label),
-      body: appCopy.workspace.workspaceManager.theListedTerminalsAndAgents,
       confirmLabel: appCopy.workspace.workspaceManager.stopAll,
       tone: 'danger',
     })

@@ -229,7 +229,6 @@ export function DiscoverRepoList({
         <InlineNotice
           tone="error"
           title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.gitHubCouldNotBeReached}
-          hint={copy.workspace.globalSurface.extensions.skills.skillsDiscover.nothingIsListedThisIs}
           detail={load.message}
           action={
             <GhostButton onClick={onRetry}>
@@ -263,9 +262,10 @@ export function DiscoverRepoList({
         title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.mostStarred}
         count={results.length}
         action={
-          <span className="text-meta text-[color:var(--text-subtle)]">
-            {tokenOnlyGap ? 'Sorted by stars' : 'Plugin repos first, then stars'}
-          </span>
+          // Without a token the line above already says how the list is sorted.
+          tokenOnlyGap ? undefined : (
+            <span className="text-meta text-[color:var(--text-subtle)]">Plugin repos first, then stars</span>
+          )
         }
       >
         {results.length === 0 ? (
@@ -328,7 +328,6 @@ export function DiscoverSearchResults({
         <InlineNotice
           tone="error"
           title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.thatSearchDidNotRun}
-          hint={copy.workspace.globalSurface.extensions.skills.skillsDiscover.notTheSameAsNo}
           detail={load.message}
           action={
             <GhostButton onClick={onRetry}>
@@ -352,11 +351,6 @@ export function DiscoverSearchResults({
           level={4}
           title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.resultsFor(load.query)}
           count={results.length}
-          action={
-            <span className="text-meta text-[color:var(--text-subtle)]">
-              {copy.workspace.globalSurface.extensions.skills.skillsDiscover.skillsByGitHubRelevance}
-            </span>
-          }
         >
           {results.length === 0 ? (
             <EmptyState

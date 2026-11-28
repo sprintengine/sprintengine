@@ -178,7 +178,7 @@ export function GitChangesToolbar({
           a tooltip at all. Hard-disabled only while another git action runs,
           like its neighbours — but never mid-draft, when it is the stop. */}
       {commitMessageDraft.drafting ? (
-        <Tooltip content={copy.panels.git.gitChangesToolbar.writingACommitMessagePress} placement="bottom">
+        <Tooltip content={copy.panels.git.gitChangesToolbar.stopWritingTheCommitMessage} placement="bottom">
           <ToolbarButton
             ariaLabel={copy.panels.git.gitChangesToolbar.stopWritingTheCommitMessage}
             onClick={onStopCommitMessage}

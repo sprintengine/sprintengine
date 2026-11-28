@@ -458,11 +458,7 @@ export function HtmlArtifactFrame({
             </div>
           </div>
         ) : frameState.kind === 'generating' ? (
-          <PreviewState
-            title={appCopy.htmlArtifact.htmlArtifactFrame.buildingThisPage}
-            body={appCopy.htmlArtifact.htmlArtifactFrame.refreshesAsTheFileIs}
-            skeleton
-          />
+          <PreviewState title={appCopy.htmlArtifact.htmlArtifactFrame.buildingThisPage} skeleton />
         ) : frameState.kind === 'deleted' ? (
           <PreviewState
             glyph="deleted"
