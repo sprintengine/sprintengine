@@ -76,7 +76,7 @@ export function useSshMachines(api: Api | null = window.api): {
 /**
  * What only an SSH machine offers on its row: Disconnect while connected, and
  * Update for a server this app may replace, Retry update for one whose
- * update did not start. Connect and Retry are the
+ * update did not start. Connect, Retry and Sign in are the
  * machine list's own action, the same for every machine.
  */
 export function SshMachineActions({
