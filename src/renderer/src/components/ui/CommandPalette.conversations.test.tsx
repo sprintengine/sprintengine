@@ -130,8 +130,16 @@ beforeEach(() => {
       conversationSearch,
     },
   })
-  // History is searched by the window's Studio, over the protocol.
-  installStudioLoopback(window as never)
+  // History is searched by the window's Studio, over the protocol
+  // (`conversation.searchChats`), in each chat it holds.
+  installStudioLoopback(window as never, {
+    searchableChats: () =>
+      workspaces.map((workspace) => ({
+        workspaceId: workspace.id,
+        workspaceRoot: workspace.folderPath!,
+        chatTitle: workspace.name,
+      })),
+  })
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)

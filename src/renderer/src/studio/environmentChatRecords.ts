@@ -178,22 +178,25 @@ export async function environmentChatDeletePlan(
   return answer.ok ? deletePlanOf(workspaceId, answer.value as unknown as Record<string, unknown>) : answer
 }
 
-/** What was said in that machine's chats, as its own palette finds it. */
+/** A question a Studio's chat search takes, or why it does not: too short or too long. */
+function searchQueryRefusal(query: string): MeshConversationSearchResult | null {
+  if (query.length >= STUDIO_CHAT_SEARCH_MIN_CHARS && query.length <= STUDIO_CHAT_SEARCH_MAX_CHARS) return null
+  return {
+    ok: false,
+    code: 'invalid_arguments',
+    message: copy.studio.pairedChats.searchForToCharacters(STUDIO_CHAT_SEARCH_MIN_CHARS, STUDIO_CHAT_SEARCH_MAX_CHARS),
+  }
+}
+
+/** What was said in another environment's chats, as its Studio searches them (`conversation.searchChats`). */
 export async function searchEnvironmentChats(
   target: EnvironmentTarget,
   query: string,
+  options: { onlyWhenConnected?: boolean } = {},
 ): Promise<MeshConversationSearchResult> {
   const asked = query.trim()
-  if (asked.length < STUDIO_CHAT_SEARCH_MIN_CHARS || asked.length > STUDIO_CHAT_SEARCH_MAX_CHARS) {
-    return {
-      ok: false,
-      code: 'invalid_arguments',
-      message: copy.studio.pairedChats.searchForToCharacters(
-        STUDIO_CHAT_SEARCH_MIN_CHARS,
-        STUDIO_CHAT_SEARCH_MAX_CHARS,
-      ),
-    }
-  }
+  const refused = searchQueryRefusal(asked)
+  if (refused) return refused
   const answer = await askEnvironment(
     target,
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
@@ -202,8 +205,29 @@ export async function searchEnvironmentChats(
       message: copy.studio.pairedChats.canTSearchItsChats(machineName),
     }),
     (client) => client.rpc['conversation.searchChats']({ query: asked }),
+    options,
   )
   return answer.ok ? searchAnswerOf(answer.value as unknown as Record<string, unknown>) : answer
+}
+
+/**
+ * What was said in this computer's chats, asked of the window's own Studio
+ * the same way (`conversation.searchChats`), on the window's connection to it.
+ */
+export async function searchStudioChats(
+  client: Promise<StudioClient>,
+  query: string,
+): Promise<MeshConversationSearchResult> {
+  const asked = query.trim()
+  const refused = searchQueryRefusal(asked)
+  if (refused) return refused
+  try {
+    const answer = await (await client).rpc['conversation.searchChats']({ query: asked })
+    return searchAnswerOf(answer as unknown as Record<string, unknown>)
+  } catch (error) {
+    const refusal = environmentRefusal({ name: copy.studio.pairedChats.thisComputer }, error)
+    return { ok: false, code: refusal.code, message: refusal.message }
+  }
 }
 
 const rulesUnsupported = (machineName: string) => ({

@@ -39,10 +39,10 @@ import {
   type ExtensionSkillRow,
   type ExtensionSourceRow,
 } from '../palette/extensionsProvider'
-import { createConversationHistoryProvider, type SearchableChat } from '../palette/conversationHistoryProvider'
-import { createRemoteConversationHistoryProvider } from '../palette/remoteConversationHistoryProvider'
+import { createConversationHistoryProvider } from '../palette/conversationHistoryProvider'
+import { isEnvironmentRecord, type RemoteSessionOpenSpec } from '../workspace/remoteBand/remoteSessionsModel'
+import { chatSearchPlaces } from '../palette/chatSearchPlaces'
 import { paletteBackdropIsConversation } from '../palette/paletteBackdrop'
-import { sortWorkspacesByUserMessage } from '../../utils/workspaceRecency'
 import {
   chatBranch,
   chatMatchReason,
@@ -230,6 +230,8 @@ interface Props {
   onRunCommand: (commandId: string) => boolean
   /** Settings, opened on the Remote tab: the machines this one is paired with. */
   onOpenRemoteConnections: () => void
+  /** Open another environment's chat as its sidebar row does; the id of the chat here that shows it, or null. */
+  onOpenEnvironmentChat?: (spec: RemoteSessionOpenSpec) => string | null
   workspaceWindowId: WorkspaceWindowId
   workspaces: Workspace[]
   activeWorkspaceId: WorkspaceId | null
@@ -259,6 +261,7 @@ export default function CommandPalette({
   onClose,
   onRunCommand,
   onOpenRemoteConnections,
+  onOpenEnvironmentChat,
   workspaceWindowId,
   workspaces,
   activeWorkspaceId,
@@ -1243,27 +1246,25 @@ export default function CommandPalette({
     [],
   )
 
-  // What was said in every chat the sidebar lists, not only the open one's:
-  // a person searching for a conversation is rarely sitting in it. Most
-  // recently spoken in first, so the likely answer lands first. Read through a
-  // ref, because the list is a new array on most store writes and a provider
-  // rebuilt for that would restart a search of every transcript.
+  // What was said in every environment's chats, not only the open one's: a
+  // person searching for a conversation is rarely sitting in it. Each
+  // environment is asked through its own Studio (`chatSearchPlaces.ts`); this
+  // computer's matches are drawn only for the chats this list holds. Read
+  // through refs, because the lists are new arrays on most store writes and a
+  // provider rebuilt for that would restart every search.
   const searchableChats = useMemo(
-    (): SearchableChat[] =>
-      sortWorkspacesByUserMessage(workspaces)
-        .filter((workspace) => !isHiddenFromRail(workspace, moduleEnablement))
-        // A chat on a paired or SSH machine keeps its history over there.
-        .filter((workspace) => workspace.folderPath && !workspace.remoteOrigin && !workspace.environment)
-        .map((workspace) => ({
-          workspaceId: workspace.id,
-          workspaceRoot: workspace.folderPath!,
-          name: workspace.name,
-          mode: workspace.mode,
-        })),
+    () =>
+      new Map(
+        workspaces
+          .filter((workspace) => !isHiddenFromRail(workspace, moduleEnablement) && !isEnvironmentRecord(workspace))
+          .map((workspace) => [workspace.id as string, workspace]),
+      ),
     [workspaces, moduleEnablement],
   )
   const searchableChatsRef = useRef(searchableChats)
   searchableChatsRef.current = searchableChats
+  const openEnvironmentChatRef = useRef(onOpenEnvironmentChat)
+  openEnvironmentChatRef.current = onOpenEnvironmentChat
   // Only the providers whose groups the scope admits. A provider whose rows
   // would be filtered out anyway must not RUN: Find-in-Path would otherwise
   // read every source's scan for a list it hides, and the terminal star would
@@ -1274,11 +1275,17 @@ export default function CommandPalette({
   // is how the runner is told to ask again. The provider objects are unchanged,
   // so a warm already done is not repeated.
   const conversationHistoryProvider = useMemo(
-    () => createConversationHistoryProvider({ getChats: () => searchableChatsRef.current }),
+    () =>
+      createConversationHistoryProvider({
+        getPlaces: () =>
+          chatSearchPlaces({
+            chats: () => searchableChatsRef.current,
+            records: () => useWorkspaceStore.getState().workspaces,
+            openEnvironmentChat: (spec) => openEnvironmentChatRef.current?.(spec) ?? null,
+          }),
+      }),
     [],
   )
-  // …and the paired machines' chats, each machine asked for itself.
-  const remoteConversationHistoryProvider = useMemo(() => createRemoteConversationHistoryProvider(), [])
   // "Build your own extension", among the Extensions rows: it opens the New
   // chat door in extension mode.
   const buildExtensionProvider = useMemo(() => createBuildExtensionPaletteProvider(), [])
@@ -1289,17 +1296,9 @@ export default function CommandPalette({
     if (groupInScope('skills', scope)) active.push(skillsProvider)
     if (groupInScope('extensions', scope)) active.push(extensionsProvider, buildExtensionProvider)
     if (groupInScope('files', scope) || groupInScope('content', scope)) active.push(diskProvider)
-    if (groupInScope('agents', scope)) active.push(conversationHistoryProvider, remoteConversationHistoryProvider)
+    if (groupInScope('agents', scope)) active.push(conversationHistoryProvider)
     return active
-  }, [
-    skillsProvider,
-    extensionsProvider,
-    buildExtensionProvider,
-    diskProvider,
-    conversationHistoryProvider,
-    remoteConversationHistoryProvider,
-    scope,
-  ])
+  }, [skillsProvider, extensionsProvider, buildExtensionProvider, diskProvider, conversationHistoryProvider, scope])
   const providerContext = useMemo(
     (): PaletteProviderContext => ({
       workspaceRoot: activeFolderPath,

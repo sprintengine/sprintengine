@@ -520,7 +520,7 @@ export type EnvironmentChatSourceView = {
 }
 
 /** A chat's key: its address, or its route and id while its environment has not said its id. */
-function environmentChatKey(environmentId: string | null, route: string, chatId: string): string {
+export function environmentChatKey(environmentId: string | null, route: string, chatId: string): string {
   if (environmentId && isEnvironmentId(environmentId)) {
     try {
       return formatChatAddress({ environmentId, chatId })
