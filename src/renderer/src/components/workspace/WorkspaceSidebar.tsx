@@ -244,7 +244,7 @@ import {
 import { TerminalLineView } from './sidebar/TerminalLineView'
 import {
   FolderContextMenu,
-  RemoteConversationContextMenu,
+  EnvironmentChatContextMenu,
   WorkspaceContextMenu,
   autoCompactSwitchOf,
   canRegenerateTitleOf,
@@ -4474,7 +4474,7 @@ function WorkspaceSidebar({
               ? chatLinkFor({ environmentId: conversation.environmentId, chatId: conversation.workspaceId })
               : null
             return (
-              <RemoteConversationContextMenu
+              <EnvironmentChatContextMenu
                 x={remoteMenu.x}
                 y={remoteMenu.y}
                 title={conversation.title}

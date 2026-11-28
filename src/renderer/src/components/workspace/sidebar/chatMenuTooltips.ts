@@ -1,15 +1,17 @@
 // What each item of a chat's right-click menu does, said on hover and on
 // keyboard focus (owner request 2026-10-21: every item explains itself). One
-// table for both menus, a chat here and a paired machine's, so the two say
+// table for both menus, a chat of this computer's and another environment's
+// (a paired desktop's, an SSH machine's, a WSL distribution's), so the two say
 // the same thing about the same item, and a new item is one more entry here.
 //
-// `where` says whose the chat is. A chat here is `local`. A paired machine's
-// chat is `remote`, and `marks` says whether that machine keeps the row
-// menu's star, colour, sleep and Auto-settle (`chat-lifecycle`): where it does
-// they are written there, and where it does not a chat opened here keeps them
-// on this computer only. An item that works differently on a remote chat says
-// so in a few words; the menu is no place for a paragraph (owner ruling
-// 2026-11-15).
+// `where` says whose the chat is. This computer's is `local`; another
+// environment's is `environment`, and `marks` says whether that environment
+// keeps the row menu's star, colour, sleep and Auto-settle (`chat-lifecycle`):
+// where it does they are written there, and where it does not a chat opened
+// here keeps them on this computer only. An item that works differently on
+// another environment's chat says so in a few words; the menu is no place for
+// a paragraph (owner ruling 2026-11-15). The two menus become one when this
+// computer's chats are read from its own Studio like any other environment's.
 
 import type { HighlightColor } from '../../../../../shared/workspace'
 import { getHighlightSwatch } from '../../../utils/highlight'
@@ -19,7 +21,7 @@ import type { MeshConversationManage } from '../../../../../shared/tailnet-mesh'
 export type ChatMenuPlace =
   | { kind: 'local' }
   | {
-      kind: 'remote'
+      kind: 'environment'
       machineName: string
       marks: boolean
       /** What of the chat's management its machine takes from here; none when absent. */
@@ -28,7 +30,7 @@ export type ChatMenuPlace =
 
 const LOCAL: ChatMenuPlace = { kind: 'local' }
 
-/** Where a star or colour set from this menu is kept, for a paired machine's chat. */
+/** Where a star or colour set from this menu is kept, for another environment's chat. */
 function markKept(where: ChatMenuPlace): string {
   if (where.kind === 'local') return ''
   return where.marks ? ` (syncs to ${where.machineName})` : ' (this computer only)'
@@ -51,13 +53,13 @@ export const chatMenuTooltips = {
   newChat: (projectless: boolean, where: ChatMenuPlace = LOCAL) =>
     projectless
       ? 'New chat with no project'
-      : where.kind === 'remote'
+      : where.kind === 'environment'
         ? `New chat in this project on ${where.machineName}`
         : 'New chat in this project',
   reveal: () => `Show folder in ${fileManager()}`,
   /** Why Reveal folder is off: the folder is on another machine, or gone. */
   revealUnavailable: (where: ChatMenuPlace) =>
-    where.kind === 'remote' ? `Folder is on ${where.machineName}` : 'Folder no longer exists',
+    where.kind === 'environment' ? `Folder is on ${where.machineName}` : 'Folder no longer exists',
   copyLink: (_where: ChatMenuPlace = LOCAL) => 'Copy a link to this chat',
   moveToNewWindow: (_where: ChatMenuPlace = LOCAL) => 'Open in its own window',
   moveToMainWindow: (_where: ChatMenuPlace = LOCAL) => 'Move back to the main window',
@@ -88,7 +90,7 @@ export const chatMenuTooltips = {
   typeAction: (label: string) => label,
   // Settings ▸ Settled chats deletes the same way (useDeleteSettledChats).
   deleteSettled: (where: ChatMenuPlace = LOCAL) =>
-    where.kind === 'remote'
+    where.kind === 'environment'
       ? `Delete chat and history on ${where.machineName} for good`
       : 'Delete chat and history for good',
 } as const

@@ -346,13 +346,13 @@ test('WorkspaceSidebar.remoteMenu', async () => {
 
       // A machine from before the row menu's tools takes none of them: its
       // chat's menu offers what that machine can still be asked for.
-      const { RemoteConversationContextMenu } = await import('./sidebar/contextMenus')
+      const { EnvironmentChatContextMenu } = await import('./sidebar/contextMenus')
       const olderHost = dom.window.document.createElement('div')
       dom.window.document.body.appendChild(olderHost)
       const olderRoot = createRoot(olderHost)
       act(() => {
         olderRoot.render(
-          React.createElement(RemoteConversationContextMenu, {
+          React.createElement(EnvironmentChatContextMenu, {
             x: 0,
             y: 0,
             title: 'Older chat',

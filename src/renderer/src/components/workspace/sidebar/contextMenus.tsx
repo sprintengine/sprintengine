@@ -369,7 +369,7 @@ export function WorkspaceContextMenu({
   const currentColor = workspace.highlight?.color ?? null
   // Settle is the one way a row is put away: there is no Close beside it.
   // This window's own chats only: another environment's chat has its own
-  // row and menu (`RemoteConversationContextMenu`).
+  // row and menu (`EnvironmentChatContextMenu`).
   const where: ChatMenuPlace = { kind: 'local' }
   // Reveal is shown off, and says why, for a folder gone from disk.
   const revealUnavailable = Boolean(workspace.folderPath) && workspace.folderMissing === true
@@ -501,21 +501,24 @@ export function WorkspaceContextMenu({
   )
 }
 
-export type RemoteConversationMenuAction =
+export type EnvironmentChatMenuAction =
   | 'open'
   | 'mark-unread'
   | 'copy-link'
   | 'move-to-new-window'
   | 'move-to-main-window'
   | ChatMarkAction
-  // ── A paired desktop's chat management ──
+  // ── Another environment's chat management ──
   | 'rename'
   | 'toggle-auto-compact'
   | 'stop-watching'
   | 'new-chat'
 
-// A chat on a paired machine that no window here holds: the same menu a
-// local row has, each item asking that machine, which keeps the chat. Its rest
+// Another environment's chat (a paired desktop's, an SSH machine's, a WSL
+// distribution's), by its address: the same menu a local row has, each item
+// asking that environment's Studio, which keeps the chat. This computer's own
+// chats keep their menu built from the window's records until the window reads
+// them from its own Studio as it reads every other environment's. Its rest
 // (`conversation-lifecycle`), its marks and sleep (`chat-lifecycle`) and its read
 // state (`chat-lifecycle`) are offered where the machine takes them; an
 // older machine's chat offers what it can, as a local menu hides what does
@@ -525,7 +528,7 @@ export type RemoteConversationMenuAction =
 // chat there, opening New chat on that machine and project. Left out because
 // they are about a workspace here, which this row does not have until it is
 // opened: the workspace type's own actions, and Close workspace.
-export function RemoteConversationContextMenu({
+export function EnvironmentChatContextMenu({
   x,
   y,
   title,
@@ -579,12 +582,12 @@ export function RemoteConversationContextMenu({
   /** Its agent is working, so Settle and Snooze wait, as they do on a local row. */
   working: boolean
   onClose: () => void
-  onSelect: (action: RemoteConversationMenuAction) => void
+  onSelect: (action: EnvironmentChatMenuAction) => void
   onPickColor: (color: HighlightColor) => void
 }) {
   const canCopyLink = clientSupports('deep-links') && chatLink !== null
   const snoozed = isSnoozedWorkspace({ snoozedUntil }, now)
-  const where: ChatMenuPlace = { kind: 'remote', machineName, marks, ...(manage ? { manage } : {}) }
+  const where: ChatMenuPlace = { kind: 'environment', machineName, marks, ...(manage ? { manage } : {}) }
   return (
     <ContextMenu
       x={x}
