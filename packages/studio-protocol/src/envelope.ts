@@ -311,6 +311,9 @@ export const STUDIO_ERROR_CODES = [
   // New chat's: no worktree could be cut or found for the chat, or its CLI has no such effort.
   'worktree_unavailable',
   'unsupported_effort',
+  // A chat asked for in a mode (`plan`, `ask`) its agent cannot run, or of a
+  // Studio too old to take a mode (`new-chat-mode`): never started without it.
+  'unsupported_mode',
   // Asked on a connection kept for the update methods only (an `incompatible` one).
   'unsupported_protocol_version',
   // `update.start` on a Studio that does not update itself; the words say how to.

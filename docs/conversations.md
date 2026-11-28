@@ -859,8 +859,10 @@ machine's record of it moves and every list reads it back; a paired desktop's
 chat is refused in words. The agent's `conversation.create` takes
 `environment` (an environment id, or a chat's address or link there) beside
 `workspaceId` or `noProject`, and starts the chat on that machine's Studio
-with its `conversation.create`. That create carries no mode, so a `plan` or
-`ask` chat there is refused rather than started writable. Until the copies of
+with its `conversation.create`. A `plan` or `ask` chat goes with its `mode`,
+which that machine's launch holds on the chat as it does for its own creates;
+a machine whose Studio is too old to take a mode (no `new-chat-mode`) is
+refused `unsupported_mode`, never started writable. Until the copies of
 those machines' chats go, a copy's `workspaceId` reaches its machine the same
 way.
 

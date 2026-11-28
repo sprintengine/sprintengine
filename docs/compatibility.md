@@ -169,7 +169,13 @@ the names it carried for New chat on another machine (`new-chat-worktree`,
 answers each CLI's catalog. A Studio that also serves `new-chat-folder`
 (2026-11-25) takes `folder` in place of `workspaceId`: New chat's folder on
 another machine, browsed or typed, that no workspace there names yet; a client
-offers a typed folder only to a Studio that says it. Every `conversation-`
+offers a typed folder only to a Studio that says it. A Studio that serves
+`new-chat-mode` (2026-11-28) takes `mode` (`plan` or `ask`; `default` is the
+same as none) on `conversation.create` and holds it on the chat for every
+turn. A Studio before it reads the create without the member and would start
+the chat writable, so the client runtime refuses a create with a mode to it
+(`unsupported_mode`) before anything is sent, judged on each connection's
+welcome. Every `conversation-`
 capability a Studio advertises
 is one `@sprintengine/conversation-protocol` names, since its welcome lists
 them from the package (`studioRpcConversationCapabilities`).

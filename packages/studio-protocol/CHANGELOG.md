@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added (a new chat's mode)
+
+- `conversation.create` takes `mode`: `plan` or `ask` (`default` is read as
+  none), the mode every turn of the new chat runs in, its first included,
+  held on the chat as a create on that machine's own window holds it. A
+  chat whose agent cannot run it is refused `unsupported_mode`, a new error
+  code, and never started. A Studio that takes it says `new-chat-mode`; the
+  client runtime refuses a create with a mode to one that does not
+  (`unsupported_mode`), since it would drop the member and start the chat
+  writable.
+
 ### Added (New chat in a folder)
 
 - `conversation.create` takes `folder` in place of `workspaceId`: a new chat in

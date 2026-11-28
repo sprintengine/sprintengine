@@ -242,14 +242,6 @@ export function chatEnvironments(deps: {
   })
 
   const launch = async (route: string, request: EnvironmentLaunchRequest): Promise<ConversationLaunchResult> => {
-    // The protocol's create takes no mode: a plan or ask chat there would run writable.
-    if (request.mode)
-      return {
-        ok: false,
-        code: 'unsupported_mode',
-        message:
-          'A chat on another machine cannot be started in a mode from here. Start it, then change its mode there.',
-      }
     const created = await ask(route, STUDIO_CONVERSATION_CREATE_CAPABILITY, 'conversation.create', {
       commandId: request.launchCommandId ?? randomUUID(),
       ...(request.noProject ? { noProject: true as const } : { workspaceId: request.workspaceId }),
@@ -258,6 +250,9 @@ export function chatEnvironments(deps: {
       ...(request.worktreeName ? { worktreeName: request.worktreeName } : {}),
       ...(request.existingWorktreePath ? { inWorktree: request.existingWorktreePath } : {}),
       ...(request.reasoningEffort ? { effort: request.reasoningEffort } : {}),
+      // Judged there as its own creates are; a Studio there too old to take
+      // it is refused by the client before anything is sent (`new-chat-mode`).
+      ...(request.mode === 'plan' || request.mode === 'ask' ? { mode: request.mode } : {}),
       ...(request.cli ? { cli: request.cli } : {}),
       ...(request.cliModel ? { model: request.cliModel } : {}),
       ...(request.prompt ? { prompt: request.prompt } : {}),

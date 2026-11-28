@@ -50,8 +50,16 @@ function sshMachine() {
   const asked: Array<{ method: string; params: Record<string, unknown> }> = []
   const capabilities: Array<string | null> = []
   const record: Record<string, unknown> = { settledAt: null, lastVisitedAt: 0, starred: false, color: null }
+  // Whether its Studio takes a create's mode (`new-chat-mode`); refused before
+  // it is sent otherwise, as the client runtime refuses it.
+  const studio = { takesMode: true }
   const client = {
     async request(method: string, params: Record<string, unknown>) {
+      if (method === 'conversation.create' && params.mode !== undefined && !studio.takesMode)
+        throw new StudioError(
+          'unsupported_mode',
+          'This Studio is older than this app and cannot start a chat in a mode.',
+        )
       asked.push({ method, params })
       if (method.startsWith('conversation.') && 'workspaceId' in params && params.workspaceId !== 'ws-deploy')
         throw new StudioError('not_found', `No chat "${String(params.workspaceId)}".`)
@@ -131,7 +139,7 @@ function sshMachine() {
     },
     onConnected: () => () => undefined,
   }
-  return { clients, asked, record, capabilities }
+  return { clients, asked, record, capabilities, studio }
 }
 
 const script: McpConnectionContext = { metadata: { kind: 'external-local' } }
@@ -362,11 +370,33 @@ test('conversation.create starts a chat on an SSH machine by its environment, an
   assert.equal(machine.asked.at(-1)?.params.noProject, true)
   assert.equal(machine.asked.at(-1)?.params.workspaceId, undefined)
 
-  // A plan chat would run writable there: refused, never started.
-  const asked = machine.asked.length
-  const planned = await call('conversation.create', { environment: 'env-ssh', workspaceId: 'ws-deploy', mode: 'plan' })
-  assert.equal(body(planned).error.code, 'unsupported_mode')
-  assert.equal(machine.asked.length, asked)
+  // A plan chat is started in plan mode there: the machine's create carries it.
+  const planned = await call('conversation.create', {
+    environment: 'env-ssh',
+    workspaceId: 'ws-deploy',
+    newChat: true,
+    mode: 'plan',
+    notifyParent: false,
+  })
+  assert.equal(planned.isError, undefined, JSON.stringify(body(planned)))
+  assert.equal(machine.asked.at(-1)?.method, 'conversation.create')
+  assert.equal(machine.asked.at(-1)?.params.mode, 'plan')
+  // "default" is no mode at all, to any Studio.
+  await call('conversation.create', { environment: 'env-ssh', workspaceId: 'ws-deploy', mode: 'default' })
+  assert.equal(machine.asked.at(-1)?.params.mode, undefined)
+
+  // A machine whose Studio is too old to take a mode would start it writable:
+  // refused in its words, never sent.
+  machine.studio.takesMode = false
+  try {
+    const asked = machine.asked.length
+    const older = await call('conversation.create', { environment: 'env-ssh', workspaceId: 'ws-deploy', mode: 'ask' })
+    assert.equal(body(older).error.code, 'unsupported_mode')
+    assert.match(body(older).error.message, /^build-box: /u)
+    assert.equal(machine.asked.length, asked)
+  } finally {
+    machine.studio.takesMode = true
+  }
 
   // Until the copies go, a copy's workspace id still starts the chat on its machine.
   const windowId = core.workspaceSyncService.getSnapshot().state.primaryWorkspaceWindowId

@@ -36,7 +36,7 @@ Tests: `src/renderer/src/components/panels/agentChat/ComposerField.test.tsx`.
 over the one environment list (`src/renderer/src/hooks/useEnvironments.ts`), and the start on another
 machine in `src/renderer/src/studio/environmentDiscovery.ts`; the launch in
 `src/main/conversation-launch-service.ts`. Wire: `conversation.create` (capabilities `conversation-create`,
-`new-chat-folder`).
+`new-chat-folder`, `new-chat-mode`).
 Tests: `src/main/conversation-launch-service.test.ts`, `src/renderer/src/components/workspace/agentComposer/NewAgentPanel.test.tsx`.
 
 **Chat list and a chat's rest** (sidebar, settle, snooze, mark unread, star): `src/renderer/src/components/workspace/WorkspaceSidebar.tsx`,

@@ -12,6 +12,7 @@ import {
 import { StudioError, byeError, isTerminalStudioCode } from './errors.js'
 import {
   STUDIO_METHODS,
+  STUDIO_NEW_CHAT_MODE_CAPABILITY,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
   checkStudioProtocolVersion,
@@ -540,8 +541,34 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     })
   }
 
+  /**
+   * Why this Studio must not be sent a request, read off its members: a create
+   * in a mode to a Studio before `new-chat-mode`, which would drop the mode and
+   * start the chat writable. Asked of the Studio each time the request goes
+   * out, so one reached again after an update or a downgrade is judged anew.
+   */
+  function refusedByWelcome(pending: Pending): StudioError | null {
+    if (
+      pending.method === 'conversation.create' &&
+      // `default` is the same as naming none, to a Studio of any age.
+      ['plan', 'ask'].includes((pending.params as { mode?: unknown }).mode as string) &&
+      !studioPeerSupports(welcome?.capabilities, STUDIO_NEW_CHAT_MODE_CAPABILITY)
+    )
+      return new StudioError(
+        'unsupported_mode',
+        'This Studio is older than this app and cannot start a chat in a mode, so nothing was started. Update it.',
+      )
+    return null
+  }
+
   /** A request onto the open connection, noting which run of the server it went to. */
   function sendRequest(pending: Pending): void {
+    const refused = refusedByWelcome(pending)
+    if (refused) {
+      settle(pending)
+      pending.reject(refused)
+      return
+    }
     pending.sentTo = { bootId: welcome?.bootId ?? null }
     send({ t: 'req', id: pending.id, method: pending.method, params: pending.params })
   }

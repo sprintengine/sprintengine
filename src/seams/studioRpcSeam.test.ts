@@ -54,7 +54,9 @@ import {
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
-import type { ConversationEvent, ConversationEventType } from '../shared/conversation-runtime'
+import { runsTurnMode, type ConversationEvent, type ConversationEventType } from '../shared/conversation-runtime'
+import type { AgentState } from '../shared/agent-state'
+import { MOCK_CONVERSATION_CAPABILITIES } from '../main/providers/mock-conversation-provider'
 import { emptyAgentLaunchSettings } from '../shared/launch-settings'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../shared/workspace-registry'
 import type { Workspace } from '../shared/workspace'
@@ -88,6 +90,9 @@ let userData: string
 let service: StudioRpcService
 let runtime: ConversationRuntime
 let fileViews: FileViews
+let workspaceAgent: (workspaceId: string, agentId: string) => AgentState | undefined
+/** The mode each turn ran in, by its message, as the provider was handed it. */
+const turnModes = new Map<string, string>()
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'studio-rpc-seam-'))
@@ -133,9 +138,12 @@ beforeAll(async () => {
         id: 'claude-agent',
         displayName: 'Claude Code',
         sessions: 'stateful',
+        // Plans as Claude Code's chat does, so a create may ask for it.
+        capabilities: { ...MOCK_CONVERSATION_CAPABILITIES, planMode: true },
         listModels: () => ['default', 'sonnet'],
         startSession: (input) => [event(input, 'session_started'), event(input, 'session_ready')],
         async *sendTurn(input) {
+          turnModes.set(input.message, input.mode ?? 'default')
           yield event(input, 'turn_started', { turnId: input.turnId })
           yield event(input, 'content_delta', { turnId: input.turnId, text: `re: ${input.message}` })
           yield event(input, 'turn_completed', { turnId: input.turnId })
@@ -160,7 +168,10 @@ beforeAll(async () => {
     removeWorkspace: (workspaceId) => sync.removeWorkspace(workspaceId, 'system'),
     startSession: (input) => runtime.startSession(input),
     send: (input) => runtime.sendTurn(input),
+    runsTurnMode: (providerId, mode) => runsTurnMode(runtime.getProviderCapabilities(providerId), mode),
   })
+  workspaceAgent = (workspaceId, agentId) =>
+    sync.getSnapshot().state.workspaces.find((each) => each.id === workspaceId)?.agents[agentId]
   const audit = createGatewayAuditStore({ resolveUserDataDir: () => userData })
   fileViews = createFileViews({ database: testDatabaseAt(userData), folderOf: () => folder })
   service = createStudioRpcService({
@@ -292,6 +303,29 @@ test('a paired app starts a chat, follows it and drives it, held to its ceiling'
     assert.ok(lines.some((line) => line.tool === 'conversation.create' && line.connection.kind === 'studio-client'))
     assert.ok(lines.some((line) => line.tool === 'conversation.send' && line.connection.clientName === 'seam-app'))
     assert.equal(auditText.includes('again'), false)
+  } finally {
+    client.close()
+  }
+})
+
+test('a paired app starts a chat in plan mode: held on the chat, and its first turn plans', async () => {
+  const client = await pairedClient(['conversation:read', 'conversation:operate', 'conversation:create'], 'auto')
+  try {
+    assert.equal(client.supports('new-chat-mode'), true)
+    const created = await client.rpc['conversation.create']({
+      workspaceId: 'ws-a',
+      newChat: true,
+      cli: 'claude-code',
+      prompt: 'plan the fix',
+      mode: 'plan',
+      commandId: 'make-plan-chat',
+    })
+    const agent = workspaceAgent(created.conversation.workspaceId, created.conversation.agentId)
+    assert.equal(agent?.conversationMode, 'plan')
+    assert.equal(agent?.conversationModeHeld, true)
+    const end = Date.now() + 5_000
+    while (!turnModes.has('plan the fix') && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(turnModes.get('plan the fix'), 'plan')
   } finally {
     client.close()
   }

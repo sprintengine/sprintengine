@@ -360,8 +360,9 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
             enum: ['default', 'plan', 'ask'],
             description:
               'The mode every turn of the chat runs in, the first included, whoever sends it. "ask" answers ' +
-              'and "plan" plans; neither changes anything. Kept on the chat. A chat that cannot run it (Codex, ' +
-              'Grok, Kimi Code) is refused with "unsupported_mode"; it never runs writable in its place. ' +
+              'and "plan" plans; neither changes anything. Kept on the chat, on whichever machine it starts. A ' +
+              'chat that cannot run it (Codex, Grok, Kimi Code), or one on a machine whose Studio is too old to ' +
+              'take a mode, is refused with "unsupported_mode"; it never runs writable in its place. ' +
               'Omitted, "default".',
           },
           prompt: { type: 'string', description: "The chat's first message." },
