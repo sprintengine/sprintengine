@@ -14,6 +14,7 @@ import { phoneClient, type PhoneProtocol } from './clients/phone'
 import { startCutter, type Cutter } from './cutter'
 import { approvalAfter, isReplyTo, isUserMessage, resolvedAfter, type Feed, type GateEvent } from './feed'
 import type { HostConfig, HostReady } from './host'
+import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
 import { Matrix } from './matrix'
 import { runSshLeg } from './ssh'
 import { runWslLeg } from './wsl'
@@ -587,6 +588,20 @@ async function main(): Promise<number> {
         'its own chat, still, after its asks',
       )
     })
+
+    // list: a chat of its own, so its settle leaves the others' chat alone.
+    // The window sees it at its address with its row's facts; the paired
+    // desktop stars it and the phone settles it, and every list says so.
+    const listed = await desktop.createChat!(project, 'gate-list-chat')
+    const reaches: ListReach[] = [
+      { who: 'desktop', ask: async (work) => work(await desktop.studio()) },
+      { who: 'peer', ask: (work) => peer.device!.ask(work) },
+      { who: 'phone', ask: (work) => phone.device!.ask(work) },
+    ]
+    const [, byPeer, byPhone] = reaches as [ListReach, ListReach, ListReach]
+    await matrix.run('desktop', 'list', () => listedAtItsAddress(reaches, listed.workspaceId))
+    await matrix.run('peer', 'list', () => markReadsBack(byPeer, reaches, listed.workspaceId))
+    await matrix.run('phone', 'list', () => settleReadsBack(byPhone, reaches, listed.workspaceId))
 
     // While the desktop and its paired devices are still up: they are who must not reach it.
     await runWslLeg({

@@ -427,6 +427,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       ...serverAutomationTools(
         createServerGatewayBackends({
           getWorkspaceSyncSnapshot: () => workspaceSyncService.getSnapshot(),
+          // `workspace.list` is the core's own list, as `workspaces.list` is.
+          listWorkspaces: (options) => core.workspaceList.list(options),
           // The terminals are this process's: `terminal.*`, `agent.*` and
           // `backlog.work` launch and read them here.
           listTerminalSessions: () => terminals?.runtime.sessions.listTerminals() ?? [],

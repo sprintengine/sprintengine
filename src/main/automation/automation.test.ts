@@ -19,6 +19,7 @@ import { createWorkspaceRegistryService } from '../workspace-registry-service'
 import { createInMemoryWorkspaceRegistryStore } from '../workspace-registry-store'
 import { createWorkspaceSyncService } from '../workspace-sync-service'
 import { loadMainModules, type CapabilityModule } from '../module-host/load-modules'
+import { createStudioWorkspaceList } from '../../server/workspaces/studio-workspace-list'
 import { createAutomationTools, type AutomationBackends } from './automation-tools'
 import { createAgentLaunchService } from '../agent-launch-service'
 import { resolvePermissionArgs } from '../plugin-render'
@@ -137,8 +138,12 @@ test('automation', async () => {
       newWorkspaceId: () => `ws-created-${++createdIds}`,
     })
     const workspaceSync = createWorkspaceSyncService({ registry, now: () => 1_000 })
+    const getWorkspaceSyncSnapshot = () => snapshotOf(overrides.workspaces ?? [])
+    const readRepositoryIdentity = overrides.readRepositoryIdentity ?? (async () => null)
     return {
-      getWorkspaceSyncSnapshot: () => snapshotOf(overrides.workspaces ?? []),
+      getWorkspaceSyncSnapshot,
+      // The core's own list, over the same records and readers.
+      listWorkspaces: createStudioWorkspaceList({ snapshot: getWorkspaceSyncSnapshot, readRepositoryIdentity }).list,
       createWorkspace: overrides.createWorkspace ?? ((input, actor) => workspaceSync.createWorkspace(input, actor)),
       listTerminalSessions: () => overrides.sessions ?? [],
       // Default: no launch port wired. A test that reaches a launch without
@@ -176,7 +181,7 @@ test('automation', async () => {
       readWorkspaceCheckout:
         overrides.readWorkspaceCheckout ??
         (async () => ({ git: false, branch: null, defaultBranch: null, branches: [], worktrees: [] })),
-      readRepositoryIdentity: overrides.readRepositoryIdentity ?? (async () => null),
+      readRepositoryIdentity,
       listPlugins: overrides.listPlugins ?? (() => []),
       ensureBuiltinSkillInstalled: overrides.ensureBuiltinSkillInstalled ?? (async () => true),
       // module.*/marketplace.*: no registry mirrored and nothing installed unless

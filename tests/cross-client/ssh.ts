@@ -19,6 +19,7 @@ import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER } from './client'
 import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
+import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
 
 // An SSH machine, for real: the dockerized sshd the SSH machine suites use,
 // the desktop's SSH environment (ssh-environment.ts) installing the server tree
@@ -411,6 +412,16 @@ export async function runSshLeg(input: {
         throw new Error(
           `ssh: the environment did not notice its server die (still "${stateAfter}" 30 s later); a Reconnect brought it back, by its cursor`,
         )
+    })
+
+    // list: the window, the client every desktop reaches the machine by, sees the
+    // chat at its address with its row's facts; a star and a settle asked
+    // there read back in its list.
+    await matrix.run('ssh', 'list', async () => {
+      const window: ListReach = { who: 'ssh', ask: async (work) => work(await windowStudio()) }
+      await listedAtItsAddress([window], key.workspaceId)
+      await markReadsBack(window, [window], key.workspaceId)
+      await settleReadsBack(window, [window], key.workspaceId)
     })
   } finally {
     stopFollowing()

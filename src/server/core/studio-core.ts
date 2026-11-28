@@ -85,6 +85,8 @@ import { powerActivity } from '../../main/power-activity'
 import { getSharedCredentialStore } from '../../main/secret-store'
 import { createWorkspaceRegistryService } from '../../main/workspace-registry-service'
 import { createWorkspaceRegistryStore } from '../../main/workspace-registry-store'
+import { readRepositoryIdentity } from '../../main/repository-identity'
+import { createStudioWorkspaceList } from '../workspaces/studio-workspace-list'
 import { createWorkspaceSyncService } from '../../main/workspace-sync-service'
 import { startWorkspaceStoreMigration } from '../../main/workspace-store-migration'
 import { invalidateCliAvailabilityOnHost, knownCliAvailability } from '../../main/cli-availability'
@@ -1969,6 +1971,15 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     hosts,
     workspaceRegistry,
     workspaceSyncService,
+    /**
+     * The chats this Studio holds, as `workspaces.list` and the gateway's
+     * `workspace.list` answer them: from its own records, in every mode.
+     */
+    workspaceList: createStudioWorkspaceList({
+      snapshot: () => workspaceSyncService.getSnapshot(),
+      readRepositoryIdentity: (folderPath) => readRepositoryIdentity(folderPath),
+      projectUsage: () => agentLaunchSettings.get().projectUsage,
+    }),
     conversations,
     conversationOwner,
     subagents,

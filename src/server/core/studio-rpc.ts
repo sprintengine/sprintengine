@@ -29,9 +29,7 @@ import { createStudioWorktrees } from '../worktrees/studio-worktrees'
 import { createStudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 import type { GitHubTokenStore } from '../../main/github-token-store'
 import { createStudioDiscovery } from './studio-discovery'
-import type { StudioDiscovery } from '../rpc/studio-rpc-types'
 import { conversationWorkingRoot } from '../../shared/agent-state'
-import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { backgroundWorkOf } from './background-work'
 import { applyGatewayLaunchTokenChanges } from './gateway-launch-tokens'
 import { chatsAreWorking } from './chats-working'
@@ -271,12 +269,10 @@ export function createStudioRpc(
       launchSettings: core.agentLaunchSettings,
       textGenerationSettings: core.textGenerationSettings,
     }),
-    // What a client reads before it starts a chat: the gateway's own tools
-    // answer it, so the protocol and MCP read one thing.
-    discovery: withoutCopies(
-      createStudioDiscovery(() => gateway.ownTools()),
-      (workspaceId) => Boolean(environmentRouteOfRecord(core.workspaceRegistry.getRecord(workspaceId))),
-    ),
+    // What a client reads before it starts a chat: this Studio's own list of
+    // its chats, and the gateway's own tools for the rest, so the protocol
+    // and MCP read one thing.
+    discovery: createStudioDiscovery(core.workspaceList, () => gateway.ownTools()),
     // What this machine lacks for its schedules and watches, which every
     // client shows and none can fix from afar.
     readiness: () => core.readiness.read(),
@@ -360,19 +356,6 @@ export function createStudioRpc(
   // A Studio server this desktop displaced has gone before the core was
   // built (`take-data-dir.ts`), so its listener no longer answers.
   return service
-}
-
-/**
- * The workspaces this Studio serves its clients, without its copies of
- * another environment's chats (design-wsl-ssh-direct PR 1d, decision 7): an
- * SSH machine's or a WSL distribution's chats are reached only from the
- * desktop that holds that machine, never by a device through it.
- */
-function withoutCopies(discovery: StudioDiscovery, isCopy: (workspaceId: string) => boolean): StudioDiscovery {
-  return {
-    ...discovery,
-    workspaces: async () => (await discovery.workspaces()).filter((workspace) => !isCopy(workspace.id)),
-  }
 }
 
 /** The hand-over into this core's own stores, each through its own way in. */

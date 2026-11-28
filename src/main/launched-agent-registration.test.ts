@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createStudioWorkspaceList } from '../server/workspaces/studio-workspace-list'
 import { test } from 'vitest'
 
 import type { TerminalSessionSnapshot } from '../shared/electron-api'
@@ -132,6 +133,10 @@ function host() {
     listTerminalSessions: () => sessions,
     launchAgent: (request) => launchService.launch(request),
     readRepositoryIdentity: async () => null,
+    listWorkspaces: createStudioWorkspaceList({
+      snapshot: () => workspaceSync.getSnapshot(),
+      readRepositoryIdentity: async () => null,
+    }).list,
     // A calling agent launches no looser than its own preset; this one has none on record.
     resolveAgentPermissionPreset: () => null,
     sleep: async () => {},

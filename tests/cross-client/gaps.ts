@@ -21,6 +21,7 @@ export const SCENARIOS = [
   'launch',
   'machine',
   'unreachable',
+  'list',
 ] as const
 export type ScenarioId = (typeof SCENARIOS)[number]
 
@@ -41,16 +42,17 @@ export const SCENARIO_WORDS: Record<ScenarioId, string> = {
     'git, the home, CLI detection and a git-directory watch by the environment methods, and the files the window reads there',
   unreachable:
     'the phone and a paired desktop cannot reach it: no method lists or tickets it, and no path through the desktop serves it',
+  list: 'a chat is listed at its address with what its row draws; a star and a settle asked by one client read back in every list',
 }
 
 /** Which rows each client is held to. A read-only embed is not asked to write. */
 export const ROWS: Record<ClientId, readonly ScenarioId[]> = {
-  desktop: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
-  peer: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
-  phone: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
+  desktop: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list'],
+  peer: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list'],
+  phone: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list'],
   embed: ['stream', 'resume', 'restart', 'isolation'],
-  ssh: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
-  wsl: ['create', 'stream', 'approval', 'schedule', 'restart', 'launch', 'machine', 'unreachable'],
+  ssh: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'list'],
+  wsl: ['create', 'stream', 'approval', 'schedule', 'restart', 'launch', 'machine', 'unreachable', 'list'],
 }
 
 /** `expect`: what the row's failure says today; failing for any other reason is a failure. */

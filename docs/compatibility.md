@@ -777,7 +777,10 @@ Studio leaves out.
 `workspaces.extensions`, answered by the gateway tools of the same purpose
 (`workspace.list`, `cli.runtime.list`, `workspace.checkout`,
 `workspace.extensions`), so the two read one thing; it is served beside the
-conversation contract, not only with the chat surface. `conversation.create`
+conversation contract, not only with the chat surface. `workspaces.list` is the
+Studio's own list of the chats it holds, read from its records, so every Studio
+answers it, an SSH machine's and a WSL distribution's included; it leaves out a
+desktop's copies of another environment's chats. `conversation.create`
 takes New chat's own options beside the contract's request (`newChat`,
 `worktree`, `worktreeName`, `inWorktree`, `effort`, and `noProject` in place of
 `workspaceId`), held to the same rules the gateway's tool holds them to; a

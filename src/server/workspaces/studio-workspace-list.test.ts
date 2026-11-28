@@ -4,11 +4,13 @@ import { test } from 'vitest'
 import type { Workspace } from '../../shared/workspace'
 import { PROJECT_USE_HALF_LIFE_MS, withProjectUse, type ProjectUsageMap } from '../../shared/project-frecency'
 import type { WorkspaceSyncSnapshot } from '../../shared/workspace-sync'
-import { createAutomationTools, type AutomationBackends } from './automation-tools'
+import { createStudioWorkspaceList } from './studio-workspace-list'
 
-// `workspace.list` tells a paired phone how much each workspace's project is
-// used, so the phone's New lists its projects in the order New chat here does.
-// The fields are additive: a desktop with no usage to give lists as before.
+// The list a Studio answers `workspaces.list` and `workspace.list` with. It
+// tells a paired phone how much each workspace's project is used, so the
+// phone's New lists its projects in the order New chat here does (additive: a
+// Studio with no usage to give lists as before), and each row carries what
+// its chat's row draws (`chat-rows`).
 
 const NOW = Date.UTC(2026, 9, 6, 12)
 
@@ -50,19 +52,14 @@ function snapshot(): WorkspaceSyncSnapshot {
   }
 }
 
-async function list(usage?: ProjectUsageMap): Promise<Array<Record<string, unknown>>> {
-  // Only what `workspace.list` reads; every other tool is left unbuilt.
-  const backends = {
-    getWorkspaceSyncSnapshot: snapshot,
+async function list(usage?: ProjectUsageMap, ownOnly = false): Promise<Array<Record<string, unknown>>> {
+  const chats = createStudioWorkspaceList({
+    snapshot,
     readRepositoryIdentity: async () => null,
     now: () => NOW,
     ...(usage ? { projectUsage: () => usage } : {}),
-  } as unknown as AutomationBackends
-  const tool = createAutomationTools(backends).find((candidate) => candidate.name === 'workspace.list')
-  assert.ok(tool, 'workspace.list is served')
-  const result = await tool.handler({}, {} as never)
-  assert.equal(result.isError, undefined)
-  return (result.structuredContent as { workspaces: Array<Record<string, unknown>> }).workspaces
+  })
+  return (await chats.list({ ownOnly })).workspaces
 }
 
 test('each row carries its project’s score and latest use, scored at the moment of the listing', async () => {
@@ -80,7 +77,7 @@ test('each row carries its project’s score and latest use, scored at the momen
   assert.equal(byId.get('ws-none')?.projectFrecency, 0, 'a chat with no folder is no project and never used')
 })
 
-test('a desktop with no usage to give lists the rows without the fields', async () => {
+test('a Studio with no usage to give lists the rows without the fields', async () => {
   const rows = await list()
   assert.equal(rows.length, WORKSPACES.length)
   for (const row of rows) {
@@ -128,5 +125,22 @@ test('each row carries what its chat’s row draws, and leaves out what it has n
     assert.equal(woke?.recencyAt, 1, 'a chat nobody wrote to sits where it was made')
   } finally {
     WORKSPACES.splice(WORKSPACES.indexOf(marked), 2)
+  }
+})
+
+test('asked for its own chats only, it leaves out what another environment holds', async () => {
+  const copy = workspace('ws-copy', {
+    folderPath: '/home/dev/app',
+    environment: { kind: 'ssh', id: 'build-box', label: 'dev@build-box' },
+  })
+  WORKSPACES.push(copy)
+  try {
+    assert.ok(
+      (await list(undefined, false)).some((row) => row.id === 'ws-copy'),
+      'this desktop’s own agents see it',
+    )
+    assert.ok(!(await list(undefined, true)).some((row) => row.id === 'ws-copy'), 'whoever asks from outside does not')
+  } finally {
+    WORKSPACES.splice(WORKSPACES.indexOf(copy), 1)
   }
 })

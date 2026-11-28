@@ -25,6 +25,7 @@ import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER, type GateClient } from './client'
 import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
+import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
 
 // A WSL distribution, as far as a machine without WSL can show one: `sh`
 // stands in for `wsl.exe`, in a home of the distribution's own with the pinned
@@ -467,6 +468,16 @@ export async function runWslLeg(input: {
         if (!(await bound({ workspaceId: key.workspaceId, agentId: 'wsl-terminal-2' }, live.token, third.token)))
           throw new Error('wsl: the restarted server was not told the live launch token')
       }
+    })
+
+    // list: the window, the client every desktop reaches the distribution by, sees the
+    // chat at its address with its row's facts; a star and a settle asked
+    // there read back in its list.
+    await matrix.run('wsl', 'list', async () => {
+      const window: ListReach = { who: 'wsl', ask: async (work) => work(await windowStudio()) }
+      await listedAtItsAddress([window], key.workspaceId)
+      await markReadsBack(window, [window], key.workspaceId)
+      await settleReadsBack(window, [window], key.workspaceId)
     })
 
     // No paired device reaches the distribution through this desktop: the
