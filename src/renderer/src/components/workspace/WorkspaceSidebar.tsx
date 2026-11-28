@@ -1598,7 +1598,7 @@ function WorkspaceSidebar({
     const still = [...settlingRemote].filter((key) => listed.has(key))
     if (still.length !== settlingRemote.size) setSettlingRemote(new Set(still))
   }, [environmentRows, settlingRemote])
-  const unattachedRemote = useMemo(
+  const drawnRemote = useMemo(
     () =>
       settlingRemote.size === 0
         ? environmentRows
@@ -1864,10 +1864,20 @@ function WorkspaceSidebar({
   // A header founded by another environment's chats: the first of them names the project there.
   const remoteNewChatOfGroup = (group: FolderGroup | undefined) =>
     group?.remote ? remoteNewChatTargetOf(group.remoteRows[0]) : null
-  const renameRemoteChat = (target: RemoteChatTarget, typed: string) => {
+  const renameRemoteChat = (
+    target: RemoteChatTarget & Pick<RemoteConversation, 'attachedWorkspaceId'>,
+    typed: string,
+  ) => {
     const name = typed.trim()
     if (!name || name === target.title) return
-    changeRemoteChat(target, { kind: 'rename', name }, { title: name })
+    // A chat attached here takes the name here too once its machine took it,
+    // so its window and tabs read what every device lists (a copy's name is
+    // mirrored from its machine).
+    const held = target.attachedWorkspaceId
+    const attached = held !== null && workspaces.some((w) => w.id === held && w.remoteOrigin)
+    changeRemoteChat(target, { kind: 'rename', name }, { title: name }, () => {
+      if (attached) renameWorkspace(held, name)
+    })
   }
 
   // Auto compact on another environment's chat is that environment's rule
@@ -1909,7 +1919,7 @@ function WorkspaceSidebar({
         { ...group, remoteRows: [] as RemoteConversation[], remoteSleepingRows: [] as RemoteConversation[] },
       ]),
     )
-    for (const conversation of unattachedRemote) {
+    for (const conversation of drawnRemote) {
       const sleeping = remoteConversationAsleep(conversation, now)
       if (!sleeping && conversation.highlight?.starred) continue
       const key = remoteGroupKeyOf(conversation)
@@ -1941,28 +1951,28 @@ function WorkspaceSidebar({
       else group.remoteRows.push(conversation)
     }
     return order.map((key) => byKey.get(key)!)
-  }, [localGroups, unattachedRemote, remoteGroupKeyOf, now])
+  }, [localGroups, drawnRemote, remoteGroupKeyOf, now])
   // The same split for the flat stream and the Starred section.
   const starredRemote = useMemo(
     () =>
-      unattachedRemote.filter(
+      drawnRemote.filter(
         (conversation) => conversation.highlight?.starred === true && !remoteConversationAsleep(conversation, now),
       ),
-    [unattachedRemote, now],
+    [drawnRemote, now],
   )
   const sleepingRemote = useMemo(
     () =>
-      unattachedRemote
+      drawnRemote
         .filter((conversation) => remoteConversationAsleep(conversation, now))
         .sort((a, b) => (a.snoozedUntil ?? 0) - (b.snoozedUntil ?? 0)),
-    [unattachedRemote, now],
+    [drawnRemote, now],
   )
   const streamRemote = useMemo(
     () =>
-      unattachedRemote.filter(
+      drawnRemote.filter(
         (conversation) => !remoteConversationAsleep(conversation, now) && conversation.highlight?.starred !== true,
       ),
-    [unattachedRemote, now],
+    [drawnRemote, now],
   )
 
   // Which shape this rail lists chats in — the project tree, every chat by
@@ -2316,16 +2326,22 @@ function WorkspaceSidebar({
     conversationsByWorkspaceId,
     sessionsByWorkspaceId,
   ])
-  // The same question of a paired machine's chats no window here holds, asked
-  // of what their machine says, as By status ranks them (`remoteRowActivity`).
-  // `streamRemote` has already left out the starred and the sleeping, and a
-  // chat with no window here is never the one in front. One a window here does
-  // hold is a row of `localRailWorkspaces`, and answered above.
+  // The same question of other environments' chats, asked of what their
+  // environment says, as By status ranks them (`remoteRowActivity`).
+  // `streamRemote` has already left out the starred and the sleeping. A chat
+  // whose record here is the window's chat in front is the one in front, as a
+  // local chat is: its record is not a row, its address row is.
   const workingRemote = useMemo<readonly RemoteConversation[]>(() => {
     if (!workingSectionOn) return NO_WORKING_REMOTE
     return streamRemote.filter((conversation) =>
       inWorkingSection(
-        { starred: false, front: false },
+        {
+          starred: false,
+          front:
+            chatListView !== 'status' &&
+            conversation.attachedWorkspaceId !== null &&
+            conversation.attachedWorkspaceId === frontWorkspaceId,
+        },
         {
           activity: remoteRowActivity(conversation),
           conversations: NO_CONVERSATIONS,
@@ -2333,7 +2349,7 @@ function WorkspaceSidebar({
         },
       ),
     )
-  }, [workingSectionOn, streamRemote])
+  }, [workingSectionOn, streamRemote, chatListView, frontWorkspaceId])
   const workingRemoteKeys = useMemo<ReadonlySet<string>>(
     () => new Set(workingRemote.map((conversation) => conversation.key)),
     [workingRemote],
@@ -2469,7 +2485,7 @@ function WorkspaceSidebar({
   const commitRemoteRename = () => {
     const renaming = renamingRemote
     setRenamingRemote(null)
-    const conversation = renaming ? unattachedRemote.find((candidate) => candidate.key === renaming.key) : undefined
+    const conversation = renaming ? drawnRemote.find((candidate) => candidate.key === renaming.key) : undefined
     if (!renaming || !conversation?.manage.rename) return
     renameRemoteChat(conversation, renaming.value)
   }
@@ -3568,7 +3584,10 @@ function WorkspaceSidebar({
     const local = sortWorkspacesByUserMessage(localRailWorkspaces.filter((w) => workingIds.has(w.id)))
     const rows = interleaveChats(local, workingRemote, chatRecency)
     if (rows.length === 0) return null
-    const holdsFront = frontWorkspaceId !== null && workingIds.has(frontWorkspaceId)
+    const holdsFront =
+      frontWorkspaceId !== null &&
+      (workingIds.has(frontWorkspaceId) ||
+        workingRemote.some((conversation) => conversation.attachedWorkspaceId === frontWorkspaceId))
     const expanded = expandedShelves[STATUS_WORKING_SHELF_KEY] ?? holdsFront
     return (
       <>
@@ -4455,7 +4474,7 @@ function WorkspaceSidebar({
       {/* Context menu (another environment's chat) */}
       {remoteMenu
         ? (() => {
-            const conversation = unattachedRemote.find((candidate) => candidate.key === remoteMenu.key)
+            const conversation = drawnRemote.find((candidate) => candidate.key === remoteMenu.key)
             if (!conversation) return null
             const target = conversation
             const chatLink = conversation.environmentId
