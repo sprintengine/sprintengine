@@ -25,6 +25,7 @@ import { createExtensionTools } from '../automation/extension-tools'
 import { createTailnetTools } from '../automation/tailnet/tailnet-tools'
 import { createTourTools } from '../automation/tour-tools'
 import { createConversationChatTools } from '../automation/conversation-chat-tools'
+import { createConversationTools } from '../automation/conversation-tools'
 import { createPullRequestTools } from '../../server/pull-requests/pull-request-tools'
 import { STUDIO_PLUGIN_ID } from './studio-plugin'
 import { test } from 'vitest'
@@ -108,6 +109,7 @@ test('studio-plugin-skills', async () => {
       ...createTourTools({} as never),
       ...createPullRequestTools({} as never),
       ...createConversationChatTools({} as never),
+      ...createConversationTools({} as never),
       ...createExtensionTools({} as never),
       ...createExtensionDevTools({} as never),
       ...createExtensionInstallTools({} as never),

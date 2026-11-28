@@ -35,6 +35,13 @@ afterAll(async () => {
   if (scratch) await rm(scratch, { recursive: true, force: true })
 })
 
+const stops: Array<() => Promise<void>> = []
+/** Shut a core down once every test here is done, before the platform goes. */
+const stopLater = (stop: () => Promise<void>) => stops.push(stop)
+afterAll(async () => {
+  for (const stop of stops) await stop()
+})
+
 const SSH_ROUTE = 'ssh:build-box'
 const SSH_ROOT = 'ssh://build-box/home/dev/repo'
 
@@ -223,8 +230,12 @@ test("a tool given a link to an SSH machine's chat drives it there; a paired des
     assert.match(body(own).error.message, /this machine/u)
     assert.equal(routesAsked.length, asked)
   } finally {
-    await gateway.shutdown()
-    await core.shutdown()
+    // Shut once the file is done: what the core starts (its hand-over plan)
+    // must not be cut short by a shutdown, nor log after the platform goes.
+    stopLater(async () => {
+      await gateway.shutdown()
+      await core.shutdown()
+    })
   }
 })
 
@@ -248,14 +259,19 @@ function machineGateway() {
   return { core, gateway, machine, call }
 }
 
-// One core for the tests below, up from the first to the last, so nothing it
-// starts is cut short by its own shutdown.
+// One core for the tests below, up from the start of the file to its end.
 let shared: ReturnType<typeof machineGateway> | null = null
-const tidy = () => (shared ??= machineGateway())
-afterAll(async () => {
-  await shared?.gateway.shutdown()
-  await shared?.core.shutdown()
+beforeAll(() => {
+  const built = (shared = machineGateway())
+  stopLater(async () => {
+    await built.gateway.shutdown()
+    await built.core.shutdown()
+  })
 })
+const tidy = () => {
+  if (!shared) throw new Error('the core is built before the tests')
+  return shared
+}
 
 test("each lifecycle tool given an SSH machine's chat by address changes the machine's own record", async () => {
   const { machine, call } = tidy()
