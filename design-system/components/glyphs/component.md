@@ -304,10 +304,9 @@ surface inks the same state the same way:
 The primitive takes `state` and an optional `label`; the caller owns the size
 (`icon-xs` beside meta copy, `icon-sm` in a row's leading slot) and the ink.
 
-**Every pull request in the product is drawn from here.** `BranchStepStrip`'s
-merge commits take the merged drawing, and `PullRequestMark` — the pull request a
-conversation wears on its sidebar line and in its peek card — leads with the
-mark for its state. Nothing draws its own.
+**Every pull request in the product is drawn from here.** `PullRequestMark` — the
+pull request a conversation wears on its sidebar line and in its peek card —
+leads with the mark for its state. Nothing draws its own.
 
 ### Capability (16-grid — `ui/CapabilityGlyphs.tsx`)
 
