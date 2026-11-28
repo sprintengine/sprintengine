@@ -148,7 +148,8 @@ export function seedEnvironmentChatsOnce(input: {
   storage?: Pick<Storage, 'getItem' | 'setItem'> | null
   waitMs?: number
 }): Promise<void> {
-  const storage = input.storage === undefined ? (typeof localStorage === 'undefined' ? null : localStorage) : input.storage
+  const storage =
+    input.storage === undefined ? (typeof localStorage === 'undefined' ? null : localStorage) : input.storage
   const { cache } = input
   if (!cache || !storage || storage.getItem(ENVIRONMENT_CHATS_SEEDED_KEY)) return Promise.resolve()
   if (seeding) return seeding
