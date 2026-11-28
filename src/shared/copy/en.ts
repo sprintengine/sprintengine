@@ -4385,6 +4385,10 @@ export const en = {
       noMessageOfYoursTo: 'No message of yours to title this chat from.',
       theModelAnsweredWithNo: 'The model answered with no title.',
     },
+    // src/renderer/src/store/slices/workspacesSlice.ts
+    workspacesSlice: {
+      wasNotChanged: (name: unknown) => `“${name}” was not changed`,
+    },
     // src/renderer/src/store/workspaceStore.ts
     workspaceStore: {
       wasNotSaved: (name: unknown) => `“${name}” was not saved`,

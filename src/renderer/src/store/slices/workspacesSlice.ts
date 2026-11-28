@@ -23,6 +23,9 @@ import { isProjectlessChatsRoot } from '../../../../shared/projectless-chats'
 import { normalizeProjectRootKey } from '../../utils/projectKnowledge'
 import { normalizeRecentWorkspaceFolders } from './settingsSlice'
 import { changeLocalChat, restLocalChat } from '../localChatRecord'
+import { showToast } from '../toastStore'
+import type { MeshConversationChange } from '../../../../shared/tailnet-mesh'
+import { copy } from '../../../../shared/copy'
 import { releaseWorktreeEntriesOwnedBy } from './worktreesSlice'
 import {
   workspaceSyncClient,
@@ -87,6 +90,11 @@ function getCurrentWorkspaceWindowIdForSlice(): WorkspaceWindowId {
   } catch {
     return PRIMARY_WORKSPACE_WINDOW_ID
   }
+}
+
+/** Whether a record field still holds what a change set it to: its marks are compared by value. */
+function sameField(held: unknown, asked: unknown): boolean {
+  return held === asked || JSON.stringify(held ?? null) === JSON.stringify(asked ?? null)
 }
 
 export function workspaceFolderKey(value: string | null | undefined): string | null {
@@ -650,6 +658,34 @@ export function createWorkspacesSlice(
   const chatOf = (id: WorkspaceId): Pick<Workspace, 'id' | 'environment'> =>
     getState().workspaces.find((w) => w.id === id) ?? { id }
   const inFlight = new Map<WorkspaceId, Promise<WorkspaceLifecycleResult>>()
+  // A star, colour, name or Auto-settle asked of the chat's own Studio. The
+  // record moved at once; a refusal puts back what it held before, field by
+  // field where nothing has moved it again since, and says why, as a refused
+  // settle or snooze does. A window with no Studio to ask keeps its record.
+  const askChatChange = (
+    id: WorkspaceId,
+    change: MeshConversationChange,
+    asked: Partial<Workspace>,
+    before: Partial<Workspace>,
+  ): void => {
+    void changeLocalChat(chatOf(id), change).then((answer) => {
+      if (answer.ok || answer.code === 'unavailable') return
+      let name: string | null = null
+      set((state) => {
+        const ws = state.workspaces.find((w) => w.id === id)
+        if (!ws) return
+        name = ws.name
+        for (const key of Object.keys(asked) as (keyof Workspace)[])
+          if (sameField(ws[key], asked[key])) Object.assign(ws, { [key]: before[key] })
+      })
+      if (name !== null)
+        showToast({
+          tone: 'neutral',
+          title: copy.store.workspacesSlice.wasNotChanged(name),
+          description: answer.message,
+        })
+    })
+  }
   const adoptRest = (workspaceId: WorkspaceId, rest: WorkspaceLifecycleSnapshot): void => {
     const { settledAt, settledOverride, snoozedUntil } = rest
     set((state) => {
@@ -1025,9 +1061,11 @@ export function createWorkspacesSlice(
     // off the chat list.
     setWorkspaceHighlight: (id, highlight) => {
       let next: WorkspaceHighlight | null = null
+      let before: WorkspaceHighlight | undefined
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
+        before = ws.highlight ? { ...ws.highlight } : undefined
         const current: WorkspaceHighlight = ws.highlight ?? { starred: false, color: null }
         next = {
           starred: highlight.starred ?? current.starred,
@@ -1037,19 +1075,27 @@ export function createWorkspacesSlice(
       })
       if (next) {
         const { starred, color } = next as WorkspaceHighlight
-        void changeLocalChat(chatOf(id), { kind: 'highlight', starred, color })
+        askChatChange(id, { kind: 'highlight', starred, color }, { highlight: next }, { highlight: before })
       }
     },
 
     clearWorkspaceHighlight: (id) => {
       let cleared = false
+      let before: WorkspaceHighlight | undefined
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
+        before = ws.highlight ? { ...ws.highlight } : undefined
         ws.highlight = undefined
         cleared = true
       })
-      if (cleared) void changeLocalChat(chatOf(id), { kind: 'highlight', starred: false, color: null })
+      if (cleared)
+        askChatChange(
+          id,
+          { kind: 'highlight', starred: false, color: null },
+          { highlight: undefined },
+          { highlight: before },
+        )
     },
 
     // A hand decision about rest (settled-chats, 2026-09-07). Settle parks the
@@ -1121,13 +1167,21 @@ export function createWorkspacesSlice(
     // the sweep reads it on its next tick.
     setWorkspaceAutoSettle: (id, enabled) => {
       let changed = false
+      let before: Workspace['autoSettleEnabled']
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws || (ws.autoSettleEnabled === true) === enabled) return
+        before = ws.autoSettleEnabled
         Object.assign(ws, { autoSettleEnabled: enabled ? true : null })
         changed = true
       })
-      if (changed) void changeLocalChat(chatOf(id), { kind: 'auto-settle', enabled })
+      if (changed)
+        askChatChange(
+          id,
+          { kind: 'auto-settle', enabled },
+          { autoSettleEnabled: enabled ? true : null },
+          { autoSettleEnabled: before },
+        )
     },
 
     // The row menu's Auto compact switch: `true` or `false` for this chat,
@@ -1557,9 +1611,11 @@ export function createWorkspacesSlice(
     // it the winning rename would still be auto-titled over.
     renameWorkspace: (id, name) => {
       let accepted: string | null = null
+      let before: Pick<Workspace, 'name' | 'titleLocked'> | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
+        before = { name: ws.name, titleLocked: ws.titleLocked }
         ws.name = name.trim() || ws.name
         // A hand-typed name is final: auto-titling must never overwrite it, and
         // the lock is set even when the rename was a no-op (the user retyping
@@ -1567,7 +1623,8 @@ export function createWorkspacesSlice(
         ws.titleLocked = true
         accepted = ws.name
       })
-      if (accepted) void changeLocalChat(chatOf(id), { kind: 'rename', name: accepted })
+      if (accepted && before)
+        askChatChange(id, { kind: 'rename', name: accepted }, { name: accepted, titleLocked: true }, before)
     },
 
     // Name a still-default workspace after the first real prompt sent inside it.
@@ -1580,16 +1637,19 @@ export function createWorkspacesSlice(
     // leaves the workspace unlocked for the next one.
     autoTitleWorkspaceFromPrompt: (id, prompt) => {
       let accepted: string | null = null
+      let before: Pick<Workspace, 'name' | 'titleLocked'> | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws || ws.titleLocked) return
         const title = deriveWorkspaceTitle(prompt)
         if (!title) return
+        before = { name: ws.name, titleLocked: ws.titleLocked }
         ws.name = title
         ws.titleLocked = true
         accepted = title
       })
-      if (accepted) void changeLocalChat(chatOf(id), { kind: 'rename', name: accepted })
+      if (accepted && before)
+        askChatChange(id, { kind: 'rename', name: accepted }, { name: accepted, titleLocked: true }, before)
       return accepted
     },
 
@@ -1599,6 +1659,7 @@ export function createWorkspacesSlice(
       const title = rawTitle.trim()
       if (!title) return false
       let landed = false
+      let before: Pick<Workspace, 'name' | 'titleLocked'> | null = null
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
         if (!ws) return
@@ -1606,11 +1667,13 @@ export function createWorkspacesSlice(
         // app's name"; a hand rename and an explicit name at birth both set it.
         const stillOurs = replacing !== null ? ws.name === replacing : !ws.titleLocked
         if (!stillOurs || ws.name === title) return
+        before = { name: ws.name, titleLocked: ws.titleLocked }
         ws.name = title
         ws.titleLocked = true
         landed = true
       })
-      if (landed) void changeLocalChat(chatOf(id), { kind: 'rename', name: title })
+      if (landed && before)
+        askChatChange(id, { kind: 'rename', name: title }, { name: title, titleLocked: true }, before)
       return landed
     },
 
