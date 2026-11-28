@@ -21,11 +21,11 @@ import type { EnvironmentListFailure } from '../../../studio/environmentChatsFre
 
 /**
  * Why a machine's rows are a last-known list: it no longer takes this
- * pairing (`signed-out`), it does not answer (`not-answering`), its Studio and
- * this one share no protocol (`outdated`), or the pairing is gone from here
- * (`unpaired`).
+ * device (`signed-out`), it does not answer (`not-answering`), its Studio and
+ * this one share no protocol (`outdated`), or it is not running and is not
+ * started just to list its chats (`not-connected`, a WSL distribution).
  */
-export type RemoteLastKnownReason = 'signed-out' | 'not-answering' | 'outdated' | 'unpaired' | 'superseded'
+export type RemoteLastKnownReason = 'signed-out' | 'not-answering' | 'outdated' | 'not-connected'
 
 export type RemoteLastKnown = {
   reason: RemoteLastKnownReason
@@ -93,11 +93,8 @@ export function remoteLastKnownWords(
   switch (lastKnown.reason) {
     case 'signed-out':
       return said(words.signedOut, words.signedOut, true, words.refusedThisDevice(machineName))
-    case 'unpaired':
-      return said(words.notPaired, words.notPaired, true, words.noLongerPaired(machineName))
-    case 'superseded':
-      // Paired again already: nothing to pair, only the new pairing's row to open.
-      return said(words.oldPairing, words.oldPairing, false, words.pairedAgainSince(machineName))
+    case 'not-connected':
+      return said(words.notConnected, words.notConnected, false, words.isNotRunning(machineName))
     case 'outdated':
       return said(words.outOfDate, words.outOfDate, false, words.shareNoProtocol(machineName))
     case 'not-answering':

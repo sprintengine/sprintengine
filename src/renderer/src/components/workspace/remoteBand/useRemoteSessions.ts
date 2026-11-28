@@ -1,45 +1,55 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { MeshConnection } from '../../../../../shared/tailnet-mesh'
 import { tailnetScopesOfGrant } from '../../../studio/environmentDiscovery'
-import { environmentStudioAvailable, pairedTarget } from '../../../studio/environmentStudio'
+import { environmentStudioAvailable, pairedConnectionOf } from '../../../studio/environmentStudio'
 import {
-  environmentChatSourceFor,
+  environmentResting,
+  followedEnvironmentChats,
+  followedEnvironmentTargets,
   onFollowedEnvironmentChats,
-  type EnvironmentRows,
+  type EnvironmentChatsSnapshot,
 } from '../../../studio/environmentChats'
 import { useTailnetPresence, type TailnetPresence } from '../topbar/useTailnetPresence'
 import { publishRemoteConversationList } from './remoteConversationFacts'
-import { chatManageOf, remoteLinkStateOf, type RemoteBrowseEntry, type RemoteLinkState } from './remoteSessionsModel'
+import {
+  chatManageOf,
+  remoteLinkStateOf,
+  type EnvironmentChatSourceView,
+  type RemoteBrowseEntry,
+  type RemoteLinkState,
+} from './remoteSessionsModel'
 
-// The paired machines' rows behind the sidebar's Remote band, as the window's
-// chat source of each machine reads them (`environmentChats.ts`): what it
-// holds and its chats, kept fresh there by its pushes, its reconnects, a slow
-// clock and focus, and kept as a last-known list when a read fails. This hook
-// only shapes them by pairing, as the band draws them, and hands the chats'
+// Every followed environment's rows behind the sidebar (design-environments
+// PR 3), as the window's chat source of each reads them
+// (`environmentChats.ts`): what it holds and its chats, kept fresh there by
+// its pushes, its reconnects, a slow clock and focus, and kept as a
+// last-known list when a read fails or the environment rests. This hook only
+// shapes them as the rows read them, and hands a paired desktop's chats'
 // list to the tabs of panes open on them (`remoteConversationFacts.ts`).
 
 export type RemoteSessions = {
   presence: TailnetPresence
-  browses: ReadonlyMap<string, RemoteBrowseEntry>
+  /** Each followed environment's rows, in the order the window follows them. */
+  sources: readonly EnvironmentChatSourceView[]
   /**
    * Whether this device is on the tailnet at all — up, down, or not yet known.
-   * What the rows that are WINDOWS here are gated on: a chat on another machine
-   * is not openable, typable, or readable from a device with no tailnet, so its
-   * row goes with the link and comes back with it (owner, 2026-09-13).
+   * A chat on a paired desktop is not openable, typable, or readable from a
+   * device with no tailnet, so its row goes with the link and comes back with
+   * it (owner, 2026-09-13).
    */
   link: RemoteLinkState
-  /** Read one machine again now. */
-  refresh: (connectionId: string) => void
+  /** Read one environment again now. */
+  refresh: (route: string) => void
 }
 
-/** One machine's rows, as the band reads them. */
-function browseEntryOf(connection: MeshConnection, rows: EnvironmentRows): RemoteBrowseEntry {
+/** One environment's rows, as the sidebar reads them. */
+function browseEntryOf(snapshot: EnvironmentChatsSnapshot): RemoteBrowseEntry {
+  const { rows } = snapshot
   const { browse, chatRecord } = rows
   return {
     browse: browse
       ? {
-          connectionId: connection.id,
+          connectionId: snapshot.route,
           reachable: browse.reachable,
           unreachableReason: browse.unreachableReason,
           unauthorized: browse.unauthorized,
@@ -63,44 +73,51 @@ function browseEntryOf(connection: MeshConnection, rows: EnvironmentRows): Remot
 export function useRemoteSessions(): RemoteSessions {
   const presence = useTailnetPresence()
   const link = remoteLinkStateOf(presence.status)
-  const { mesh } = presence
-  const [browses, setBrowses] = useState<ReadonlyMap<string, RemoteBrowseEntry>>(() => new Map())
-  // Each machine's entry for the rows it was made of, so a read that moved
-  // nothing hands the band the same entry, and the tabs the same list.
-  const made = useRef(new WeakMap<EnvironmentRows, RemoteBrowseEntry>())
+  const [sources, setSources] = useState<readonly EnvironmentChatSourceView[]>([])
+  // Each environment's view for the snapshot it was made of, so a read that
+  // moved nothing hands the rows the same view, and the tabs the same list.
+  const made = useRef(new WeakMap<EnvironmentChatsSnapshot, EnvironmentChatSourceView>())
 
   useEffect(() => {
     // A host without the bridge (partial test harnesses, narrower preloads)
-    // draws what the rows already know and asks nothing.
+    // draws nothing of other environments and asks nothing.
     if (!environmentStudioAvailable()) return
     const sync = () => {
-      const next = new Map<string, RemoteBrowseEntry>()
-      for (const connection of mesh) {
-        // Followed for as long as it is paired, whoever else follows it.
-        const rows = environmentChatSourceFor(pairedTarget(connection)).snapshot().rows
-        let entry = made.current.get(rows)
-        if (!entry) {
-          entry = browseEntryOf(connection, rows)
-          made.current.set(rows, entry)
-          if (rows.conversations) publishRemoteConversationList(connection.id, rows.conversations)
+      const targets = followedEnvironmentTargets()
+      const next = followedEnvironmentChats().map((source, index) => {
+        const snapshot = source.snapshot()
+        const live = !environmentResting(source.route)
+        let view = made.current.get(snapshot)
+        if (!view || view.live !== live) {
+          const connectionId = pairedConnectionOf(source.route)
+          view = {
+            route: source.route,
+            machineName: targets[index]?.name ?? source.route,
+            environmentId: snapshot.environmentId,
+            connectionId,
+            live,
+            entry: browseEntryOf(snapshot),
+          }
+          made.current.set(snapshot, view)
+          if (connectionId && snapshot.rows.conversations)
+            publishRemoteConversationList(connectionId, snapshot.rows.conversations)
         }
-        next.set(connection.id, entry)
-      }
-      setBrowses((current) =>
-        current.size === next.size && [...next].every(([id, entry]) => current.get(id) === entry) ? current : next,
+        return view
+      })
+      setSources((current) =>
+        current.length === next.length && next.every((view, index) => current[index] === view) ? current : next,
       )
     }
     sync()
     return onFollowedEnvironmentChats(sync)
-  }, [mesh])
+  }, [])
 
-  const refresh = useCallback(
-    (connectionId: string) => {
-      const connection = mesh.find((known) => known.id === connectionId)
-      if (connection && environmentStudioAvailable()) environmentChatSourceFor(pairedTarget(connection)).refresh()
-    },
-    [mesh],
-  )
+  const refresh = useCallback((route: string) => {
+    if (!environmentStudioAvailable()) return
+    followedEnvironmentChats()
+      .find((source) => source.route === route)
+      ?.refresh()
+  }, [])
 
-  return { presence, browses, link, refresh }
+  return { presence, sources, link, refresh }
 }

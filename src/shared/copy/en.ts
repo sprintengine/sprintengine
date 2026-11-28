@@ -6383,20 +6383,18 @@ export const en = {
         needsApproval: 'Needs approval',
         failed: 'Failed',
         done: 'Done',
+        conversation: 'Conversation',
       },
       // src/renderer/src/components/workspace/remoteBand/remoteListFreshness.ts
       remoteListFreshness: {
         signedOut: 'Signed out',
-        notPaired: 'Not paired',
-        oldPairing: 'Old pairing',
-        pairedAgainSince: (machine: unknown) =>
-          `${machine} was paired again since this chat was opened here; open it from the list to follow it over the new pairing.`,
+        notConnected: 'Not connected',
+        isNotRunning: (machine: unknown) => `${machine} is not running; it is not started just to list its chats.`,
         outOfDate: 'Out of date',
         notAnswering: 'Not answering',
         pairAgain: 'pair again',
         pairAgainWith: (machine: unknown) => `Pair again with ${machine} in Settings`,
         refusedThisDevice: (machine: unknown) => `${machine} no longer accepts this device.`,
-        noLongerPaired: (machine: unknown) => `${machine} is no longer paired with this device.`,
         shareNoProtocol: (machine: unknown) => `${machine} runs a Studio this app cannot read; update one of them.`,
         isNotAnswering: (machine: unknown) => `${machine} is not answering.`,
         readAt: (ago: unknown) => `This is its list of chats from ${ago}.`,
@@ -6789,7 +6787,9 @@ export const en = {
       startedInTheBackground: 'Started in the background',
       open: 'Open',
       couldnTOpenFrom: (title: unknown, machineName: unknown) => `Couldn't open ${title} from ${machineName}`,
-      theSoloLayoutTemplateIs2: 'The Solo layout template is missing.',
+      noAgentListedThere: (machine: unknown) =>
+          `${machine} lists no agent in this chat that a pane here can follow; open it on ${machine}.`,
+        theSoloLayoutTemplateIs2: 'The Solo layout template is missing.',
       couldNotStartAChat: (machineName: unknown) => `Could not start a chat on ${machineName}`,
       startedOnButNoPane: (machineName: unknown) => `Started on ${machineName}, but no pane could open`,
       theSoloLayoutTemplateIs3: (title: unknown) =>

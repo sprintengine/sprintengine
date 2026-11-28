@@ -1,20 +1,11 @@
-import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
-import { environmentRouteOfMeshConnection } from '../../../../../shared/environment-keys'
-import {
-  conversationsOf,
-  openSpecOf,
-  openSpecOfConversation,
-  type RemoteConversation,
-  type RemoteMachineGroup,
-  type RemoteSessionOpenSpec,
-} from './remoteSessionsModel'
+import { openSpecOfConversation, type RemoteConversation, type RemoteSessionOpenSpec } from './remoteSessionsModel'
 
-// A `sprintengine://chat/<environmentId>/<chatId>` link to a chat on a paired
-// machine names it by its address there (the row menu's Copy link to chat), so
-// one link opens the chat there, where it is a chat of that machine's own, and
-// on every device that follows it. Only the sidebar reads the paired machines'
-// lists, so it says here which chats they hold, under the environment each
-// machine is, and the window a link is handed to opens one from that
+// A `sprintengine://chat/<environmentId>/<chatId>` link to a chat on another
+// environment names it by its address there (the row menu's Copy link to
+// chat), so one link opens the chat there, where it is a chat of that
+// machine's own, and on every device that follows it. Only the sidebar reads
+// the environments' lists, so it says here which chats they hold, under the
+// environment each is, and the window a link is handed to opens one from that
 // (`chatLinkOpener.ts`'s `remoteChats`).
 
 type Listed = {
@@ -25,19 +16,9 @@ type Listed = {
 
 let listed: readonly Listed[] = []
 
-/** The chats the paired machines list now, under the environment each machine is. */
-export function publishRemoteChatLinkTargets(
-  groups: readonly RemoteMachineGroup[],
-  environments: readonly EnvironmentEntry[],
-): void {
-  const next: Listed[] = []
-  for (const group of groups) {
-    const environmentId = group.connectionId
-      ? (environmentOfRoute(environments, environmentRouteOfMeshConnection(group.connectionId))?.environmentId ?? null)
-      : null
-    for (const conversation of conversationsOf(group)) next.push({ environmentId, conversation })
-  }
-  listed = next
+/** The chats every followed environment lists now, each under its environment's id. */
+export function publishRemoteChatLinkTargets(conversations: readonly RemoteConversation[]): void {
+  listed = conversations.map((conversation) => ({ environmentId: conversation.environmentId, conversation }))
 }
 
 /** A paired machine's chat a link can open. */
@@ -64,13 +45,13 @@ export function remoteChatLinkTargets(link: {
     const { conversation } = entry
     if (conversation.workspaceId !== link.chatId) continue
     if (link.environmentId !== null && entry.environmentId !== link.environmentId) continue
-    const key = entry.environmentId ? `id:${entry.environmentId}` : `connection:${conversation.connectionId}`
+    const key = entry.environmentId ? `id:${entry.environmentId}` : `route:${conversation.route}`
     if (seen.has(key)) continue
     seen.add(key)
     found.push({
       environmentId: entry.environmentId,
       machineName: conversation.machineName,
-      spec: specFor(conversation, link.agentId),
+      spec: openSpecOfConversation(conversation, conversation.attachedWorkspaceId ? null : link.agentId),
     })
   }
   return found
@@ -83,13 +64,4 @@ export function remoteChatOnConnection(connectionId: string, workspaceId: string
       candidate.conversation.connectionId === connectionId && candidate.conversation.workspaceId === workspaceId,
   )
   return entry ? openSpecOfConversation(entry.conversation) : null
-}
-
-function specFor(conversation: RemoteConversation, agentId: string | null): RemoteSessionOpenSpec {
-  const lead = openSpecOfConversation(conversation)
-  // A chat a window here follows opens in that window, on the agent it
-  // follows; otherwise the link's agent comes forward when the machine lists it.
-  if (lead.attachedWorkspaceId || !agentId) return lead
-  const agent = conversation.agents.find((row) => row.remoteAgentId === agentId)
-  return agent ? openSpecOf(agent) : lead
 }
