@@ -16,6 +16,7 @@ import {
   type EnvironmentListFailure,
   type ReadHistory,
 } from './environmentChatsFreshness'
+import { cachedRowsOf, windowEnvironmentChatsCache, type EnvironmentChatsCache } from './environmentChatsCache'
 import { browseEnvironmentThrough, type EnvironmentBrowse } from './environmentDiscovery'
 import {
   environmentRefusal,
@@ -47,7 +48,9 @@ import {
 // they feed stay where they are, dimmed, rather than vanish; nothing is asked
 // of it on the clock until it is reached again, and that reconnect is what
 // reads it. A read that fails keeps the rows it had and says why
-// (`listFailure`). A window nobody can see reads no rows on a push: it
+// (`listFailure`). The rows it reads are kept by the environment's id
+// (`environmentChatsCache.ts`), so a window that starts while the environment
+// is away draws its last-known rows until it answers. A window nobody can see reads no rows on a push: it
 // remembers what moved and reads it once it is seen again.
 
 /** One environment's sessions as last read: who they belong to, and whether they are still current. */
@@ -119,6 +122,12 @@ export type EnvironmentChatSource = {
   welcome(): StudioWelcomeFrame | null
   /** Hear each time the client opens, a reconnect included. Returns the unsubscriber. */
   watchOpen(listener: () => void): () => void
+  /**
+   * Draw the environment's last-known rows from the window's cache, by its
+   * id, until a read of its own answers. Once per source; an id already said
+   * by its welcome wins.
+   */
+  loadCached(environmentId: string): void
   /** Stop following the environment and let its connection go. */
   close(): void
 }
@@ -131,6 +140,8 @@ const CHANGE_SETTLE_MS = 250
 const REREAD_TICK_MS = 60_000
 /** How long a read of the rows waits for an answer before it is one that did not come. */
 const ROWS_ASK_TIMEOUT_MS = 15_000
+/** How long the rows wait after a read before they are kept, so a burst of reads is one write. */
+const CACHE_SAVE_MS = 1_000
 
 /** The two reads behind an environment's rows: what it holds (a browse), and its chats (a conversation list). */
 type RowsPart = 'browse' | 'conversations'
@@ -170,11 +181,14 @@ export function createEnvironmentChatSource(
     settleMs?: number
     /** Whether anyone can see the window and is at it; the window's own unless a test says otherwise. */
     activity?: WindowActivity
+    /** Where its last-known rows are kept; the window's own unless a test says otherwise. */
+    cache?: EnvironmentChatsCache | null
   } = {},
 ): EnvironmentChatSource {
   const holdOf = options.hold ?? ((given: EnvironmentTarget) => holdEnvironmentStudio(given))
   const settleMs = options.settleMs ?? REFRESH_SETTLE_MS
   const activity = options.activity ?? windowActivity()
+  const cache = options.cache === undefined ? windowEnvironmentChatsCache() : options.cache
   const listeners = new Set<() => void>()
   const openListeners = new Set<() => void>()
   let closed = false
@@ -398,6 +412,10 @@ export function createEnvironmentChatSource(
         if (failure !== undefined) next.listFailure = failure
         return next
       })
+      if (result?.reachable || answered) {
+        readLive = true
+        keep()
+      }
     })()
       .catch((error: unknown) => {
         failed = true
@@ -423,6 +441,47 @@ export function createEnvironmentChatSource(
         if (!wantList && !failed && snapshot.rows.listFailure?.kind === 'unavailable') waiting.add('conversations')
         if (waiting.size > 0) readRows(waiting)
       })
+  }
+
+  // ── Its last-known rows ─────────────────────────────────────────────────
+
+  // Whether a read of its own has answered: from then on the cache is only
+  // written, never drawn from.
+  let readLive = false
+  let cachedId: string | null = null
+  let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let saved: EnvironmentRows | null = null
+  const save = (): void => {
+    saveTimer = null
+    const id = current?.welcome?.environment?.id ?? cachedId
+    const rows = snapshot.rows
+    if (!cache || !id || !isEnvironmentId(id) || rows === saved) return
+    const kept = cachedRowsOf(rows)
+    if (!kept) return
+    saved = rows
+    void cache.save(id, kept).catch(() => undefined)
+  }
+  const keep = (): void => {
+    if (cache && saveTimer === null && !closed) saveTimer = setTimeout(save, CACHE_SAVE_MS)
+  }
+  const loadCached = (environmentId: string): void => {
+    if (!cache || cachedId !== null || closed || !isEnvironmentId(environmentId)) return
+    cachedId = environmentId
+    void cache.load(environmentId).then(
+      (kept) => {
+        if (!kept || readLive || closed) return
+        // Drawn where nothing has been read yet; a read that answers replaces it.
+        publishRows((rows) => ({
+          ...rows,
+          browse: rows.browse ?? kept.browse,
+          ...(rows.conversations || !kept.conversations ? {} : { conversations: kept.conversations }),
+          ...(rows.access !== undefined || kept.access === undefined ? {} : { access: kept.access }),
+          ...(rows.chatRecord || !kept.chatRecord ? {} : { chatRecord: kept.chatRecord }),
+          ...(rows.listedAt !== undefined || kept.listedAt === undefined ? {} : { listedAt: kept.listedAt }),
+        }))
+      },
+      () => undefined,
+    )
   }
 
   // What its pushes and its reconnects said moved, waiting for the burst to
@@ -510,6 +569,7 @@ export function createEnvironmentChatSource(
       readRows()
     },
     reread,
+    loadCached,
     client,
     welcome: () => current?.welcome ?? null,
     watchOpen,
@@ -520,6 +580,11 @@ export function createEnvironmentChatSource(
       timer = null
       if (changeTimer !== null) clearTimeout(changeTimer)
       changeTimer = null
+      // What was read is kept for the next start, not lost with the source.
+      if (saveTimer !== null) {
+        clearTimeout(saveTimer)
+        save()
+      }
       following?.()
       following = null
       listeners.clear()
@@ -538,6 +603,39 @@ const followedListeners = new Set<() => void>()
 
 const tellFollowed = (): void => {
   for (const listener of [...followedListeners]) listener()
+}
+
+/** Each route's environment id, as the window's environment list last said it. */
+let directory: ReadonlyMap<string, string> = new Map()
+
+/** A source followed from now draws its environment's last-known rows, when the list knows its id. */
+function track(target: EnvironmentTarget, source: EnvironmentChatSource): void {
+  const stop = source.subscribe(tellFollowed)
+  followed.set(target.route, { target, source, stop })
+  const id = directory.get(target.route)
+  if (id) source.loadCached(id)
+}
+
+/**
+ * The environments this desktop knows, as the window's list says them (every
+ * route of each, by its id): each followed source draws its environment's
+ * last-known rows, and the cache drops the rows of every environment no
+ * longer listed. An empty list is one not read yet, and forgets nothing.
+ */
+export function knowEnvironments(
+  entries: readonly { environmentId: string | null; routes: readonly string[] }[],
+  cache: EnvironmentChatsCache | null = windowEnvironmentChatsCache(),
+): void {
+  if (entries.length === 0) return
+  const next = new Map<string, string>()
+  for (const entry of entries)
+    if (entry.environmentId) for (const route of entry.routes) next.set(route, entry.environmentId)
+  directory = next
+  for (const [route, entry] of followed) {
+    const id = next.get(route)
+    if (id) entry.source.loadCached(id)
+  }
+  void cache?.keepOnly(new Set(next.values())).catch(() => undefined)
 }
 
 /**
@@ -560,9 +658,7 @@ export function followEnvironmentChats(
   }
   for (const [route, target] of wanted) {
     if (followed.has(route)) continue
-    const source = make(target)
-    const stop = source.subscribe(tellFollowed)
-    followed.set(route, { target, source, stop })
+    track(target, make(target))
     changed = true
   }
   if (changed) tellFollowed()
@@ -589,8 +685,7 @@ export function environmentChatSourceFor(target: EnvironmentTarget): Environment
   const known = followed.get(target.route)
   if (known) return known.source
   const source = createEnvironmentChatSource(target)
-  const stop = source.subscribe(tellFollowed)
-  followed.set(target.route, { target, source, stop })
+  track(target, source)
   tellFollowed()
   return source
 }

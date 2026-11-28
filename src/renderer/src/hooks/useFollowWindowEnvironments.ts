@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { formatEnvironmentRoute } from '../../../../packages/studio-protocol/src/environment'
 import type { EnvironmentEntry } from '../../../shared/environments'
 import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
-import { followEnvironmentChats } from '../studio/environmentChats'
+import { followEnvironmentChats, knowEnvironments } from '../studio/environmentChats'
 import { environmentStudioAvailable, type EnvironmentTarget } from '../studio/environmentStudio'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type { Workspace } from '../../../shared/workspace'
@@ -44,12 +44,14 @@ const keyOf = (targets: readonly EnvironmentTarget[]) =>
 /**
  * Follow the chats of every environment this window has chats on, for as long
  * as it has them, and of every paired desktop, for as long as the environment list holds them (`environmentChats.ts`): their
- * sessions join the window's one list. A web tab, which reaches no other
+ * sessions join the window's one list, and each draws its last-known rows
+ * until it answers; an environment that leaves the list loses them. A web tab, which reaches no other
  * environment, follows none.
  */
 export function useFollowWindowEnvironments(): void {
   const recorded = useWorkspaceStore((state) => keyOf(windowEnvironmentTargets(state.workspaces)))
-  const listed = keyOf(listedEnvironmentTargets(useEnvironments()))
+  const environments = useEnvironments()
+  const listed = keyOf(listedEnvironmentTargets(environments))
   useEffect(() => {
     if (!environmentStudioAvailable()) return
     followEnvironmentChats([
@@ -57,5 +59,15 @@ export function useFollowWindowEnvironments(): void {
       ...listedEnvironmentTargets(currentEnvironments()),
     ])
   }, [recorded, listed])
+  // Which environment each route is, for the rows the window last read of it.
+  useEffect(() => {
+    if (!environmentStudioAvailable()) return
+    knowEnvironments(
+      environments.map((entry) => ({
+        environmentId: entry.environmentId,
+        routes: entry.routes.map((route) => formatEnvironmentRoute(route)),
+      })),
+    )
+  }, [environments])
   useEffect(() => () => followEnvironmentChats([]), [])
 }
