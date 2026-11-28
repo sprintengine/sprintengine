@@ -534,8 +534,13 @@ test('a create in a mode goes only to a Studio that takes one; an older one is r
       (error: StudioError) => error.code === 'unsupported_mode',
     )
   assert.equal(target.backend.creates.length, creates)
-  // Without a mode, or in the default one, it is the create it always was.
-  await older.rpc['conversation.create']({ workspaceId: 'ws-1', mode: 'default', commandId: 'plan-default' })
+  // Without a mode, or in the default one (which the wire takes, as a client
+  // written against the bare protocol may send it), it is the create it always was.
+  await older.request('conversation.create', {
+    workspaceId: 'ws-1',
+    mode: 'default',
+    commandId: 'plan-default',
+  } as unknown as Parameters<StudioClient['rpc']['conversation.create']>[0])
   const unmoded = await older.conversations.create({ workspaceId: 'ws-1', commandId: 'plan-4' })
   assert.ok(unmoded.ok, JSON.stringify(unmoded))
 })
