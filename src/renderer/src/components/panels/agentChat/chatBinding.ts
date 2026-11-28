@@ -19,6 +19,7 @@ import {
   subscribeNewChatWorktreeAttempts,
 } from '../../../utils/newChatWorktree'
 import type { CliRuntimeOption } from '../../ui/CliModelPicker'
+import type { ForkOpener } from './forkFromHere'
 import type { ChatReadiness } from './chatStates'
 import { useStudioChatHeld } from './chatServerHeld'
 import { usePullRequestsOfConversation } from '../../workspace/useConversationPullRequests'
@@ -79,6 +80,11 @@ export type ChatBinding = {
   session?: ConversationSessionSummary | null
   /** Stamp the sidebar's ordering clock: a sent turn is a user message, as a CLI prompt is. */
   recordUserMessage?(at: number): void
+  /**
+   * How a fork of this chat opens here, for a chat whose record this window
+   * does not keep; absent, a fork opens by its record here.
+   */
+  openFork?: ForkOpener
   /** Remember a picked model as the next chat's default. */
   rememberModel?(choice: ChatAgentFields['conversation']): void
   /**

@@ -273,7 +273,15 @@ async function mountChat(events: ConversationEvent[]) {
   const host = dom.window.document.createElement('div')
   dom.window.document.body.appendChild(host)
   const root = createRoot(host)
-  await act(async () => root.render(createElement(AgentChatView, { workspaceId: 'workspace', agentId: 'agent' })))
+  await act(async () =>
+    root.render(
+      createElement(AgentChatView, {
+        workspaceId: 'workspace',
+        agentId: 'agent',
+        chat: { environment: null, chatId: 'workspace' },
+      }),
+    ),
+  )
   await settle()
   await act(async () => {
     frames.at(-1)?.({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null } })

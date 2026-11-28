@@ -1295,8 +1295,8 @@ export const en = {
         quoteInReply2: 'Quote in reply',
         quote: 'Quote',
       },
-      // src/renderer/src/components/panels/agentChat/RemoteConversationPanel.tsx
-      remoteConversationPanel: {
+      // src/renderer/src/components/panels/agentChat/listedChat.ts
+      listedChat: {
         updateStudioOnToDrive: (machineName: unknown) => `Update Studio on ${machineName} to drive its chats.`,
         connectingTo: (machineName: unknown) => `Connecting to ${machineName}.`,
         isnTAnsweringShowingWhat: (machineName: unknown) =>
@@ -1508,6 +1508,7 @@ export const en = {
     },
     // src/renderer/src/components/panels/AgentChatView.tsx
     agentChatView: {
+      noLongerListsThisSubagent: (machineName: unknown) => `${machineName} no longer lists this subagent.`,
       systemSettingsDidNotOpen: 'System Settings did not open',
       thisAgentHasNoConversation: 'This agent has no conversation provider selected.',
       providerCheckFailed: 'Provider check failed.',

@@ -76,14 +76,11 @@ export function environmentConversationTransport(target: EnvironmentTarget): Con
 }
 
 /**
- * The chat transport for a chat's record: its environment's, or null for a
- * chat this window's own Studio holds. Renders again when that environment
- * welcomes the window again, since what the chat may do is read off it.
+ * The chat transport of the environment a chat is on, or null for a chat this
+ * window's own Studio holds. Renders again when that environment welcomes the
+ * window again, since what the chat may do is read off it.
  */
-export function useEnvironmentConversationTransport(
-  ref: WorkspaceEnvironmentRef | null | undefined,
-): ConversationTransport | null {
-  const target = environmentTargetOf(ref)
+export function useEnvironmentConversationTransport(target: EnvironmentTarget | null): ConversationTransport | null {
   const route = target?.route ?? null
   const source = target ? environmentChatSourceFor(target) : null
   useSyncExternalStore(

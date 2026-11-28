@@ -1699,8 +1699,8 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
     client is the SDK's (`windowStudioClient`), bound to the environment it
     first reached. A chat on the protocol says "Reconnecting to Studio" in
     the composer tray when its connection has been down for a moment.
-  - _The boundary._ `ChatViewErrorBoundary` wraps the local chat (AgentPanel)
-    and a followed one (RemoteConversationPanel): a chat that throws stops in
+  - _The boundary._ `ChatViewErrorBoundary` wraps every chat pane (the one
+    `AgentChatView`, by its chat's address): a chat that throws stops in
     its pane with Reload chat, and the window stays drawn. A chat whose code
     failed to load is loaded again by Reload chat (`reloadableLazy`) and is
     also offered Reload window. It is on for everyone, whichever transport:
