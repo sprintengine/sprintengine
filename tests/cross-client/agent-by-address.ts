@@ -98,8 +98,35 @@ export async function agentCreatesThere(agent: DesktopAgent, workspaceId: string
     notifyParent: false,
   })
   const body = (result.structuredContent ?? {}) as { error?: { message?: string } }
-  if (!result.isError) return
-  const message = body.error?.message ?? ''
-  if (!message.startsWith(`${agent.who}: `) || !/run as a chat/u.test(message))
-    throw new Error(`${agent.who}: the agent's create was not carried out on the machine: ${JSON.stringify(body)}`)
+  if (result.isError) {
+    const message = body.error?.message ?? ''
+    if (!message.startsWith(`${agent.who}: `) || !/run as a chat/u.test(message))
+      throw new Error(`${agent.who}: the agent's create was not carried out on the machine: ${JSON.stringify(body)}`)
+  }
+  await agentCreatesInPlanThere(agent, workspaceId)
+}
+
+/**
+ * The agent starts a plan chat there: the mode goes with the create, and the
+ * machine's own launch judges it, as a create on that machine does. No CLI
+ * starts a chat in the gate (gaps.ts, `peer:create`), so it is asked of Codex,
+ * whose chat cannot plan: the machine refuses it `unsupported_mode` in its
+ * words. A desktop that dropped the mode would see the machine start it
+ * writable instead; one that refused it itself would not name the machine.
+ */
+async function agentCreatesInPlanThere(agent: DesktopAgent, workspaceId: string): Promise<void> {
+  const result = await agent.call('conversation.create', {
+    environment: agent.environmentId,
+    workspaceId,
+    newChat: true,
+    cli: 'codex',
+    mode: 'plan',
+    prompt: 'planned by an agent on the desktop',
+    notifyParent: false,
+  })
+  const error = ((result.structuredContent ?? {}) as { error?: { code?: string; message?: string } }).error
+  if (!result.isError || error?.code !== 'unsupported_mode' || !error.message?.startsWith(`${agent.who}: `))
+    throw new Error(
+      `${agent.who}: the agent's plan create was not judged by the machine in its mode: ${JSON.stringify(result.structuredContent)}`,
+    )
 }
