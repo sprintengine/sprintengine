@@ -33,7 +33,7 @@ import type { BranchDiffItem } from './branchSteps'
  */
 export type DiffEditorPrefs = {
   diffView: DiffViewMode
-  /** Monaco's `hideUnchangedRegions` — the toolbar's "collapse unchanged". */
+  /** Monaco's `hideUnchangedRegions` — the settings menu's "collapse unchanged". */
   hideUnchanged: boolean
   wordWrap: boolean
   ignoreTrimWhitespace: boolean

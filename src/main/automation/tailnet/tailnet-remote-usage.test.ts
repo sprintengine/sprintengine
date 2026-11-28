@@ -1,4 +1,5 @@
 import { testDatabaseAt } from '../../../../tests/studio-database'
+import { TEMP_REMOVAL } from '../../../../tests/temp-folders'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -70,7 +71,8 @@ async function pairedMachine(scopes: TailnetScope[] = ['workspace:read', 'conver
     async close() {
       mesh.shutdown()
       await this.stop()
-      rmSync(dir, { recursive: true, force: true })
+      // The database may still be closing a file as the mesh shuts down.
+      rmSync(dir, TEMP_REMOVAL)
     },
   }
 }

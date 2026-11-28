@@ -55,8 +55,8 @@ export const en = {
       missingPaneForThisWindow: 'Missing pane for this window.',
       missingRepositoryForDiffViewer: 'Missing repository for diff viewer.',
     },
-    // src/renderer/src/components/auxWindows/BranchStepStrip.tsx
-    branchStepStrip: {
+    // src/renderer/src/components/auxWindows/BranchStepPicker.tsx
+    branchStepPicker: {
       branchSteps: 'Branch steps',
     },
     // src/renderer/src/components/auxWindows/branchSteps.ts

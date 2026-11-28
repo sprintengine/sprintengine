@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { DiffEditor, type DiffOnMount } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { useGitStatus, useGitTreeRevision, type GitRepoState } from '../../hooks/useGitStatus'
@@ -12,7 +12,8 @@ import {
 } from '../../../../shared/git/changelists'
 import { detectLanguage, isImageFile } from '../../utils/files'
 import { joinFilePath } from '../../utils/paths'
-import { BranchStepStrip, BRANCH_STEP_PANEL_ID } from './BranchStepStrip'
+import { BranchStepPicker } from './BranchStepPicker'
+import { DiffWindowChromeContext, type DiffWindowChrome } from './diffWindowChrome'
 import { branchItemsFrom, scopeNote, stripEntriesFrom, type BranchDiffItem } from './branchSteps'
 import { useBranchSteps } from './useBranchSteps'
 import { useDiffSourceReading, type DiffSourceReading, type DiffViewerSource } from './diffViewerSource'
@@ -32,9 +33,8 @@ import { useDiffViewedMarks } from './useDiffViewedMarks'
 import { navigateFile, nextDiffPosition, resolveEdgeHunkIndex, takesNavigationKey } from './diffNavigation'
 import {
   Checkbox,
-  CollapseAllGlyph,
   EmptyState,
-  FileTypeGlyph,
+  IconButton,
   GearGlyph,
   InlineNotice,
   LinkButton,
@@ -52,7 +52,6 @@ import {
   Toolbar,
   ToolbarButton,
   ToolbarDivider,
-  ToolbarSpacer,
   Tooltip,
   UnifiedGlyph,
   roveMenuFocus,
@@ -427,8 +426,9 @@ function ShowInAppButton({ onClick }: { onClick: () => void }) {
 }
 
 /**
- * The gear: the two reading options that are not worth a band item each — word
- * wrap and whether whitespace-only changes count. Grouping them keeps the
+ * The gear: the reading options that are not worth a band item each — whether
+ * unchanged regions fold away, word wrap, and whether whitespace-only changes
+ * count. Grouping them keeps the
  * reading controls together. `ToolbarButton menu` draws the corner triangle and says
  * `aria-haspopup`; the rows are the kit's `menuitemcheckbox`, because each one
  * is a state and not an action.
@@ -474,6 +474,13 @@ function DiffSettingsMenu({
         onKeyDown={(event) => roveMenuFocus(event, surfaceRef.current)}
       >
         {appCopy.auxWindows.diffViewer.wordWrap}
+      </MenuItem>
+      <MenuItem
+        checked={prefs.hideUnchanged}
+        onClick={() => onChange({ hideUnchanged: !prefs.hideUnchanged })}
+        onKeyDown={(event) => roveMenuFocus(event, surfaceRef.current)}
+      >
+        {appCopy.auxWindows.diffViewer.collapseUnchangedRegions}
       </MenuItem>
       <MenuItem
         checked={prefs.ignoreTrimWhitespace}
@@ -1641,8 +1648,14 @@ export function DiffViewer({
   // there. Kept in this host's own localStorage key — never the settings
   // envelope, which the window must not write (auxSettingsWrite.ts).
   const treePrefsKey = variant === 'window' ? DIFF_WINDOW_TREE_PREFS_KEY : DIFF_PANE_TREE_PREFS_KEY
+  // A diff that has a window to itself starts with its files shown, as the
+  // editor window does; the pane's narrow column starts without.
+  const hostChrome = useContext(DiffWindowChromeContext)
   const [treePrefs, setTreePrefs] = useState<EditorTreePrefs>(() =>
-    readTreeColumnPrefs(treePrefsKey, { ...DEFAULT_EDITOR_TREE_PREFS, visible: variant === 'window' }),
+    readTreeColumnPrefs(treePrefsKey, {
+      ...DEFAULT_EDITOR_TREE_PREFS,
+      visible: variant === 'window' || hostChrome !== null,
+    }),
   )
   const updateTreePrefs = useCallback(
     (next: EditorTreePrefs) => {
@@ -1708,12 +1721,23 @@ export function DiffViewer({
     document.title = windowTitle
   }, [windowTitle, variant])
 
-  // The window's title bar: the traffic-light inset, the drag region, and the
-  // name — nothing else. Every ACTION lives in the toolbar below it, so the two
-  // hosts differ only by whether this row is there at all.
-  const titleBarClass = `app-drag relative flex ${TITLE_BAR_HEIGHT} shrink-0 items-center justify-center border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-2 ${
-    isMac ? TRAFFIC_LIGHT_INSET : ''
-  }`
+  // ── The window's top ────────────────────────────────────────────────────
+  // Laid out as the editor window is (2026-11-28): two columns and one line
+  // between them. The files column runs from the window's top to its foot, with
+  // the traffic lights in its corner, and the band over the diff is the rest of
+  // the title bar. The viewer used to stack a title strip, a row of commit
+  // chips, a note, a toolbar and a file row over the code: five bands where the
+  // editor window has one.
+  const chrome: DiffWindowChrome | null =
+    variant === 'window'
+      ? {
+          trafficLights: isMac,
+          // Frameless on win/linux, so the window draws its own way out. A
+          // read-only diff has nothing unsaved to ask about.
+          controls: isMac ? null : <WindowCloseButton onClick={() => void window.api.windowClose()} />,
+        }
+      : hostChrome
+  const dragClass = chrome ? 'app-drag' : ''
 
   const noFiles = items.length === 0 || currentIndex < 0
   // The filter is on, the lists have been read, and the list is empty — the
@@ -1722,12 +1746,77 @@ export function DiffViewer({
   const filteredEmpty =
     Boolean(filterList) && items.length === 0 && repoState === 'ready' && (!branchSteps || branchShowsWorktree)
 
+  // The files column's switch: first in the band over the column it opens, the
+  // same mark and place as the editor window's. With the column hidden it
+  // leads the band over the diff instead.
+  const filesToggleLabel = treePrefs.visible
+    ? appCopy.auxWindows.diffViewer.hideChangedFiles
+    : appCopy.auxWindows.diffViewer.showChangedFiles
+  const filesToggle = (
+    <Tooltip content={filesToggleLabel} placement="bottom">
+      <IconButton
+        tone={treePrefs.visible ? 'strong' : 'subtle'}
+        onClick={() => updateTreePrefs({ ...treePrefs, visible: !treePrefs.visible })}
+        aria-label={filesToggleLabel}
+        aria-pressed={treePrefs.visible}
+        className="app-no-drag shrink-0"
+      >
+        <FilesColumnGlyph />
+      </IconButton>
+    </Tooltip>
+  )
+
+  // What the files are chosen from: which part of the branch, and whose
+  // changes. They choose the list, so they stand over it — in the files
+  // column, or at the head of the band when the column is hidden. A playing
+  // tour steps through its own files, and its strip says which.
+  const stepPicker =
+    branchSteps && !tour.active ? (
+      <BranchStepPicker entries={stripEntries} selection={steps.selection} onSelect={steps.select} note={stepNote} />
+    ) : null
+  // WHOSE changes you are looking at, and the one click back to all of them.
+  // Only under a filter: an ordinary diff has nothing to choose between.
+  const filterControl = filtering ? (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <Select
+        size="xs"
+        ariaLabel={appCopy.auxWindows.diffViewer.showOneChangelist}
+        className="min-w-0 flex-1"
+        triggerMinWidthClassName="min-w-0"
+        value={filterList ? filterList.id : ALL_CHANGES}
+        items={filterOptions}
+        onChange={(next) =>
+          setChosenFilter({
+            from: changelistId ?? null,
+            id: next === ALL_CHANGES ? null : next,
+          })
+        }
+      />
+      {filterMissing ? (
+        // The list this window was opened on has been deleted, or its agent
+        // exited and reconcile cleared it. Say so and show everything — a
+        // viewer that went blank because its filter outlived its list is the
+        // failure this exists for.
+        <MicroChip className="shrink-0">{appCopy.auxWindows.diffViewer.thatChangelistIsGone}</MicroChip>
+      ) : null}
+    </div>
+  ) : null
+  const listControls = stepPicker || filterControl ? [stepPicker, filterControl] : null
+
+  // The file on screen, as the band names it: its name, then its folder, the
+  // way a tab and its tooltip do. The two sides it compares (`HEAD` and the
+  // working tree, a commit and its parent) are in the tooltip: the select over
+  // the files already says which step this is.
+  const fileFolder = relativePath ? relativePath.split('/').slice(0, -1).join('/') : ''
+  const comparison = header ? `${header.base.text} → ${header.current.text}` : null
+  const fileTitle = relativePath ? (comparison ? `${relativePath}\n${comparison}` : relativePath) : undefined
+
   return (
     <div
       className={
         variant === 'window'
-          ? 'flex h-screen w-screen flex-col bg-[color:var(--bg-app)] text-[color:var(--text-default)]'
-          : `flex h-full w-full flex-col bg-[color:var(--bg-app)] text-[color:var(--text-default)] ${FOCUS_RING_INSET_CLASS}`
+          ? 'flex h-screen w-screen bg-[color:var(--bg-surface)] text-[color:var(--text-default)]'
+          : `flex h-full w-full bg-[color:var(--bg-surface)] text-[color:var(--text-default)] ${FOCUS_RING_INSET_CLASS}`
       }
       tabIndex={variant === 'pane' ? 0 : undefined}
       onKeyDown={
@@ -1740,466 +1829,325 @@ export function DiffViewer({
           : undefined
       }
     >
-      {/* A playing tour takes the step strip's slot: the region keeps one band
-          above its toolbar, not two. */}
-      {tour.strip ??
-        (branchSteps ? (
-          <BranchStepStrip entries={stripEntries} selection={steps.selection} onSelect={steps.select} note={stepNote} />
-        ) : null)}
-
-      {variant === 'window' ? (
-        <div className={titleBarClass}>
-          <span className="truncate text-body font-semibold text-[color:var(--text-strong)]">{windowTitle}</span>
-          {/* Frameless on win/linux, so the window draws its own way out, pinned
-              to the corner so the name stays centred; macOS keeps its native
-              traffic lights. A read-only diff has nothing unsaved to ask about. */}
-          {isMac ? null : (
-            <div className="app-no-drag absolute inset-y-0 right-0 flex items-stretch">
-              <WindowCloseButton onClick={() => void window.api.windowClose()} />
-            </div>
-          )}
-        </div>
+      {treePrefs.visible ? (
+        <DiffFileTreeColumn prefs={treePrefs} onPrefsChange={updateTreePrefs}>
+          <DiffFileTree
+            items={items}
+            currentIndex={currentIndex}
+            rootPath={treeRoot}
+            workspaceId={source ? null : workspaceId}
+            workspaceWindow={variant === 'pane'}
+            // A far checkout's files have nothing here for the tree's menu to
+            // act on, and opening one shows its diff.
+            readOnly={Boolean(source)}
+            gitStatus={status}
+            directoryStatus={directoryStatus}
+            refreshGitStatus={refreshGitStatus}
+            onSelectIndex={goToFileIndex}
+            onOpenFile={openPathInEditor}
+            onEscape={() => diffEditorRef.current?.getModifiedEditor().focus()}
+            bandClassName={`${TITLE_BAR_HEIGHT} pr-1.5 ${dragClass} ${chrome?.trafficLights ? TRAFFIC_LIGHT_INSET : 'pl-2'}`}
+            bandLeading={filesToggle}
+            belowBand={
+              listControls ? <div className="flex shrink-0 flex-col gap-1.5 px-2 pb-2">{listControls}</div> : null
+            }
+          />
+        </DiffFileTreeColumn>
       ) : null}
 
-      {/* The band belongs to the diff beneath it and would be meaningless
-          without it, which is what lets it hold more than the pane-chrome
-          ceiling of five (design-system/components/toolbar). Grouped, not
-          enumerated: the hunk arrows, the file's editor, the file stepper and
-          the collapse toggle are four things about WHAT you are reading; the
-          counter, the layout toggle and the gear are about HOW.
-          No rule under it: the glyphs are the top of the region, and the
-          region's one rule is under the file row below, directly over the
-          code, whose gutter runs edge to edge and needs a line to stop at. */}
-      <Toolbar ariaLabel={appCopy.auxWindows.diffViewer.diff}>
-        {/* An agent's new tour, waiting: at the front of the band, where a narrow
-            pane cannot clip it off. */}
-        {tour.offerChip}
-        {/* The files column's switch, first in the band over the column it
-            opens — where the editor window's strip puts its own. The name says
-            the state, as the collapse toggle's does. */}
-        <Tooltip
-          content={
-            treePrefs.visible
-              ? appCopy.auxWindows.diffViewer.hideChangedFiles
-              : appCopy.auxWindows.diffViewer.showChangedFiles
-          }
-          placement="bottom"
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* The band over the diff, and with the files column shown, the rest of
+            the window's title bar. What you are reading on the left — the
+            change and file steppers, the file itself — and how on the right. */}
+        <div
+          className={`flex ${TITLE_BAR_HEIGHT} shrink-0 items-center gap-1 ${dragClass} ${
+            !treePrefs.visible && chrome?.trafficLights ? TRAFFIC_LIGHT_INSET : 'pl-1.5'
+          } ${chrome?.controls ? '' : 'pr-1.5'}`}
         >
-          <ToolbarButton
-            ariaLabel={
-              treePrefs.visible
-                ? appCopy.auxWindows.diffViewer.hideChangedFiles
-                : appCopy.auxWindows.diffViewer.showChangedFiles
-            }
-            onClick={() => updateTreePrefs({ ...treePrefs, visible: !treePrefs.visible })}
-          >
-            <FilesColumnGlyph />
-          </ToolbarButton>
-        </Tooltip>
-        <ToolbarDivider />
-        <Tooltip
-          content={appCopy.auxWindows.diffViewer.previousChange(isMac ? '⇧F7' : appCopy.auxWindows.diffViewer.shiftF7)}
-          placement="bottom"
-        >
-          <ToolbarButton
-            ariaLabel={appCopy.auxWindows.diffViewer.previousChange2}
-            disabled={noFiles}
-            onClick={() => navigate('prev')}
-          >
-            <PreviousDifferenceGlyph />
-          </ToolbarButton>
-        </Tooltip>
-        <Tooltip content={appCopy.auxWindows.diffViewer.nextChangeF7} placement="bottom">
-          <ToolbarButton
-            ariaLabel={appCopy.auxWindows.diffViewer.nextChange}
-            disabled={noFiles}
-            onClick={() => navigate('next')}
-          >
-            <NextDifferenceGlyph />
-          </ToolbarButton>
-        </Tooltip>
-
-        {/* A file on another machine has no editor here to open in. */}
-        {source ? null : (
-          <>
-            <ToolbarDivider />
-
-            <Tooltip content={appCopy.auxWindows.diffViewer.openInEditor} placement="bottom">
+          {treePrefs.visible ? null : filesToggle}
+          {!treePrefs.visible && listControls ? (
+            <div className="app-no-drag flex w-56 min-w-0 shrink items-center gap-1.5">{listControls}</div>
+          ) : null}
+          <Toolbar ariaLabel={appCopy.auxWindows.diffViewer.diff} className="app-no-drag shrink-0 !px-0">
+            {/* An agent's new tour, waiting: at the front of the band, where a
+                narrow window cannot clip it off. */}
+            {tour.offerChip}
+            <Tooltip
+              content={appCopy.auxWindows.diffViewer.previousChange(
+                isMac ? '⇧F7' : appCopy.auxWindows.diffViewer.shiftF7,
+              )}
+              placement="bottom"
+            >
               <ToolbarButton
-                ariaLabel={appCopy.auxWindows.diffViewer.openInEditor}
-                disabled={!currentItem || (variant === 'pane' && !workspaceId)}
-                onClick={openInEditor}
+                ariaLabel={appCopy.auxWindows.diffViewer.previousChange2}
+                disabled={noFiles}
+                onClick={() => navigate('prev')}
               >
-                <OpenInEditorGlyph />
+                <PreviousDifferenceGlyph />
               </ToolbarButton>
             </Tooltip>
-          </>
-        )}
-
-        <ToolbarDivider />
-
-        {/* The FILE stepper, as opposed to the change stepper on the left.
-            `pager --inline`: the drawn "2/27 files" and the announced sentence
-            are one element, and the chevrons disable at the ends rather than
-            disappearing. */}
-        <Pager
-          inline
-          inlineNoun={items.length === 1 ? 'file' : 'files'}
-          // "0/0 files" when there are none, not "1/1": the band keeps its
-          // width either way, and a stepper claiming one file over an empty
-          // list is the one thing worse than an empty stepper.
-          page={noFiles ? 0 : currentIndex + 1}
-          pageCount={items.length}
-          rangeLabel={positionLabel}
-          // The shortcut goes on the CHEVRONS. `rangeLabel` is a live region,
-          // so a hint folded into it was read out again on every step.
-          stepHint={isMac ? '⌘↑ / ⌘↓' : appCopy.auxWindows.diffViewer.ctrlCtrl}
-          ariaLabel={appCopy.auxWindows.diffViewer.changedFilesInThisDiff}
-          onPageChange={(page) => goToFileIndex(page - 1)}
-        />
-
-        <ToolbarDivider />
-
-        {/* A toggle with no `aria-pressed` to spend: the NAME changes with the
-            state instead, which is what a screen reader reads out either way
-            and what the tooltip already had to say. */}
-        <Tooltip
-          content={
-            sessionPrefs.hideUnchanged
-              ? appCopy.auxWindows.diffViewer.showUnchangedRegions
-              : appCopy.auxWindows.diffViewer.collapseUnchangedRegions
-          }
-          placement="bottom"
-        >
-          <ToolbarButton
-            ariaLabel={
-              sessionPrefs.hideUnchanged
-                ? appCopy.auxWindows.diffViewer.showUnchangedRegions
-                : appCopy.auxWindows.diffViewer.collapseUnchangedRegions
-            }
-            onClick={() => setSessionPrefs((prefs) => ({ ...prefs, hideUnchanged: !prefs.hideUnchanged }))}
-          >
-            <CollapseAllGlyph />
-          </ToolbarButton>
-        </Tooltip>
-
-        <ToolbarSpacer />
-
-        {/* Not a live region: the file stepper beside it already announces every
-            move, and two polite regions in one 30px band means every file change
-            is read out twice. */}
-        {currentItem && content.state === 'ready' ? (
-          <span className="shrink-0 whitespace-nowrap px-1 text-meta tabular-nums text-[color:var(--text-muted)]">
-            {counterLabel}
-          </span>
-        ) : null}
-
-        <SegmentedControl<DiffViewMode>
-          iconOnly
-          ariaLabel={appCopy.auxWindows.diffViewer.diffView}
-          value={diffView}
-          onChange={setDiffView}
-          items={[
-            {
-              value: 'side-by-side',
-              label: appCopy.auxWindows.diffViewer.sideBySide,
-              icon: <SideBySideGlyph />,
-              tooltip: appCopy.auxWindows.diffViewer.sideBySide,
-            },
-            {
-              value: 'unified',
-              label: appCopy.auxWindows.diffViewer.unified,
-              icon: <UnifiedGlyph />,
-              tooltip: appCopy.auxWindows.diffViewer.unified,
-            },
-          ]}
-          className="mx-1 shrink-0"
-        />
-
-        <DiffSettingsMenu
-          prefs={editorPrefs}
-          onChange={(patch) => setSessionPrefs((prefs) => ({ ...prefs, ...patch }))}
-        />
-
-        {workspaceId && !source ? (
-          <TourMenu
-            workspaceId={workspaceId}
-            currentTourId={tourState.openTourId}
-            onOpen={(id) => {
-              tourState.setOpenTourId(id)
-              tourState.setStarted(false)
-            }}
-          />
-        ) : null}
-
-        {/* The sticky preference's two writers, absorbed from T3's band. */}
-        {/* The window reads this computer's checkout; a far one stays in the pane. */}
-        {variant === 'window' && workspaceId ? <ShowInAppButton onClick={showInApp} /> : null}
-      </Toolbar>
-
-      {/* Below the toolbar, not above it: the region keeps one band above its
-          toolbar. Shown until the person answers it once. */}
-      {source ? null : (
-        <StudioSkillSuggestion
-          skillId="studio-diff-tours"
-          className="shrink-0 bg-[color:var(--bg-surface)] px-3 py-2"
-        />
-      )}
-
-      {/* THE FIRST CONTENT ROW, not a second chrome band. It names the two
-          things being compared and carries this file's include box; hide the
-          diff and it has nothing to say, which is the test. It scrolls with
-          nothing — the code under it does. Left is what the file is compared
-          AGAINST, right is what you are looking at, and both come from the
-          revisions `loadDiffContent` actually read (diffToolbarModel). */}
-      <div
-        className={`flex shrink-0 items-stretch border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] text-meta ${
-          // A control is 30px and this row is 28px, so the row grows — but only
-          // where a filter put a control in it. An unfiltered diff keeps the
-          // 28px strip T4 drew, to the pixel.
-          filtering ? 'min-h-8' : 'h-7'
-        }`}
-      >
-        {/* Both halves clip: each is `flex-1 min-w-0`, and in a narrow pane the
-            left one's fixed-width children (the select, the lock, the base
-            revision) used to spill under the right one's text instead of being
-            cut at the divider. */}
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden px-3">
-          {/* WHOSE changes you are looking at, and the one click back to all of
-              them. Only under a filter: an ordinary diff has nothing to choose
-              between, and a select offering one option is a control that does
-              nothing. */}
-          {filtering ? (
-            <>
-              <Select
-                ariaLabel={appCopy.auxWindows.diffViewer.showOneChangelist}
-                className="shrink-0"
-                triggerMinWidthClassName="min-w-0"
-                value={filterList ? filterList.id : ALL_CHANGES}
-                items={filterOptions}
-                onChange={(next) =>
-                  setChosenFilter({
-                    from: changelistId ?? null,
-                    id: next === ALL_CHANGES ? null : next,
-                  })
-                }
-              />
-              {filterMissing ? (
-                // The list this window was opened on has been deleted, or its
-                // agent exited and reconcile cleared it. Say so and show
-                // everything — a viewer that went blank because its filter
-                // outlived its list is the failure this sentence exists for.
-                <MicroChip className="shrink-0">{appCopy.auxWindows.diffViewer.thatChangelistIsGone}</MicroChip>
-              ) : null}
-              <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-[color:var(--border-subtle)]" />
-            </>
-          ) : null}
-          {/* The padlock: this side is not yours to edit. Reused from
-              FileTypeGlyph rather than redrawn (glyphs/component.md). */}
-          <FileTypeGlyph kind="lock" className="icon-xs shrink-0 text-[color:var(--text-subtle)]" />
-          {header ? (
-            <span
-              className={
-                header.base.mono
-                  ? 'shrink-0 font-mono text-[color:var(--text-default)]'
-                  : 'shrink-0 text-[color:var(--text-default)]'
-              }
-            >
-              {header.base.text}
-            </span>
-          ) : null}
-          <span
-            // A file ticked off as viewed reads quieter, so the eye goes to
-            // what is left.
-            className={`truncate ${currentViewed ? 'text-[color:var(--text-subtle)]' : 'text-[color:var(--text-muted)]'}`}
-            title={relativePath ?? undefined}
-          >
-            {relativePath ?? 'Git Diff'}
-          </span>
-          {tour.renamedFrom ? (
-            <span className="shrink-0 truncate text-micro text-[color:var(--text-subtle)]" title={tour.renamedFrom}>
-              {appCopy.auxWindows.diffViewer.renamedFrom}
-              {tour.renamedFrom}
-            </span>
-          ) : null}
-          {currentItem ? (
-            <span className="shrink-0 text-micro text-[color:var(--text-subtle)]">
-              {STATUS_LABEL[currentItem.status]}
-              {currentItem.kind === 'branch' &&
-              (currentItem as BranchDiffItem).additions + (currentItem as BranchDiffItem).deletions > 0 ? (
-                /* One channel for the whole diff surface: +N/−N read --diff-*,
-                   the same tokens the body's ink and the gutter use, not the
-                   status tones they used to borrow. */
-                <span className="ml-1 font-mono tabular-nums">
-                  <span className="text-[color:var(--diff-added)]">
-                    +{formatDiffCount((currentItem as BranchDiffItem).additions)}
-                  </span>
-                  <span className="ml-1 text-[color:var(--diff-removed)]">
-                    −{formatDiffCount((currentItem as BranchDiffItem).deletions)}
-                  </span>
-                </span>
-              ) : null}
-            </span>
-          ) : null}
-        </div>
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden border-l border-[color:var(--border-subtle)] px-3">
-          {header?.includable && currentItem ? (
-            <Checkbox
-              checked={boxInclude.checked}
-              indeterminate={boxInclude.indeterminate}
-              onChange={toggleInclude}
-              ariaLabel={
-                listStageRef.current.list && filterList
-                  ? appCopy.auxWindows.diffViewer.includeSChangesToIn(filterList.name, currentItem.relativePath)
-                  : appCopy.auxWindows.diffViewer.includeInTheCommit(currentItem.relativePath)
-              }
+            <Tooltip content={appCopy.auxWindows.diffViewer.nextChangeF7} placement="bottom">
+              <ToolbarButton
+                ariaLabel={appCopy.auxWindows.diffViewer.nextChange}
+                disabled={noFiles}
+                onClick={() => navigate('next')}
+              >
+                <NextDifferenceGlyph />
+              </ToolbarButton>
+            </Tooltip>
+            <ToolbarDivider />
+            {/* The FILE stepper, as opposed to the change stepper beside it. The
+                drawn "2/27 files" and the announced sentence are one element. */}
+            <Pager
+              inline
+              inlineNoun={items.length === 1 ? 'file' : 'files'}
+              // "0/0 files" when there are none, not "1/1".
+              page={noFiles ? 0 : currentIndex + 1}
+              pageCount={items.length}
+              rangeLabel={positionLabel}
+              // The shortcut goes on the CHEVRONS. `rangeLabel` is a live region,
+              // so a hint folded into it was read out again on every step.
+              stepHint={isMac ? '⌘↑ / ⌘↓' : appCopy.auxWindows.diffViewer.ctrlCtrl}
+              ariaLabel={appCopy.auxWindows.diffViewer.changedFilesInThisDiff}
+              onPageChange={(page) => goToFileIndex(page - 1)}
             />
-          ) : null}
-          {header ? (
-            <span
-              className={
-                header.current.mono
-                  ? 'truncate font-mono text-[color:var(--text-default)]'
-                  : 'truncate text-[color:var(--text-default)]'
-              }
-            >
-              {header.current.text}
+          </Toolbar>
+
+          {/* The file on screen. It drags the window like the rest of the band:
+              only its include box takes a click. */}
+          <div className="flex min-w-0 flex-1 items-center gap-2 self-stretch px-2 text-meta">
+            {header?.includable && currentItem ? (
+              <span className="app-no-drag inline-flex shrink-0">
+                <Checkbox
+                  checked={boxInclude.checked}
+                  indeterminate={boxInclude.indeterminate}
+                  onChange={toggleInclude}
+                  ariaLabel={
+                    listStageRef.current.list && filterList
+                      ? appCopy.auxWindows.diffViewer.includeSChangesToIn(filterList.name, currentItem.relativePath)
+                      : appCopy.auxWindows.diffViewer.includeInTheCommit(currentItem.relativePath)
+                  }
+                />
+              </span>
+            ) : null}
+            {fileName ? (
+              <span className="flex min-w-0 items-baseline gap-2" title={fileTitle}>
+                <span
+                  // A file ticked off as viewed reads quieter, so the eye goes
+                  // to what is left.
+                  className={`shrink-0 truncate font-medium ${
+                    currentViewed ? 'text-[color:var(--text-muted)]' : 'text-[color:var(--text-strong)]'
+                  }`}
+                >
+                  {fileName}
+                </span>
+                {fileFolder ? (
+                  <span className="min-w-0 truncate text-[color:var(--text-muted)]">{fileFolder}</span>
+                ) : null}
+              </span>
+            ) : null}
+            {tour.renamedFrom ? (
+              <span className="shrink-0 truncate text-micro text-[color:var(--text-subtle)]" title={tour.renamedFrom}>
+                {appCopy.auxWindows.diffViewer.renamedFrom}
+                {tour.renamedFrom}
+              </span>
+            ) : null}
+            {currentItem ? (
+              <span className="shrink-0 whitespace-nowrap text-micro text-[color:var(--text-subtle)]">
+                {STATUS_LABEL[currentItem.status]}
+                {currentItem.kind === 'branch' &&
+                (currentItem as BranchDiffItem).additions + (currentItem as BranchDiffItem).deletions > 0 ? (
+                  /* One channel for the whole diff surface: +N/−N read --diff-*,
+                     the same tokens the body's ink and the gutter use. */
+                  <span className="ml-1 font-mono tabular-nums">
+                    <span className="text-[color:var(--diff-added)]">
+                      +{formatDiffCount((currentItem as BranchDiffItem).additions)}
+                    </span>
+                    <span className="ml-1 text-[color:var(--diff-removed)]">
+                      −{formatDiffCount((currentItem as BranchDiffItem).deletions)}
+                    </span>
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+          </div>
+
+          {/* Not a live region: the file stepper already announces every move. */}
+          {currentItem && content.state === 'ready' ? (
+            <span className="shrink-0 whitespace-nowrap px-1 text-meta tabular-nums text-[color:var(--text-muted)]">
+              {counterLabel}
             </span>
           ) : null}
           {viewedEnabled && currentItem ? (
-            <>
-              <span className="ml-auto shrink-0 whitespace-nowrap tabular-nums text-[color:var(--text-muted)]">
-                {viewedCount} of {items.length} viewed
+            <span className="app-no-drag flex shrink-0 items-center gap-2 px-1 text-meta">
+              <span
+                className="whitespace-nowrap tabular-nums text-[color:var(--text-muted)]"
+                aria-label={`${viewedCount} of ${items.length} viewed`}
+              >
+                {viewedCount}/{items.length}
               </span>
               <Checkbox
                 label={appCopy.auxWindows.diffViewer.viewed}
-                className="shrink-0"
                 checked={currentViewed}
                 disabled={contentFingerprint === null}
                 onChange={toggleViewed}
               />
-            </>
+            </span>
+          ) : null}
+
+          <Toolbar ariaLabel={appCopy.auxWindows.diffViewer.diffView} className="app-no-drag shrink-0 !px-0">
+            <SegmentedControl<DiffViewMode>
+              iconOnly
+              ariaLabel={appCopy.auxWindows.diffViewer.diffView}
+              value={diffView}
+              onChange={setDiffView}
+              items={[
+                {
+                  value: 'side-by-side',
+                  label: appCopy.auxWindows.diffViewer.sideBySide,
+                  icon: <SideBySideGlyph />,
+                  tooltip: appCopy.auxWindows.diffViewer.sideBySide,
+                },
+                {
+                  value: 'unified',
+                  label: appCopy.auxWindows.diffViewer.unified,
+                  icon: <UnifiedGlyph />,
+                  tooltip: appCopy.auxWindows.diffViewer.unified,
+                },
+              ]}
+              className="mx-1 shrink-0"
+            />
+            <DiffSettingsMenu
+              prefs={editorPrefs}
+              onChange={(patch) => setSessionPrefs((prefs) => ({ ...prefs, ...patch }))}
+            />
+            {workspaceId && !source ? (
+              <TourMenu
+                workspaceId={workspaceId}
+                currentTourId={tourState.openTourId}
+                onOpen={(id) => {
+                  tourState.setOpenTourId(id)
+                  tourState.setStarted(false)
+                }}
+              />
+            ) : null}
+            {/* A file on another machine has no editor here to open in. */}
+            {source ? null : (
+              <Tooltip content={appCopy.auxWindows.diffViewer.openInEditor} placement="bottom">
+                <ToolbarButton
+                  ariaLabel={appCopy.auxWindows.diffViewer.openInEditor}
+                  disabled={!currentItem || (variant === 'pane' && !workspaceId)}
+                  onClick={openInEditor}
+                >
+                  <OpenInEditorGlyph />
+                </ToolbarButton>
+              </Tooltip>
+            )}
+            {/* The window reads this computer's checkout; a far one stays in the pane. */}
+            {variant === 'window' && workspaceId ? <ShowInAppButton onClick={showInApp} /> : null}
+          </Toolbar>
+          {chrome?.controls ? (
+            <div className="app-no-drag flex shrink-0 items-stretch self-stretch">{chrome.controls}</div>
           ) : null}
         </div>
-      </div>
 
-      {/* One band for every failure this window can report — the whole file's
-          include, a single hunk's, and a hand-off back to the app that no
-          window took. They are the same sentence to a person ("that did not
-          happen"), and git's own words are what the include failures show. One
-          STATE as well as one band: whichever failed last is what is shown, and
-          changing file clears it. */}
-      {bandError ? (
-        <InlineNotice tone="error" className="mx-3 mt-2 shrink-0">
-          {bandError}
-        </InlineNotice>
-      ) : null}
+        {/* A playing tour's strip: which stop, and the way out. */}
+        {tour.strip}
 
-      {narrowedCounts && !tourState.active ? (
-        // The agent's narrowing, said once and undone in one click: the rest of
-        // the change is still here, one link away.
-        <div
-          role="status"
-          className="flex h-7 shrink-0 items-center gap-1.5 px-3 text-meta text-[color:var(--text-muted)]"
-        >
-          <span className="truncate">
-            {appCopy.auxWindows.diffViewer.showing}
-            {narrowedCounts.shown} of {narrowedCounts.total} changed {narrowedCounts.total === 1 ? 'file' : 'files'}
-          </span>
-          <span aria-hidden="true">·</span>
-          <LinkButton onClick={() => setPathsShownAll(pathsKey)}>{appCopy.auxWindows.diffViewer.showAll}</LinkButton>
-        </div>
-      ) : null}
+        {/* Shown until the person answers it once. */}
+        {source ? null : (
+          <StudioSkillSuggestion
+            skillId="studio-diff-tours"
+            className="shrink-0 bg-[color:var(--bg-surface)] px-3 py-2"
+          />
+        )}
 
-      <div className="flex min-h-0 flex-1">
-        {treePrefs.visible ? (
-          <DiffFileTreeColumn prefs={treePrefs} onPrefsChange={updateTreePrefs}>
-            <DiffFileTree
-              items={items}
-              currentIndex={currentIndex}
-              rootPath={treeRoot}
-              workspaceId={source ? null : workspaceId}
-              workspaceWindow={variant === 'pane'}
-              // A far checkout's files have nothing here for the tree's menu to
-              // act on, and opening one shows its diff.
-              readOnly={Boolean(source)}
-              gitStatus={status}
-              directoryStatus={directoryStatus}
-              refreshGitStatus={refreshGitStatus}
-              onSelectIndex={goToFileIndex}
-              onOpenFile={openPathInEditor}
-              onEscape={() => diffEditorRef.current?.getModifiedEditor().focus()}
-            />
-          </DiffFileTreeColumn>
+        {/* One band for every failure this window can report — the whole file's
+            include, a single hunk's, and a hand-off back to the app that no
+            window took. Whichever failed last is what is shown, and changing
+            file clears it. */}
+        {bandError ? (
+          <InlineNotice tone="error" className="mx-3 mb-2 shrink-0">
+            {bandError}
+          </InlineNotice>
         ) : null}
-        {tour.stepList}
-        <div
-          ref={setTourHostNode}
-          className="tour-host relative min-h-0 min-w-0 flex-1"
-          data-swapping={tour.swapping ? 'true' : undefined}
-          // The panel the step strip's tabs control. Only when a strip is there to
-          // control it: a tabpanel with no tablist is a lie to a screen reader.
-          id={branchSteps && !tour.active ? BRANCH_STEP_PANEL_ID : undefined}
-          role={branchSteps && !tour.active ? 'tabpanel' : undefined}
-        >
-          {source && far.reading.state === 'error' ? (
-            // The machine could not be asked, or would not say: in its words.
-            <CenteredError message={far.reading.message} />
-          ) : !tour.active && filterPending ? (
-            // The lists are one IPC read behind the status snapshot. "No changed
-            // files" during that beat would be a claim about the repository made
-            // before anyone asked it anything.
-            <CenteredMessage>{appCopy.auxWindows.diffViewer.loadingChangesU2026}</CenteredMessage>
-          ) : !tour.active && filteredEmpty ? (
-            <EmptyState
-              title={appCopy.auxWindows.diffViewer.noChangesIn(
-                filterList?.name ?? appCopy.auxWindows.diffViewer.thisChangelist,
-              )}
-              body={appCopy.auxWindows.diffViewer.itsChangesWereCommittedMoved}
-              action={
-                <OutlineButton size="sm" onClick={showAllChanges}>
-                  {appCopy.auxWindows.diffViewer.showAllChanges}
-                </OutlineButton>
-              }
-            />
-          ) : (
-            <DiffBody
-              content={content}
-              repoState={repoState}
-              currentItem={currentItem}
-              onMount={handleDiffMount}
-              monacoTheme={monacoTheme}
-              options={editorOptions}
-              stepLoading={branchSteps && steps.loading}
-            />
-          )}
-          {/* Renders nothing of its own — only portals into the widget nodes it
-            hangs in Monaco's glyph margin — so where it sits in the tree is
-            immaterial, and it sits beside the editor it draws on. */}
-          {content.state === 'ready' ? (
-            <HunkGutter
-              editor={gutterHost?.editor ?? null}
-              lane={gutterHost?.lane ?? GLYPH_MARGIN_LANE_CENTER}
-              boxes={gutterBoxes}
-              onToggle={fileHunks.toggle}
-            />
-          ) : null}
-          {/* "Add to chat" over a selection: only with a workspace to send it
-            to, which a window opened before it carried one does not have. */}
-          {content.state === 'ready' && workspaceId ? (
-            <DiffChatToolbar
-              diffEditor={mountedEditor?.editor ?? null}
-              path={currentItem?.relativePath ?? null}
-              onSend={sendSelectionToChat}
-              focusRequest={chatAsk}
-            />
-          ) : null}
-          {/* The tour's callout portals into a view zone of the editor above; the
-            file card and the Start card stand over the body. None of them is
-            a new element in the editor's place — the editor stays mounted. */}
-          {tour.callout}
-          {tour.fileCard}
-          {tour.readyCard}
+
+        {narrowedCounts && !tourState.active ? (
+          // The agent's narrowing, said once and undone in one click.
+          <div
+            role="status"
+            className="flex h-7 shrink-0 items-center gap-1.5 px-3 text-meta text-[color:var(--text-muted)]"
+          >
+            <span className="truncate">
+              {appCopy.auxWindows.diffViewer.showing}
+              {narrowedCounts.shown} of {narrowedCounts.total} changed {narrowedCounts.total === 1 ? 'file' : 'files'}
+            </span>
+            <span aria-hidden="true">·</span>
+            <LinkButton onClick={() => setPathsShownAll(pathsKey)}>{appCopy.auxWindows.diffViewer.showAll}</LinkButton>
+          </div>
+        ) : null}
+
+        <div className="flex min-h-0 flex-1">
+          {tour.stepList}
+          <div
+            ref={setTourHostNode}
+            className="tour-host relative min-h-0 min-w-0 flex-1"
+            data-swapping={tour.swapping ? 'true' : undefined}
+          >
+            {source && far.reading.state === 'error' ? (
+              // The machine could not be asked, or would not say: in its words.
+              <CenteredError message={far.reading.message} />
+            ) : !tour.active && filterPending ? (
+              // The lists are one IPC read behind the status snapshot.
+              <CenteredMessage>{appCopy.auxWindows.diffViewer.loadingChangesU2026}</CenteredMessage>
+            ) : !tour.active && filteredEmpty ? (
+              <EmptyState
+                title={appCopy.auxWindows.diffViewer.noChangesIn(
+                  filterList?.name ?? appCopy.auxWindows.diffViewer.thisChangelist,
+                )}
+                body={appCopy.auxWindows.diffViewer.itsChangesWereCommittedMoved}
+                action={
+                  <OutlineButton size="sm" onClick={showAllChanges}>
+                    {appCopy.auxWindows.diffViewer.showAllChanges}
+                  </OutlineButton>
+                }
+              />
+            ) : (
+              <DiffBody
+                content={content}
+                repoState={repoState}
+                currentItem={currentItem}
+                onMount={handleDiffMount}
+                monacoTheme={monacoTheme}
+                options={editorOptions}
+                stepLoading={branchSteps && steps.loading}
+              />
+            )}
+            {/* Renders nothing of its own — only portals into the widget nodes
+                it hangs in Monaco's glyph margin. */}
+            {content.state === 'ready' ? (
+              <HunkGutter
+                editor={gutterHost?.editor ?? null}
+                lane={gutterHost?.lane ?? GLYPH_MARGIN_LANE_CENTER}
+                boxes={gutterBoxes}
+                onToggle={fileHunks.toggle}
+              />
+            ) : null}
+            {/* "Add to chat" over a selection: only with a workspace to send it to. */}
+            {content.state === 'ready' && workspaceId ? (
+              <DiffChatToolbar
+                diffEditor={mountedEditor?.editor ?? null}
+                path={currentItem?.relativePath ?? null}
+                onSend={sendSelectionToChat}
+                focusRequest={chatAsk}
+              />
+            ) : null}
+            {/* The tour's callout portals into a view zone of the editor; the
+                file card and the Start card stand over the body. */}
+            {tour.callout}
+            {tour.fileCard}
+            {tour.readyCard}
+          </div>
         </div>
       </div>
     </div>
