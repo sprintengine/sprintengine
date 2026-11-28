@@ -127,6 +127,13 @@ export const SHELL_METHODS = {
    */
   sshOpen: 'shell.ssh.open',
   /**
+   * `{ environmentId }` → `string[]`: the routes this desktop reaches that
+   * environment by, best first (`formatEnvironmentRoute`), from the
+   * environment registry the shell keeps; none for one it does not know. The
+   * agents' chat tools route a chat's address by it.
+   */
+  environmentRoutes: 'shell.environments.routes',
+  /**
    * `{ targetVersion? }` → `StudioUpdateStart`: a client asked this desktop to
    * update itself (`update.start`); the app updater is the shell's.
    */
