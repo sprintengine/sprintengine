@@ -270,9 +270,10 @@ export function createStudioRpc(
       textGenerationSettings: core.textGenerationSettings,
     }),
     // What a client reads before it starts a chat: this Studio's own list of
-    // its chats, and the gateway's own tools for the rest, so the protocol
-    // and MCP read one thing.
-    discovery: createStudioDiscovery(core.workspaceList, () => gateway.ownTools()),
+    // its chats, the CLIs it runs and its projects' checkouts and extensions,
+    // the same ones the gateway's tools answer from, so the protocol and MCP
+    // read one thing.
+    discovery: createStudioDiscovery(core),
     // What this machine lacks for its schedules and watches, which every
     // client shows and none can fix from afar.
     readiness: () => core.readiness.read(),

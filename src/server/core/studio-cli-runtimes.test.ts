@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import type { LoadedPlugin } from '../../shared/plugin-manifest'
-import { createAutomationTools, type AutomationBackends, type CliModelSources } from './automation-tools'
+import { createStudioCliRuntimes, type CliModelSources, type StudioCliRuntimesDeps } from './studio-cli-runtimes'
 
-// `cli.runtime.list`'s `catalog`: the model picker's own rows for each CLI,
-// for a client that draws the same picker (the phone's New chat).
+// The CLI list's `catalog` (`cliRuntimes.list`, `cli.runtime.list`): the model
+// picker's own rows for each CLI, for a client that draws the same picker (the
+// phone's New chat).
 
 const NOW = Date.parse('2026-10-05T12:00:00Z')
 
@@ -60,16 +61,14 @@ const SOURCES: CliModelSources = {
   userModels: (cli) => (cli === 'claude-code' ? ['claude-haiku-5'] : undefined),
 }
 
-async function list(backends: Partial<AutomationBackends>): Promise<Array<Record<string, unknown>>> {
-  const tools = createAutomationTools({
-    ...({} as AutomationBackends),
+async function list(deps: Partial<StudioCliRuntimesDeps>): Promise<Array<Record<string, unknown>>> {
+  const listed = await createStudioCliRuntimes({
     listPlugins: () => [CLAUDE, ZAI, PLAIN],
     now: () => NOW,
-    ...backends,
-  })
-  const registration = tools.find((candidate) => candidate.name === 'cli.runtime.list')!
-  const result = await registration.handler({})
-  return (result.structuredContent as { clis: Array<Record<string, unknown>> }).clis
+    ...deps,
+  }).list()
+  assert.ok(listed.ok)
+  return listed.clis
 }
 
 function catalogOf(clis: Array<Record<string, unknown>>, id: string): Record<string, unknown> {
@@ -155,7 +154,7 @@ test('a row names its models only in its catalog', async () => {
   for (const entry of clis) assert.equal('models' in entry, false)
 })
 
-test('a gateway with no model sources answers without a catalog, as before it had one', async () => {
+test('with no model sources the rows go without a catalog', async () => {
   const clis = await list({})
   for (const entry of clis) assert.equal('catalog' in entry, false)
 })

@@ -16,9 +16,11 @@ import { STUDIO_WORKSPACES_CAPABILITY } from './handshake.js'
 // Each answers what the Studio's gateway tools of the same purpose answer
 // (`workspace.list`, `cli.runtime.list`, `workspace.checkout`,
 // `workspace.extensions`), from the same services, so a client on the protocol
-// and an agent on MCP read one thing. `workspaces.list` is every Studio's own
-// list of the chats it holds, with or without a desktop around it. A row carries the members named here and
-// may carry more; a client reads what it knows and passes over the rest.
+// and an agent on MCP read one thing. Every Studio answers them from its own
+// records and its own machine, with or without a desktop around it:
+// `workspaces.list` is the chats it holds, the rest its CLIs and its projects'
+// folders. A row carries the members named here and may carry more; a client
+// reads what it knows and passes over the rest.
 //
 // Reads, on `workspaces:read`, behind the `workspaces` capability. A workspace
 // or CLI the Studio does not hold is refused `not_found`.
@@ -102,7 +104,8 @@ export type StudioWorkspaceCheckout = {
   git: boolean
   branch?: string | null
   defaultBranch?: string | null
-  branches?: string[]
+  /** Every local branch; `current` marks the one checked out. */
+  branches?: Array<{ name: string; current?: boolean; [member: string]: unknown }>
   worktrees?: StudioWorktree[]
   [member: string]: unknown
 }
@@ -111,7 +114,8 @@ export type StudioWorkspaceCheckout = {
 export type StudioWorkspaceExtensions = {
   workspaceId: string
   skills: Array<{ id: string; name?: string; description?: string; [member: string]: unknown }>
-  servers?: Array<{ id?: string; name: string; status?: string; [member: string]: unknown }>
+  /** Each by the id its CLI's config names it by. */
+  servers?: Array<{ id: string; name?: string; status?: string; [member: string]: unknown }>
   [member: string]: unknown
 }
 
