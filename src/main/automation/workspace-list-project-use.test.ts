@@ -102,7 +102,10 @@ test('each row carries what its chat’s row draws, and leaves out what it has n
     highlight: { starred: true, color: 'blue' },
     autoSettleEnabled: true,
   })
-  const asleepLongAgo = workspace('ws-woke', { snoozedUntil: NOW - 1, highlight: { starred: false, color: 'nope' } })
+  const asleepLongAgo = workspace('ws-woke', {
+    snoozedUntil: NOW - 1,
+    highlight: { starred: false, color: 'nope' } as unknown as Workspace['highlight'],
+  })
   WORKSPACES.push(marked, asleepLongAgo)
   try {
     const byId = new Map((await list()).map((row) => [row.id, row]))

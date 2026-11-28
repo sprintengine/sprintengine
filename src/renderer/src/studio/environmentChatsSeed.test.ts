@@ -58,7 +58,11 @@ const RECORDS = [
 
 test('each copy and paired record becomes its machine’s row, under that machine’s id for the chat', () => {
   const seeded = seedRowsOf(RECORDS, idOfRoute, NOW)
-  assert.deepEqual([...seeded.keys()].sort(), [PAIRED_ID, SSH_ID, WSL_ID].sort(), 'this machine’s and unknown routes are not seeded')
+  assert.deepEqual(
+    [...seeded.keys()].sort(),
+    [PAIRED_ID, SSH_ID, WSL_ID].sort(),
+    'this machine’s and unknown routes are not seeded',
+  )
   const ssh = seeded.get(SSH_ID)!
   assert.equal(ssh.route, 'ssh:build-box')
   assert.deepEqual(
@@ -80,7 +84,10 @@ test('it runs once, writes only where no list is kept, and waits for the window�
   const cache = memoryEnvironmentChatsCache(lists)
   await cache.save(WSL_ID, { browse: null, conversations: [] })
   const storage = new Map<string, string>()
-  const store = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => void storage.set(key, value) }
+  const store = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => void storage.set(key, value),
+  }
 
   // Records that never load leave the seed for later.
   await seedEnvironmentChatsOnce({
@@ -94,14 +101,32 @@ test('it runs once, writes only where no list is kept, and waits for the window�
   assert.equal(storage.has(ENVIRONMENT_CHATS_SEEDED_KEY), false)
   assert.equal(await cache.load(SSH_ID), null)
 
-  await seedEnvironmentChatsOnce({ ready: Promise.resolve(), workspaces: () => RECORDS, idOfRoute, cache, storage: store })
+  await seedEnvironmentChatsOnce({
+    ready: Promise.resolve(),
+    workspaces: () => RECORDS,
+    idOfRoute,
+    cache,
+    storage: store,
+  })
   assert.equal(storage.get(ENVIRONMENT_CHATS_SEEDED_KEY), '1')
-  assert.deepEqual((await cache.load(SSH_ID))?.browse?.workspaces.map((row) => row.id), ['ssh-1'])
-  assert.deepEqual((await cache.load(PAIRED_ID))?.browse?.workspaces.map((row) => row.id), ['mini-chat'])
+  assert.deepEqual(
+    (await cache.load(SSH_ID))?.browse?.workspaces.map((row) => row.id),
+    ['ssh-1'],
+  )
+  assert.deepEqual(
+    (await cache.load(PAIRED_ID))?.browse?.workspaces.map((row) => row.id),
+    ['mini-chat'],
+  )
   assert.equal((await cache.load(WSL_ID))?.browse, null, 'a list already kept is left alone')
 
   // Once: a later start writes nothing, even where the list has gone.
   await cache.keepOnly(new Set())
-  await seedEnvironmentChatsOnce({ ready: Promise.resolve(), workspaces: () => RECORDS, idOfRoute, cache, storage: store })
+  await seedEnvironmentChatsOnce({
+    ready: Promise.resolve(),
+    workspaces: () => RECORDS,
+    idOfRoute,
+    cache,
+    storage: store,
+  })
   assert.equal(await cache.load(SSH_ID), null)
 })
