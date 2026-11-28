@@ -119,6 +119,16 @@ type Props = {
   onOpenFile: (path: string, name: string) => void
   /** Escape: back to the diff. */
   onEscape?: () => void
+  /**
+   * The column's top band is the window's (2026-11-28): the files column runs
+   * from the window's top, as the editor window's does, so its band carries
+   * the traffic lights' inset, the drag region and the column's own switch.
+   */
+  bandClassName?: string
+  /** What leads the band: the column's switch. */
+  bandLeading?: React.ReactNode
+  /** What stands between the band and the tree: which step, which changelist. */
+  belowBand?: React.ReactNode
 }
 
 export function DiffFileTree({
@@ -134,6 +144,9 @@ export function DiffFileTree({
   onSelectIndex,
   onOpenFile,
   onEscape,
+  bandClassName = 'h-7 pl-3 pr-1',
+  bandLeading,
+  belowBand,
 }: Props): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const treeRef = useRef<FileExplorerTreeHandle>(null)
@@ -170,28 +183,26 @@ export function DiffFileTree({
     [summaries],
   )
 
-  const fileCount = entries.length
-
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* The band names what the tree holds, where the editor window's names
-          its root: this tree is the diff's files, not a folder. No rule under
-          it: the column already stands under the file row's rule, and the name
-          is the top of the list it names. */}
-      <div className="flex h-7 shrink-0 items-center gap-1 pl-3 pr-1">
-        <span className="min-w-0 flex-1 truncate text-meta font-medium text-[color:var(--text-strong)]">
-          {fileCount} changed {fileCount === 1 ? 'file' : 'files'}
-        </span>
+      {/* The column's band: its switch, and Collapse all at the far end, as
+          the editor window's band carries its switch and Open file. No count:
+          the band over the diff already reads "2/9 files". */}
+      <div className={`flex shrink-0 items-center gap-1 ${bandClassName}`}>
+        {bandLeading}
+        <div className="min-w-0 flex-1 self-stretch" aria-hidden="true" />
         <Tooltip content={copy.auxWindows.diffFileTree.collapseAll} placement="bottom">
           <IconButton
             size="xs"
             aria-label={copy.auxWindows.diffFileTree.collapseAllFolders}
             onClick={() => treeRef.current?.collapseAll()}
+            className="app-no-drag"
           >
             <CollapseAllGlyph />
           </IconButton>
         </Tooltip>
       </div>
+      {belowBand}
       {/* Both ways: the tree scrolls sideways to the end of its longest name. */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
         <FileExplorerTree

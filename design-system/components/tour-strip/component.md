@@ -73,9 +73,9 @@ pointer chip exists only while the agent is pointing somewhere else.
 
 ## Usage
 
-- It takes the **commit step strip's slot** above the diff toolbar while a tour
-  plays, so the region keeps one band above its own toolbar, not two. Leaving
-  the tour gives the slot back.
+- It stands directly under the diff's band while a tour plays, and the branch
+  step select over the files steps aside, because the tour chooses the files.
+  Leaving the tour gives the select back.
 - The strip holds more than the pane-chrome ceiling of five because every
   control on it acts on the tour and nothing else — the band is the tour's own
   header (`principles.md` → the five-controls amendment), grouped by the
