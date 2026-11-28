@@ -68,8 +68,7 @@ function heldOnRoute(route: string, workspaceId: string): boolean {
  * `local` already: heard here again, each of its lifecycle events would be
  * heard twice.
  */
-const otherEnvironmentChats = () =>
-  followedEnvironmentChats().filter((source) => source.route !== WINDOW_STUDIO_ROUTE)
+const otherEnvironmentChats = () => followedEnvironmentChats().filter((source) => source.route !== WINDOW_STUDIO_ROUTE)
 
 const windowSessions = (): ConversationSessionsApi =>
   typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'

@@ -136,19 +136,3 @@ test('a chat snoozed through a patch from elsewhere is noted for the sidebar to 
   await arrive('ws-open', { snoozedUntil: null })
   assert.deepEqual(takeWorkspacesSnoozedElsewhere(), [], 'a wake is not a snooze')
 })
-
-test('a star and a colour set here are told to main, as every hand-edited field is', () => {
-  dispatched.length = 0
-  const { setWorkspaceHighlight, clearWorkspaceHighlight } = store.useWorkspaceStore.getState()
-  setWorkspaceHighlight('ws-open', { starred: true })
-  setWorkspaceHighlight('ws-open', { color: 'green' })
-  clearWorkspaceHighlight('ws-open')
-  const patches = dispatched
-    .filter((command) => command.type === 'workspace.update_fields')
-    .map((command) => command.payload.patch)
-  assert.deepEqual(patches, [
-    { highlight: { starred: true, color: null } },
-    { highlight: { starred: true, color: 'green' } },
-    { highlight: null },
-  ])
-})

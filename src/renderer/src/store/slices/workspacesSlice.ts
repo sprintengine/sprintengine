@@ -662,7 +662,8 @@ export function createWorkspacesSlice(
       if (before) await before
       const answer = await restLocalChat(chatOf(workspaceId), request.intent)
       if (!answer.ok) {
-        if (answer.code !== 'unavailable' && inFlight.get(workspaceId) === sent) adoptRest(workspaceId, request.snapshot)
+        if (answer.code !== 'unavailable' && inFlight.get(workspaceId) === sent)
+          adoptRest(workspaceId, request.snapshot)
         return answer
       }
       const now = getState().workspaces.find((w) => w.id === workspaceId)

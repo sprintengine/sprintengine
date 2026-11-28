@@ -225,7 +225,7 @@ test('a client that cannot be held is a refusal its caller hears, never an excep
   await assert.rejects(asked!, /reading 'api'/u)
 })
 
-test('every environment the list holds is followed by its best route, other than the window’s own Studio', () => {
+test('every environment the list holds is followed by its best route, the window’s own Studio first', () => {
   const up = { state: 'up', detail: null, lastReachedAt: null } as const
   const stopped = { state: 'unknown', detail: null, lastReachedAt: null } as const
   const targets = environmentTargetsToFollow([
@@ -246,11 +246,16 @@ test('every environment the list holds is followed by its best route, other than
   // list, and nothing is asked of it, which would start it. An SSH machine is
   // followed whatever its state says.
   assert.deepEqual(targets, [
+    { route: 'local', name: 'This Mac' },
     { route: 'ssh:build-box', name: 'build-box' },
     { route: 'wsl:Ubuntu', name: 'Ubuntu' },
     { route: 'wsl:Debian', name: 'Debian', resting: true },
     { route: 'tailnet:conn-mini', name: 'mac-mini' },
   ])
+})
+
+test('the window’s own Studio is followed before the list names it', () => {
+  assert.deepEqual(environmentTargetsToFollow([]), [{ route: 'local', name: 'This computer' }])
 })
 
 test('a resting environment is drawn and not asked until it runs or a chat on it is opened', () => {

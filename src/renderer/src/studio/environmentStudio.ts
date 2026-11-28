@@ -236,26 +236,26 @@ function open(api: EnvironmentApi, route: string): Held {
     : route === WINDOW_STUDIO_ROUTE
       ? ownStudio()
       : connect({
-        client: { name: 'Studio window' },
-        transport: webSocketTransport({
-          // Asked afresh for every connection and handed straight to it.
-          ticket: async () => {
-            const ticket = await api.environmentsTicket(route)
-            if (!ticket.ok) throw new StudioError(ticket.code, ticket.message)
-            return { url: ticket.url, token: ticket.token }
+          client: { name: 'Studio window' },
+          transport: webSocketTransport({
+            // Asked afresh for every connection and handed straight to it.
+            ticket: async () => {
+              const ticket = await api.environmentsTicket(route)
+              if (!ticket.ok) throw new StudioError(ticket.code, ticket.message)
+              return { url: ticket.url, token: ticket.token }
+            },
+            ...(WebSocket ? { WebSocket } : {}),
+          }),
+          reconnect: { initialDelayMs: 500, maxDelayMs: 30_000 },
+          // Another machine: this one being offline does say it cannot be reached.
+          parkWhenOffline: true,
+          onStateChange: (state, error) => {
+            tell(state)
+            // Parked on its credential: the route is gone there. Nothing to wait for.
+            if (state === 'parked' && error && error.code !== 'offline' && registry.held.get(route) === entry)
+              close(api, route)
           },
-          ...(WebSocket ? { WebSocket } : {}),
-        }),
-        reconnect: { initialDelayMs: 500, maxDelayMs: 30_000 },
-        // Another machine: this one being offline does say it cannot be reached.
-        parkWhenOffline: true,
-        onStateChange: (state, error) => {
-          tell(state)
-          // Parked on its credential: the route is gone there. Nothing to wait for.
-          if (state === 'parked' && error && error.code !== 'offline' && registry.held.get(route) === entry)
-            close(api, route)
-        },
-      })
+        })
   const end = (): void => {
     if (unwatchWindow) {
       // The window's own client is the window's, kept while the window lives.

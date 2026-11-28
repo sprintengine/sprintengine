@@ -3,11 +3,7 @@ import type { Workspace } from '../../../shared/workspace'
 import type { WorkspaceLifecycleIntent } from '../../../shared/workspace-lifecycle'
 import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
 import { changeEnvironmentChat, settleEnvironmentChat } from '../studio/environmentChatRecords'
-import {
-  environmentRouteAvailable,
-  WINDOW_STUDIO_ROUTE,
-  type EnvironmentTarget,
-} from '../studio/environmentStudio'
+import { environmentRouteAvailable, WINDOW_STUDIO_ROUTE, type EnvironmentTarget } from '../studio/environmentStudio'
 
 // A chat of this computer is changed as any other environment's chat is: by
 // its Studio's `conversation.*` methods, over the window's own client
