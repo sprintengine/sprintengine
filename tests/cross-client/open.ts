@@ -35,12 +35,9 @@ export async function openedByLink(who: string, studios: readonly ListReach[], l
     const row = workspaces.find((workspace) => workspace.id === parsed.chatId)
     if (!row) throw new Error(`${who}: ${parsed.chatId} is not in the list of the Studio the link names`)
     const agentId = parsed.agentId ?? row.agentIds?.[0]
-    if (!agentId || !row.folderPath) throw new Error(`${who}: the chat has no agent or folder to open`)
-    const read = await client.conversations.loadEarlier(
-      { workspaceId: row.id, agentId, workspaceRoot: row.folderPath },
-      Number.MAX_SAFE_INTEGER,
-      20,
-    )
+    if (!agentId) throw new Error(`${who}: the chat has no agent to open`)
+    // Named by the chat and its agent, as a link names it: the Studio finds its folder.
+    const read = await client.conversations.loadEarlier({ workspaceId: row.id, agentId }, Number.MAX_SAFE_INTEGER, 20)
     if (!read.ok) throw new Error(`${who}: the chat did not open: ${read.message}`)
     if (read.page.events.length === 0) throw new Error(`${who}: the chat opened with nothing in it`)
   })
