@@ -20,6 +20,7 @@ import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type Gate
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
 import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { discoveredThere } from './discover'
 
 // An SSH machine, for real: the dockerized sshd the SSH machine suites use,
 // the desktop's SSH environment (ssh-environment.ts) installing the server tree
@@ -423,6 +424,12 @@ export async function runSshLeg(input: {
       await markReadsBack(window, [window], key.workspaceId)
       await settleReadsBack(window, [window], key.workspaceId)
     })
+
+    // discover: the window reads what New chat offers there of the machine's
+    // own Studio. Its image has no git, so the project is not a repository.
+    await matrix.run('ssh', 'discover', async () =>
+      discoveredThere('ssh', await windowStudio(), key.workspaceId, { git: false }),
+    )
   } finally {
     stopFollowing()
     const lastWindow = windowClient as Promise<StudioClient> | null

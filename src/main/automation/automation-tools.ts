@@ -2,14 +2,10 @@ import { homedir } from 'os'
 import { isAbsolute } from 'path'
 import type { RepositoryIdentity } from '../../shared/repository-identity'
 import type { WorkspaceSyncSnapshot } from '../../shared/workspace-sync'
-import type { WorkspaceExtensions } from '../../shared/workspace-extensions'
 import type { CliPermissionPreset, TerminalSessionSnapshot } from '../../shared/electron-api'
 import { projectColorKey, projectHue } from '../../shared/project-hue'
 import { parseCliPermissionPreset } from '../../shared/cli-permission-preset'
-import { declaredPermissionModes, declaredPermissionPresets, pluginHostedVia } from '../plugin-render'
-import { mergeCliModelCatalog, type DiscoveredCliModelCatalog } from '../../shared/cli-model-catalog'
-import { cliPickerModels } from '../../shared/cli-model-families'
-import { conversationProviderForCli } from '../../shared/conversation-harness'
+import { declaredPermissionModes } from '../plugin-render'
 import type { AgentLaunchCaller, AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-launch'
 import { LAUNCH_PROMPT_READS_AS_OPTION_MESSAGE, launchPromptReadsAsOption } from '../../shared/agent-launch'
 import {
@@ -28,6 +24,8 @@ import {
   workspaceRecordView,
   type StudioWorkspaceList,
 } from '../../server/workspaces/studio-workspace-list'
+import type { StudioWorkspaceReads } from '../../server/workspaces/studio-workspace-reads'
+import type { StudioCliRuntimes } from '../../server/core/studio-cli-runtimes'
 import type {
   BacklogAddOrUpdateLinkInput,
   BacklogCriticalityPayload,
@@ -259,26 +257,17 @@ export type AutomationBackends = {
    */
   readRepositoryIdentity(folderPath: string): Promise<RepositoryIdentity | null>
   /**
-   * The checkout facts a remote launch panel needs before choosing where a
-   * chat runs (checkout-and-branch-on-remote-create): whether the folder is
-   * a repository, its branch, the trunk, every local branch, and the
-   * worktrees the repository holds. Read-only; never throws for a non-repo
-   * (that is the `git: false` answer).
+   * A project's checkout facts, as `workspace.checkout` answers them: the
+   * server core's own read (`server/workspaces/studio-workspace-reads.ts`),
+   * the one `workspaces.checkout` answers on the protocol too.
    */
-  readWorkspaceCheckout(workspaceRoot: string): Promise<{
-    git: boolean
-    branch: string | null
-    defaultBranch: string | null
-    branches: Array<{ name: string; current: boolean }>
-    worktrees: Array<{ path: string; branch: string | null; isMain: boolean }>
-  }>
+  workspaceCheckout: StudioWorkspaceReads['checkout']
   /**
    * The skills a chat in a project can be given and the MCP servers a CLI
-   * there is configured with, for a paired machine's composer to offer: the
-   * same inventory and capability answer the composer here reads. Absent,
-   * `workspace.extensions` is not served.
+   * there is configured with, as `workspace.extensions` answers them: the
+   * server core's own read, the one `workspaces.extensions` answers too.
    */
-  readWorkspaceExtensions?(workspaceRoot: string, cli: string | null): Promise<WorkspaceExtensions>
+  workspaceExtensions: StudioWorkspaceReads['extensions']
   /**
    * Studio's own data folders in this process (its user data folder), which
    * `workspace.create` will not open, nor anything above or inside them. The
@@ -293,13 +282,11 @@ export type AutomationBackends = {
    */
   listPlugins(): LoadedPlugin[]
   /**
-   * What the model picker here reads besides the manifests: the catalogs each
-   * CLI reported about itself (the discovery cache) and the ids the person
-   * added for it in Settings. `cli.runtime.list` merges them as the picker
-   * does to answer with the picker's own rows; absent, it answers without a
-   * `catalog`, as it did before it had one.
+   * The agent CLIs this Studio runs, as `cli.runtime.list` answers them: the
+   * server core's own list (`server/core/studio-cli-runtimes.ts`), the one
+   * `cliRuntimes.list` answers on the protocol too.
    */
-  readCliModelSources?(): Promise<CliModelSources>
+  listCliRuntimes: StudioCliRuntimes['list']
   /**
    * Make a built-in skill present in the workspace's native harness dirs before
    * a launch reads its invocation (getStatus → install; the
@@ -343,15 +330,6 @@ export type AutomationBackends = {
 
   now?: () => number
   sleep?: (ms: number) => Promise<void>
-}
-
-export type CliModelSources = {
-  /** The discovered catalogs, keyed by CLI id; an unreadable cache reads as none. */
-  discovered: Record<string, DiscoveredCliModelCatalog>
-  /** The ids the person added for a CLI in Settings. */
-  userModels: (cli: string) => readonly string[] | undefined
-  /** The ids the person took off a CLI's list in Settings. */
-  removedModels?: (cli: string) => readonly string[] | undefined
 }
 
 type BacklogWriteBackends = {
@@ -1248,10 +1226,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     handler: async (args, context) => {
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
-      const resolved = resolveWorkspaceRoot(workspaceId, context)
-      if (!('root' in resolved)) return resolved
-      const checkout = await backends.readWorkspaceCheckout(resolved.root)
-      return success({ workspaceId, ...checkout })
+      const read = await backends.workspaceCheckout(workspaceId, { ownOnly: isPairedDevice(context) })
+      return read.ok ? success(read.checkout) : failure(read.code, read.message)
     },
   }
 
@@ -1282,12 +1258,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (typeof workspaceId !== 'string') return workspaceId
       const invalid = firstInvalidOptionalString(args, ['cli'])
       if (invalid) return invalid
-      if (!backends.readWorkspaceExtensions)
-        return failure('unavailable', 'This machine does not list its skills and MCP servers.')
-      const resolved = resolveWorkspaceRoot(workspaceId, context)
-      if (!('root' in resolved)) return resolved
-      const extensions = await backends.readWorkspaceExtensions(resolved.root, optionalString(args.cli) ?? null)
-      return success({ workspaceId, ...extensions })
+      const read = await backends.workspaceExtensions(workspaceId, optionalString(args.cli) ?? null, {
+        ownOnly: isPairedDevice(context),
+      })
+      return read.ok ? success(read.extensions) : failure(read.code, read.message)
     },
   }
 
@@ -1330,25 +1304,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     handler: async (args) => {
       const invalid = firstInvalidOptionalString(args, ['cli'])
       if (invalid) return invalid
-      const wanted = optionalString(args.cli)
-      const plugins = backends.listPlugins()
-      if (wanted && !plugins.some((plugin) => plugin.manifest.id === wanted)) {
-        return failure(
-          'unknown_cli',
-          `No agent CLI "${wanted}" is registered in this app. Call cli.runtime.list with no arguments for the ids it holds.`,
-        )
-      }
-      // Read once for every row, and never fatal: a cache that cannot be read
-      // leaves the rows as they were before they carried a catalog.
-      const sources = backends.readCliModelSources ? await backends.readCliModelSources().catch(() => null) : null
-      const now = (backends.now ?? Date.now)()
-      const clis = plugins
-        .filter((plugin) => !wanted || plugin.manifest.id === wanted)
-        .map((plugin) => ({
-          ...cliRuntimeProjection(plugin),
-          ...(sources ? { catalog: cliRuntimeCatalog(plugin, sources, now) } : {}),
-        }))
-      return success({ clis })
+      const listed = await backends.listCliRuntimes(optionalString(args.cli) ?? null)
+      return listed.ok ? success({ clis: listed.clis }) : failure(listed.code, listed.message)
     },
   }
 
@@ -2977,70 +2934,6 @@ function terminalSessionProjection(session: TerminalSessionSnapshot): Record<str
       state: pr.state,
       isDraft: pr.isDraft,
     })),
-  }
-}
-
-// One agent CLI as cli.runtime.list reports it. Everything here is
-// manifest-declared; the models are the `catalog`'s (cliRuntimeCatalog below),
-// because a manifest names none.
-function cliRuntimeProjection(plugin: LoadedPlugin): Record<string, unknown> {
-  const { manifest } = plugin
-  return {
-    id: manifest.id,
-    displayName: manifest.displayName,
-    source: plugin.source,
-    binary: manifest.binary,
-    // Hooks-only selectability (decision of record 2026-08-31): declared, not
-    // probed — true exactly when the manifest carries an agentStateSpec. Rows
-    // are marked rather than omitted so a remote caller holding a stale id
-    // learns WHY it is refused instead of seeing the CLI vanish.
-    agentSelectable: Boolean(manifest.agentStateSpec),
-    supportsModelSelection: Boolean(manifest.modelSelection),
-    allowCustomModelId: manifest.modelSelection?.allowCustomId === true,
-    reasoningLevels: (manifest.reasoningSelection?.levels ?? []).map((level) => ({
-      id: level.id,
-      ...(level.label ? { label: level.label } : {}),
-    })),
-    defaultReasoningLevel: manifest.reasoningSelection?.default ?? null,
-    // The presets a launch on this CLI can honour: `none` always (it passes no
-    // flag), each other one only where the manifest names its setting.
-    permissionPresets: declaredPermissionPresets(manifest),
-    // The CLI's modes under its own names, each with the preset it runs at. A
-    // caller names a mode by its id (`permissionMode` on agent.launch and
-    // conversation.create), or the preset for that preset's own mode. `readOnly`
-    // marks a mode the CLI declares read-only.
-    permissionModes: declaredPermissionModes(manifest).map((mode) => ({
-      id: mode.id,
-      label: mode.label,
-      preset: mode.level,
-      ...(mode.readOnly ? { readOnly: true } : {}),
-    })),
-  }
-}
-
-// What the model picker here offers for one CLI, for a client that draws the
-// same picker (the phone's New chat). The rows are the picker's own: the same
-// merge of the CLI's reported list and the person's ids
-// (`mergeCliModelCatalog`), grouped into the same families
-// (`cliPickerModels`), named the way its provider line names them. The row's
-// top-level `models`, which answered a manifest's built-in list, is gone with
-// that list; a phone that reads it finds none and reads this instead.
-function cliRuntimeCatalog(plugin: LoadedPlugin, sources: CliModelSources, now: number): Record<string, unknown> {
-  const { manifest } = plugin
-  const merged = mergeCliModelCatalog(
-    manifest.modelSelection ? { allowCustomId: manifest.modelSelection.allowCustomId === true } : undefined,
-    [...(sources.userModels(manifest.id) ?? [])],
-    sources.discovered[manifest.id],
-    now,
-    sources.removedModels?.(manifest.id),
-  )
-  const hostedVia = pluginHostedVia(manifest) ?? null
-  return {
-    conversational: conversationProviderForCli(manifest.id) !== null,
-    hostedVia,
-    providerLabel: hostedVia === 'claude-code' ? `${manifest.displayName} · via Claude Code` : manifest.displayName,
-    allowCustomModelId: merged?.allowCustomId === true,
-    models: merged ? cliPickerModels(merged.options) : [],
   }
 }
 

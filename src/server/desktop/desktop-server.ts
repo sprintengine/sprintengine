@@ -63,7 +63,6 @@ import { createNodeStudioPaths } from '../platform/studio-paths'
 import { createRemoteShellBridge } from '../shell-bridge/remote'
 import { createShellSecretCipher, meshSealedTokens } from '../shell-bridge/shell-cipher'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from './gateway-backends'
-import { createWorkspaceExtensionsReader } from '../core/workspace-extensions-reader'
 import { provideServerChat } from './server-chat'
 import {
   SERVER_EVENTS,
@@ -462,12 +461,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           listModuleContributedTools: () =>
             modules.mcpTools().map((tool) => ({ moduleId: tool.moduleId, toolName: tool.registration.name })),
           readMarketplaceRegistry: (input) => extensions.marketplace.read(input),
-          // What a paired machine's composer offers a chat here.
-          readWorkspaceExtensions: createWorkspaceExtensionsReader({
-            listWorkspaceSkills: (input) => core.agents.skills.workspaceSkills.listWorkspaceSkills(input),
-            agentCapabilities: (input) => core.agents.skills.agentCapabilities.resolve(input),
-            listSources: () => core.agents.skills.skills.listSources(),
-          }),
+          // The CLIs, a project's checkout and what a chat there can use:
+          // the core's own reads, as `cliRuntimes.list`, `workspaces.checkout`
+          // and `workspaces.extensions` are.
+          listCliRuntimes: (cli) => core.cliRuntimes.list(cli),
+          workspaceCheckout: (workspaceId, options) => core.workspaceReads.checkout(workspaceId, options),
+          workspaceExtensions: (workspaceId, cli, options) => core.workspaceReads.extensions(workspaceId, cli, options),
         }),
       ),
       // `artifacts.*`: publishing agents' pages from this machine's disk, over

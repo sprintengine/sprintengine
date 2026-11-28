@@ -55,7 +55,7 @@ const discovery: StudioDiscovery = {
       git: true,
       branch: 'main',
       defaultBranch: 'main',
-      branches: [{ name: 'main', current: true }, { name: 'fix' }] as unknown as string[],
+      branches: [{ name: 'main', current: true }, { name: 'fix' }],
       worktrees: [{ path: '/Users/dev/parser-wt', branch: 'fix' }],
     },
   }),

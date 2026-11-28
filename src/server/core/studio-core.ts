@@ -80,13 +80,16 @@ import { createHostRegistry, installHostRegistry } from '../../main/hosts/host-r
 import { createAgentLaunchSettingsStore } from '../../main/launch-settings-store'
 import { setWorktreeBranchPrefixReader } from '../../main/worktree-branch-prefix'
 import { readDiscoveredCliModelCatalogs } from '../../main/model-discovery/service'
-import { listPluginRegistryEntries } from '../../main/plugin-registry-instance'
+import { getPluginRegistry, listPluginRegistryEntries } from '../../main/plugin-registry-instance'
 import { powerActivity } from '../../main/power-activity'
 import { getSharedCredentialStore } from '../../main/secret-store'
 import { createWorkspaceRegistryService } from '../../main/workspace-registry-service'
 import { createWorkspaceRegistryStore } from '../../main/workspace-registry-store'
 import { readRepositoryIdentity } from '../../main/repository-identity'
 import { createStudioWorkspaceList } from '../workspaces/studio-workspace-list'
+import { createStudioWorkspaceReads } from '../workspaces/studio-workspace-reads'
+import { createStudioCliRuntimes } from './studio-cli-runtimes'
+import { createWorkspaceExtensionsReader } from './workspace-extensions-reader'
 import { createWorkspaceSyncService } from '../../main/workspace-sync-service'
 import { startWorkspaceStoreMigration } from '../../main/workspace-store-migration'
 import { invalidateCliAvailabilityOnHost, knownCliAvailability } from '../../main/cli-availability'
@@ -1979,6 +1982,35 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       snapshot: () => workspaceSyncService.getSnapshot(),
       readRepositoryIdentity: (folderPath) => readRepositoryIdentity(folderPath),
       projectUsage: () => agentLaunchSettings.get().projectUsage,
+    }),
+    /**
+     * A project's checkout and what a chat in it can use, as
+     * `workspaces.checkout` / `workspaces.extensions` and the gateway's
+     * `workspace.checkout` / `workspace.extensions` answer them: read where
+     * the folder is, in every mode.
+     */
+    workspaceReads: createStudioWorkspaceReads({
+      snapshot: () => workspaceSyncService.getSnapshot(),
+      readExtensions: createWorkspaceExtensionsReader({
+        listWorkspaceSkills: (input) => agents.skills.workspaceSkills.listWorkspaceSkills(input),
+        agentCapabilities: (input) => agents.skills.agentCapabilities.resolve(input),
+        listSources: () => agents.skills.skills.listSources(),
+      }),
+    }),
+    /**
+     * The agent CLIs this Studio runs, as `cliRuntimes.list` and the gateway's
+     * `cli.runtime.list` answer them: its plugins, with what its own model
+     * picker offers for each, in every mode.
+     */
+    cliRuntimes: createStudioCliRuntimes({
+      listPlugins: () => getPluginRegistry().loaded(),
+      // The model picker's sources, read where the picker's are: the
+      // discovery cache under this Studio's data, and the person's own ids.
+      readCliModelSources: async () => ({
+        discovered: await readDiscoveredCliModelCatalogs().catch(() => ({})),
+        userModels: (cli) => agentLaunchSettings.get().cliRuntimes[cli]?.models,
+        removedModels: (cli) => agentLaunchSettings.get().cliRuntimes[cli]?.removedModels,
+      }),
     }),
     conversations,
     conversationOwner,

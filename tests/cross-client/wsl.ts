@@ -26,6 +26,7 @@ import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type Gate
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
 import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { discoveredThere } from './discover'
 
 // A WSL distribution, as far as a machine without WSL can show one: `sh`
 // stands in for `wsl.exe`, in a home of the distribution's own with the pinned
@@ -479,6 +480,12 @@ export async function runWslLeg(input: {
       await markReadsBack(window, [window], key.workspaceId)
       await settleReadsBack(window, [window], key.workspaceId)
     })
+
+    // discover: the window reads what New chat offers there of the
+    // distribution's own Studio, the project's checkout read by its git.
+    await matrix.run('wsl', 'discover', async () =>
+      discoveredThere('wsl', await windowStudio(), key.workspaceId, { git: true }),
+    )
 
     // No paired device reaches the distribution through this desktop: the
     // relay route is gone. Each of the gate's devices, on its own connection
