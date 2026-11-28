@@ -750,6 +750,17 @@ export function remoteRowFinishUnseen(
   })
 }
 
+/**
+ * What another environment's chat's row says its agents are doing, in the
+ * local rows' words: a chat stopped by a failed turn reads as failed, or By
+ * status files it with the chats at rest while a local one leads the list.
+ */
+export function remoteRowActivity(
+  conversation: Pick<RemoteConversation, 'activity' | 'failed'>,
+): RemoteRowActivity | 'failed' {
+  return conversation.failed ? 'failed' : conversation.activity
+}
+
 /** Rows here, most recently written to first by `recencyOf`; ties keep the order they came in. */
 export function sortChatsByRecency(
   workspaces: readonly Workspace[],
@@ -783,7 +794,10 @@ export function interleaveChats(
 }
 
 /** What opening a chat asks: its record here, or a pane onto it following the agent asked for, else its first. */
-export function openSpecOfConversation(conversation: RemoteConversation, agentId?: string | null): RemoteSessionOpenSpec {
+export function openSpecOfConversation(
+  conversation: RemoteConversation,
+  agentId?: string | null,
+): RemoteSessionOpenSpec {
   const agent =
     (agentId ? conversation.agents.find((row) => row.remoteAgentId === agentId) : undefined) ??
     conversation.agents[0] ??
@@ -793,7 +807,9 @@ export function openSpecOfConversation(conversation: RemoteConversation, agentId
     machineName: conversation.machineName,
     connectionId: conversation.connectionId,
     chatId: conversation.workspaceId,
-    agent: agent ? { agentId: agent.remoteAgentId, sessionId: agent.sessionId, title: agent.title, cli: agent.cli } : null,
+    agent: agent
+      ? { agentId: agent.remoteAgentId, sessionId: agent.sessionId, title: agent.title, cli: agent.cli }
+      : null,
     title: conversation.title,
     workspaceName: conversation.title,
     workspaceRoot: conversation.workspaceRoot,

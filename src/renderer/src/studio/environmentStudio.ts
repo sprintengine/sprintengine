@@ -59,6 +59,11 @@ export function pairedConnectionOf(route: string | null): string | null {
 }
 
 /** A paired machine, as the environment this window asks. */
+/** Whether a route reaches its environment over the tailnet: a paired desktop's, which is gone while this device is off it. */
+export function reachedOverTailnet(route: string): boolean {
+  return pairedConnectionOf(route) !== null
+}
+
 export function pairedTarget(machine: PairedMachine): EnvironmentTarget {
   return { route: pairedRoute(machine.id), name: machine.machineName }
 }

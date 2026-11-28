@@ -2,7 +2,7 @@ import type { Workspace, WorkspaceId } from '../../../../shared/workspace'
 import type { ModuleEnablementOverrides } from '../../../../shared/modules/manifest'
 import { isSettledWorkspace } from '../../utils/workspaceSettle'
 import { isHiddenFromRail } from '../../utils/workspaceVisibility'
-import { folderDisplayName, remoteGroupDisplayName, remoteGroupOf } from '../workspace/sidebar/folderGroups'
+import { remoteGroupDisplayName } from '../workspace/sidebar/folderGroups'
 import { remoteConversationTitle } from '../workspace/remoteBand/remoteSessionsModel'
 
 // Settings ▸ Settled chats reads the same record the sidebar's Settled shelf
@@ -29,7 +29,7 @@ function settledChatEntry(
   return {
     id: workspace.id,
     title: remoteConversationTitle(workspace),
-    project: remoteGroupOf(workspace) ? remoteGroupDisplayName(workspace) : folderDisplayName(workspace.folderPath),
+    project: remoteGroupDisplayName(workspace),
     settledAt: workspace.settledAt as number,
     remoteMachine: workspace.remoteOrigin?.machineName ?? null,
   }

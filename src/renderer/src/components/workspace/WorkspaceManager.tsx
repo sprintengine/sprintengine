@@ -489,15 +489,10 @@ export default function WorkspaceManager() {
   useFollowWindowEnvironments()
   const dialog = useConfirmDialog()
   // The row menu's Delete chat… on a settled chat, the same flow Settings ▸ Settled chats runs.
-  const { deleteChats: deleteSettledChats, deleteThere: deleteSettledChatThere } = useDeleteSettledChats()
+  const { deleteChats: deleteSettledChats } = useDeleteSettledChats()
   const sidebarDeleteSettledChat = useCallback(
     (workspaceId: string) => void deleteSettledChats([workspaceId]),
     [deleteSettledChats],
-  )
-  // …and on a paired machine's settled chat, where that machine deletes its chats from here.
-  const sidebarDeleteSettledChatThere = useCallback(
-    (workspaceId: string) => void deleteSettledChatThere(workspaceId),
-    [deleteSettledChatThere],
   )
   const workspaceWindowId = useMemo(() => getWorkspaceWindowIdFromLocation(), [])
   // Dock-back from the external editor window: the window owning that workspace's
@@ -5426,7 +5421,6 @@ export default function WorkspaceManager() {
               onNewChatOnMachine={sidebarNewChatOnMachine}
               onRevealFolder={sidebarRevealFolder}
               onDeleteSettledChat={sidebarDeleteSettledChat}
-              onDeleteSettledChatThere={sidebarDeleteSettledChatThere}
               onSetSidebarCollapsed={setSidebarCollapsed}
               sidebarWidth={sidebarWidth}
               onSetSidebarWidth={setSidebarWidth}
