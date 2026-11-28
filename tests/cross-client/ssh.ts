@@ -20,6 +20,7 @@ import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type Gate
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
 import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { linkTo, openedByLink } from './open'
 import { agentDiscoveredThere, discoveredThere, type AgentToolCall } from './discover'
 
 // An SSH machine, for real: the dockerized sshd the SSH machine suites use,
@@ -454,6 +455,12 @@ export async function runSshLeg(input: {
       await listedAtItsAddress([window], key.workspaceId)
       await markReadsBack(window, [window], key.workspaceId)
       await settleReadsBack(window, [window], key.workspaceId)
+    })
+
+    // open: the window is handed the chat's link and opens it on the Studio it names.
+    await matrix.run('ssh', 'open', async () => {
+      const window: ListReach = { who: 'ssh', ask: async (work) => work(await windowStudio()) }
+      await openedByLink('ssh', [window], await linkTo(window, key.workspaceId, key.agentId))
     })
 
     // discover: the window reads what New chat offers there of the machine's

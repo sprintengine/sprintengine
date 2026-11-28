@@ -15,6 +15,7 @@ import { startCutter, type Cutter } from './cutter'
 import { approvalAfter, isReplyTo, isUserMessage, resolvedAfter, type Feed, type GateEvent } from './feed'
 import type { HostConfig, HostReady } from './host'
 import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { linkTo, openedByLink } from './open'
 import { Matrix } from './matrix'
 import { runSshLeg } from './ssh'
 import { runWslLeg } from './wsl'
@@ -602,6 +603,12 @@ async function main(): Promise<number> {
     await matrix.run('desktop', 'list', () => listedAtItsAddress(reaches, listed.workspaceId))
     await matrix.run('peer', 'list', () => markReadsBack(byPeer, reaches, listed.workspaceId))
     await matrix.run('phone', 'list', () => settleReadsBack(byPhone, reaches, listed.workspaceId))
+
+    // open: each client is handed the link Copy link writes for the shared
+    // chat, finds the Studio it reaches that the link names and opens it there.
+    const sharedLink = await linkTo(reaches[0]!, shared.workspaceId, shared.agentId)
+    for (const [index, id] of (['desktop', 'peer', 'phone'] as const).entries())
+      await matrix.run(id, 'open', () => openedByLink(id, [reaches[index]!], sharedLink))
 
     // While the desktop and its paired devices are still up: they are who must not reach it.
     await runWslLeg({

@@ -26,6 +26,7 @@ import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type Gate
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
 import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { linkTo, openedByLink } from './open'
 import { agentDiscoveredThere, discoveredThere } from './discover'
 
 // A WSL distribution, as far as a machine without WSL can show one: `sh`
@@ -479,6 +480,12 @@ export async function runWslLeg(input: {
       await listedAtItsAddress([window], key.workspaceId)
       await markReadsBack(window, [window], key.workspaceId)
       await settleReadsBack(window, [window], key.workspaceId)
+    })
+
+    // open: the window is handed the chat's link and opens it on the Studio it names.
+    await matrix.run('wsl', 'open', async () => {
+      const window: ListReach = { who: 'wsl', ask: async (work) => work(await windowStudio()) }
+      await openedByLink('wsl', [window], await linkTo(window, key.workspaceId, key.agentId))
     })
 
     // discover: the window reads what New chat offers there of the
