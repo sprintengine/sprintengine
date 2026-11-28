@@ -60,13 +60,11 @@ export function createConversationHistoryProvider(options: {
       let failure: string | null = null
       let answered = false
       for (const place of options.getPlaces()) {
-        const found = await place
-          .search(query)
-          .catch((error: unknown): MeshConversationSearchResult => ({
-            ok: false,
-            code: 'failed',
-            message: String(error),
-          }))
+        const found = await place.search(query).catch((error: unknown): MeshConversationSearchResult => ({
+          ok: false,
+          code: 'failed',
+          message: String(error),
+        }))
         if (epoch !== generation) return []
         if (!found.ok) {
           failure ??= found.message

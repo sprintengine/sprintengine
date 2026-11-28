@@ -378,7 +378,8 @@ function searchOnlyLifecycle(api: Api, chats: () => readonly SearchableChatHere[
     },
     deletion: notHere,
     hasChat: (workspaceId) => chats().some((chat) => chat.workspaceId === workspaceId),
-    searchChats: (query) => searchChatsHere(query, { chats, search: (input) => call(api, 'conversationSearch', input) }),
+    searchChats: (query) =>
+      searchChatsHere(query, { chats, search: (input) => call(api, 'conversationSearch', input) }),
   })
 }
 
