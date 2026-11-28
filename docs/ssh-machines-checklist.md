@@ -52,6 +52,11 @@ examples call it `build-box`, with a user `dev`.
    build-box is running but not answering. Stop it there, or restart build-box.
    Studio keeps trying." Studio does not start a second server beside it. Then
    `kill -CONT <pid>`: the machine reads "Connected" again, on the same server.
+6. Ask the agent in that chat which agent CLIs it can launch, and which
+   branches its project has.
+   Expect: the CLIs installed on build-box and the branches of the checkout
+   there (`cli.runtime.list`, `workspace.checkout` from build-box's own
+   Studio), not this computer's.
 
 ## 3. The pane
 

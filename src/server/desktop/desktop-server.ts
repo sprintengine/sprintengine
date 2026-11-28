@@ -87,8 +87,6 @@ import type {
 } from '../../../packages/studio-protocol/src/environment-access'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
-import { createWorkspaceWithHooks } from '../extensions/hooks/workspace-hooks'
-import { activeInvoker } from '../../main/module-host/extension-invocation'
 
 // The desktop's own Studio server, in a process of its own (phase 6 spec): the
 // core, its gateway and owner socket, its window listener, and the module kernel with every module's server half, composed in a utility
@@ -426,8 +424,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       ...serverAutomationTools(
         createServerGatewayBackends({
           getWorkspaceSyncSnapshot: () => workspaceSyncService.getSnapshot(),
-          // `workspace.list` is the core's own list, as `workspaces.list` is.
-          listWorkspaces: (options) => core.workspaceList.list(options),
           // The terminals are this process's: `terminal.*`, `agent.*` and
           // `backlog.work` launch and read them here.
           listTerminalSessions: () => terminals?.runtime.sessions.listTerminals() ?? [],
@@ -442,14 +438,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           launchAgent: (request) => launchAgent(request),
           resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
           agentStarterOf: core.agentStarterOf,
-          createWorkspace: (input, actor, context) =>
-            createWorkspaceWithHooks(
-              core.extensionHooks,
-              () => activeInvoker() ?? core.hookInvokers.ofGatewayCaller(context),
-              input,
-              (request) => workspaceSyncService.createWorkspace(request, actor),
-            ),
-          studioDataDirs: () => [envelope.dataDir],
           getScheduledAgents: () => modules.scheduledAgents(),
           ...withDefinedMachineSchedules(machineSchedulesOf(core)),
           ...launchSettingsGatewayDeps(agentLaunchSettings),
@@ -461,12 +449,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           listModuleContributedTools: () =>
             modules.mcpTools().map((tool) => ({ moduleId: tool.moduleId, toolName: tool.registration.name })),
           readMarketplaceRegistry: (input) => extensions.marketplace.read(input),
-          // The CLIs, a project's checkout and what a chat there can use:
-          // the core's own reads, as `cliRuntimes.list`, `workspaces.checkout`
-          // and `workspaces.extensions` are.
-          listCliRuntimes: (cli) => core.cliRuntimes.list(cli),
-          workspaceCheckout: (workspaceId, options) => core.workspaceReads.checkout(workspaceId, options),
-          workspaceExtensions: (workspaceId, cli, options) => core.workspaceReads.extensions(workspaceId, cli, options),
         }),
       ),
       // `artifacts.*`: publishing agents' pages from this machine's disk, over

@@ -31,14 +31,12 @@ import { agentWorktreePaths } from '../../shared/worktree-paths'
 export type GatewayBackendDeps = Pick<
   AutomationBackends,
   | 'getWorkspaceSyncSnapshot'
-  | 'listWorkspaces'
   | 'listTerminalSessions'
   | 'readTerminalOutputTail'
   | 'launchAgent'
   | 'linkLaunchedAgent'
   | 'resolveAgentPermissionPreset'
   | 'agentStarterOf'
-  | 'createWorkspace'
   | 'getScheduledAgents'
   | 'machineSchedules'
   | 'defaultChatCli'
@@ -46,10 +44,6 @@ export type GatewayBackendDeps = Pick<
   | 'listInstalledThirdPartyModules'
   | 'listModuleContributedTools'
   | 'readMarketplaceRegistry'
-  | 'listCliRuntimes'
-  | 'workspaceCheckout'
-  | 'workspaceExtensions'
-  | 'studioDataDirs'
 > & {
   /** Where an agent-at-launch worktree is cut; this process's own pool when left out. */
   createAgentWorktree?: AutomationBackends['createAgentWorktree']

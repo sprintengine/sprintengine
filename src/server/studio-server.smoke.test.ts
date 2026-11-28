@@ -145,6 +145,30 @@ test('the bundle carries nothing of Electron and serves the gateway under plain 
   const created = await mcp.call('tools/call', { name: 'conversation.create', arguments: { workspaceId: 'missing' } })
   assert.equal(created.result?.isError, true)
   assert.match(JSON.stringify(created.result), /workspace/i)
+  // An agent on a machine with no desktop shell (a WSL distribution's Studio,
+  // an SSH machine's) asks its own Studio about its workspaces and the CLIs it
+  // runs, and hears about the machine it is on.
+  for (const name of [
+    'workspace.list',
+    'workspace.status',
+    'workspace.create',
+    'workspace.checkout',
+    'workspace.extensions',
+    'cli.runtime.list',
+  ])
+    assert.ok(names.includes(name), `${name} is listed: ${names.join(', ')}`)
+  const clis = await mcp.call('tools/call', { name: 'cli.runtime.list', arguments: {} })
+  assert.notEqual(clis.result?.isError, true, JSON.stringify(clis))
+  const rows = clis.result?.structuredContent?.clis as Array<{ id: string }>
+  assert.ok(
+    rows.some((row) => row.id === 'claude-code'),
+    rows.map((row) => row.id).join(', '),
+  )
+  const workspaces = await mcp.call('tools/call', { name: 'workspace.list', arguments: {} })
+  assert.notEqual(workspaces.result?.isError, true, JSON.stringify(workspaces))
+  const unknown = await mcp.call('tools/call', { name: 'workspace.checkout', arguments: { workspaceId: 'missing' } })
+  assert.equal(unknown.result?.isError, true)
+  assert.equal(unknown.result?.structuredContent?.error?.code, 'unknown_workspace', JSON.stringify(unknown.result))
   mcp.close()
 
   served.child.stdin.write('{"t":"shutdown"}\n')

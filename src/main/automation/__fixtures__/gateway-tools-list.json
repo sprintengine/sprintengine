@@ -289,16 +289,16 @@
       "sha256": "7678e50cd0d430bebf9a51e73007501b0abbd22fcf0859d753a1f87a1bf2aba6"
     },
     {
+      "name": "cli.runtime.list",
+      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
+    },
+    {
       "name": "agent.launch",
       "sha256": "c0938b85a46733e589649d4514352050b28180f006fd8463c8c6d151789e6043"
     },
     {
       "name": "agent.status",
       "sha256": "5b945502be77364d361f23f39f156dc6eabda0029062a4b7937967540f756595"
-    },
-    {
-      "name": "cli.runtime.list",
-      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
     },
     {
       "name": "terminal.list",
@@ -787,16 +787,16 @@
       "sha256": "7678e50cd0d430bebf9a51e73007501b0abbd22fcf0859d753a1f87a1bf2aba6"
     },
     {
+      "name": "cli.runtime.list",
+      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
+    },
+    {
       "name": "agent.launch",
       "sha256": "c0938b85a46733e589649d4514352050b28180f006fd8463c8c6d151789e6043"
     },
     {
       "name": "agent.status",
       "sha256": "5b945502be77364d361f23f39f156dc6eabda0029062a4b7937967540f756595"
-    },
-    {
-      "name": "cli.runtime.list",
-      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
     },
     {
       "name": "terminal.list",
@@ -1025,12 +1025,12 @@
       "sha256": "7678e50cd0d430bebf9a51e73007501b0abbd22fcf0859d753a1f87a1bf2aba6"
     },
     {
-      "name": "agent.status",
-      "sha256": "5b945502be77364d361f23f39f156dc6eabda0029062a4b7937967540f756595"
-    },
-    {
       "name": "cli.runtime.list",
       "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
+    },
+    {
+      "name": "agent.status",
+      "sha256": "5b945502be77364d361f23f39f156dc6eabda0029062a4b7937967540f756595"
     },
     {
       "name": "backlog.list",

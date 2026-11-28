@@ -24,7 +24,7 @@ import {
 } from '../../main/automation/conversation-lifecycle'
 import { gatewayCallerStarter, launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
 import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
-import { ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
+import { activeInvoker, ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
 import { bindDevToolsToCaller } from '../../main/automation/extension-dev-tools'
 import { extensionHookRefusal } from '../extensions/hooks/extension-hooks'
 import { studioGrantPrincipal, studioPrincipal } from '../../../packages/studio-protocol/src/permissions'
@@ -41,6 +41,9 @@ import { createPullRequestTools } from '../pull-requests/pull-request-tools'
 import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import { createLocalServerTools } from '../local-servers/local-server-tools'
 import { createFileViewTools } from '../file-views/file-view-tools'
+import { createWorkspaceTools } from '../workspaces/workspace-tools'
+import { createWorkspaceWithHooks } from '../extensions/hooks/workspace-hooks'
+import { createCliRuntimeTools } from './cli-runtime-tools'
 import type { StudioCore } from './studio-core'
 import { studioBridgeScriptPath } from '../platform/studio-paths'
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
@@ -230,6 +233,29 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     // `worktree.lease` and `worktree.release`: a worktree of the agent's own
     // from this core's pool, beside the chats that work in it.
     ...core.worktrees.tools,
+    // `workspace.*` and `cli.runtime.list`: this Studio's own workspaces, a
+    // project's checkout and extensions read where its folder is, and the
+    // CLIs it runs, from the same core reads the Studio protocol answers with.
+    // Every Studio serves them, so an agent on a WSL distribution or an SSH
+    // machine hears about the machine it runs on.
+    ...createWorkspaceTools({
+      getWorkspaceSyncSnapshot: () => workspaceSyncService.getSnapshot(),
+      listWorkspaces: (listOptions) => core.workspaceList.list(listOptions),
+      listTerminalSessions: () => core.agentTerminals?.runtime.sessions.listTerminals() ?? [],
+      createWorkspace: (input, actor, context) =>
+        createWorkspaceWithHooks(
+          core.extensionHooks,
+          () => activeInvoker() ?? core.hookInvokers.ofGatewayCaller(context),
+          input,
+          (request) => workspaceSyncService.createWorkspace(request, actor),
+        ),
+      deviceMayName: async (folder) => (await confineToRoots(folder, ownWorkspaceFolders(core))).ok,
+      studioDataDirs: () => [platform.paths.dataDir()],
+      workspaceCheckout: (workspaceId, readOptions) => core.workspaceReads.checkout(workspaceId, readOptions),
+      workspaceExtensions: (workspaceId, cli, readOptions) =>
+        core.workspaceReads.extensions(workspaceId, cli, readOptions),
+    }),
+    ...createCliRuntimeTools({ listCliRuntimes: (cli) => core.cliRuntimes.list(cli) }),
   ]
 
   const callerInvoker = (context: McpConnectionContext | undefined): ExtensionInvoker => {

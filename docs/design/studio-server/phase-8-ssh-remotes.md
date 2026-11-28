@@ -989,7 +989,9 @@ pane-forward.ts`): an HTTP proxy bound to the literal `127.0.0.1` on a port
 - The desktop's `browser` and `canvas` toolsets are offered to the machine's
   server (`relayShellToolsets` with an SSH target), so an agent there can open
   its dev server in the person's pane. The editor, tour, terminal and agent
-  toolsets are not: they act on this computer's files and processes.
+  toolsets are not: they act on this computer's files and processes. Its
+  `workspace.*` and `cli.runtime.list` are the machine's own Studio's, as on
+  every Studio (2026-11-28).
 - Checked in Electron (a throwaway script against the dockerized sshd with
   `AllowTcpForwarding no`, not kept in the tree): a page served on the
   container's `127.0.0.1:5173` loaded in the machine's partition for

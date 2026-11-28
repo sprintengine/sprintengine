@@ -26,7 +26,23 @@ import {
   type StudioWorkspaceReads,
 } from '../../server/workspaces/studio-workspace-reads'
 import { createStudioCliRuntimes } from '../../server/core/studio-cli-runtimes'
-import { createAutomationTools, type AutomationBackends } from './automation-tools'
+import { createAutomationTools as createDesktopAutomationTools, type AutomationBackends } from './automation-tools'
+import { createWorkspaceTools, type WorkspaceToolsDeps } from '../../server/workspaces/workspace-tools'
+import { createCliRuntimeTools, type CliRuntimeToolsDeps } from '../../server/core/cli-runtime-tools'
+import { isThisMachinesChat } from '../../server/workspaces/studio-workspace-list'
+import { confineToRoots } from '../studio-rpc/studio-file-confinement'
+
+/** What the suites here compose: the desktop's automation tools, and every Studio's `workspace.*` and `cli.*`. */
+type TestBackends = AutomationBackends & WorkspaceToolsDeps & CliRuntimeToolsDeps
+
+/** The tools the desktop's gateway lists of these families, over one set of backends. */
+function createAutomationTools(backends: TestBackends) {
+  return [
+    ...createDesktopAutomationTools(backends),
+    ...createWorkspaceTools(backends),
+    ...createCliRuntimeTools(backends),
+  ]
+}
 import { createAgentLaunchService } from '../agent-launch-service'
 import { resolvePermissionArgs } from '../plugin-render'
 import type { TerminalSpawnPayload } from '../terminal-spawn-payload'
@@ -107,7 +123,7 @@ test('automation', async () => {
   type BackendsOverrides = {
     workspaces?: Workspace[]
     sessions?: TerminalSessionSnapshot[]
-    createWorkspace?: AutomationBackends['createWorkspace']
+    createWorkspace?: WorkspaceToolsDeps['createWorkspace']
     launchAgent?: AutomationBackends['launchAgent']
     linkLaunchedAgent?: AutomationBackends['linkLaunchedAgent']
     /** The CLI this machine would spawn under; the harness's stub session reports it. */
@@ -136,11 +152,11 @@ test('automation', async () => {
 
   function workspaceReadsOf(
     reads: StudioWorkspaceReads,
-  ): Pick<AutomationBackends, 'workspaceCheckout' | 'workspaceExtensions'> {
+  ): Pick<WorkspaceToolsDeps, 'workspaceCheckout' | 'workspaceExtensions'> {
     return { workspaceCheckout: reads.checkout, workspaceExtensions: reads.extensions }
   }
 
-  function backendsOf(overrides: BackendsOverrides = {}): AutomationBackends {
+  function backendsOf(overrides: BackendsOverrides = {}): TestBackends {
     // `workspace.create` mints in main now, so the backend is a real
     // registry rather than a delegated renderer call the test has to stub answering.
     let createdIds = 0
@@ -158,6 +174,17 @@ test('automation', async () => {
       // The core's own list, over the same records and readers.
       listWorkspaces: createStudioWorkspaceList({ snapshot: getWorkspaceSyncSnapshot, readRepositoryIdentity }).list,
       createWorkspace: overrides.createWorkspace ?? ((input, actor) => workspaceSync.createWorkspace(input, actor)),
+      // A paired device names only folders inside this machine's own projects.
+      deviceMayName: async (folder) =>
+        (
+          await confineToRoots(
+            folder,
+            getWorkspaceSyncSnapshot().state.workspaces.flatMap((workspace) =>
+              isThisMachinesChat(workspace) && workspace.folderPath ? [workspace.folderPath] : [],
+            ),
+          )
+        ).ok,
+      studioDataDirs: () => [],
       listTerminalSessions: () => overrides.sessions ?? [],
       // Default: no launch port wired. A test that reaches a launch without
       // stubbing one gets an explicit failure, not a silent success.
@@ -721,7 +748,7 @@ test('automation', async () => {
     const sessions: TerminalSessionSnapshot[] = []
     const requests: AgentLaunchRequest[] = []
     const worktreeCalls: Array<{ workspaceRoot: string; name: string; baseRef?: string }> = []
-    const backends: AutomationBackends = {
+    const backends: TestBackends = {
       ...backendsOf({ workspaces: [workspace], sessions, ...overrides }),
       getWorkspaceSyncSnapshot: () => snapshotOf([workspace]),
       listTerminalSessions: () => sessions,
@@ -1055,7 +1082,7 @@ test('automation', async () => {
       const workspace = testWorkspace('ws-1', { folderPath: '/tmp/project-a' })
       const sessions: TerminalSessionSnapshot[] = []
       const requests: AgentLaunchRequest[] = []
-      const backends: AutomationBackends = {
+      const backends: TestBackends = {
         ...backendsOf({ workspaces: [workspace], sessions }),
         getWorkspaceSyncSnapshot: () => snapshotOf([workspace]),
         listTerminalSessions: () => sessions,

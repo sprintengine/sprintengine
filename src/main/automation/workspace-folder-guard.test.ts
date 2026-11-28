@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'vitest'
 
 import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
-import { createAutomationTools, type AutomationBackends } from './automation-tools'
+import { createWorkspaceTools, type WorkspaceToolsDeps } from '../../server/workspaces/workspace-tools'
 import { refuseWorkspaceFolder, workspaceFolderRefusal, type WorkspaceFolderGuard } from './workspace-folder-guard'
 
 const MAC: WorkspaceFolderGuard = {
@@ -72,13 +72,13 @@ test('a link to the home folder is the home folder', async () => {
 
 test('workspace.create from an agent refuses the home folder, and opens a project folder', async () => {
   const created: unknown[] = []
-  const tools = createAutomationTools({
+  const tools = createWorkspaceTools({
     createWorkspace: (input: unknown) => {
       created.push(input)
       return { ok: false, reason: 'not_in_this_test', message: 'not created' }
     },
     studioDataDirs: () => ['/Users/dev/Library/Application Support/SprintEngine Studio'],
-  } as unknown as AutomationBackends)
+  } as unknown as WorkspaceToolsDeps)
   const create = tools.find((tool) => tool.name === 'workspace.create') as McpToolRegistration
   const agent = { metadata: { kind: 'studio-agent' as const, workspaceId: 'ws-1', agentId: 'agent-1' } }
 

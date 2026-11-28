@@ -491,20 +491,21 @@ Unix socket, `MessagePort`, arbitrary duplex), not a URL only (12.3).
     the tool's handler on Windows as the calling agent, so a WSL agent gets
     all six in either mode.
   - The relay also offers the Windows side's own tools of the families whose
-    data stays there: `backlog`, `workspace`, `schedule`, `cli`, `module`,
+    data stays there: `backlog`, `schedule`, `extension` (its reads),
     `marketplace`, and the tools modules add. `conversation` is the WSL
-    server's own. `tailnet` is not offered: it configures who may drive the
-    PC, and is served on the Windows side's owner-only socket and nowhere
-    else. A tool name with a second dot crosses with it as an underscore
-    (`cli.runtime.list` as `cli.runtime_list`), a module's
-    (`review_list_pending`) in a toolset named for its prefix, so an agent
-    that rewrites dots reads the names a Windows agent does. The shell's
-    reserved toolsets do not count against the eight a connection may offer,
-    since the relay offers a server twelve.
+    server's own, and so, since 2026-11-28, are `workspace` and `cli`: every
+    Studio serves them from its own core, about its own machine, so an agent
+    in WSL lists the distribution's workspaces and CLIs, not the desktop's.
+    `tailnet` is not offered: it configures who may drive the PC, and is
+    served on the Windows side's owner-only socket and nowhere else. A tool
+    name with a second dot crosses with it as an underscore (`a.b.c` as
+    `a.b_c`), a module's (`review_list_pending`) in a toolset named for its
+    prefix, so an agent that rewrites dots reads the names a Windows agent
+    does. The shell's reserved toolsets do not count against the eight a
+    connection may offer, since the relay offers a server ten.
   - Tool inputs are relayed as the agent wrote them, except the `editor`
-    tools' file paths (`files[].path`, `paths`, `focus.path`) and
-    `workspace.create`'s `folderPath`, which are read on Windows: an
-    absolute Linux path is respelled with the distribution and its drive
+    tools' file paths (`files[].path`, `paths`, `focus.path`), which are
+    read on Windows: an absolute Linux path is respelled with the distribution and its drive
     mount root (`/home/dev/repo/a.ts` reaches the editor as
     `\\wsl.localhost\Ubuntu\home\dev\repo\a.ts`, `/mnt/c/…` as `C:\…`), a
     relative one stays relative to the workspace, and a `~` path is refused

@@ -45,7 +45,7 @@ export const SCENARIO_WORDS: Record<ScenarioId, string> = {
     'the phone and a paired desktop cannot reach it: no method lists or tickets it, and no path through the desktop serves it',
   list: 'a chat is listed at its address with what its row draws; a star and a settle asked by one client read back in every list',
   discover:
-    'the CLIs it runs, a project’s checkout and what a chat there can use are answered by the Studio on the machine',
+    'the CLIs it runs, a project’s checkout and what a chat there can use are answered by the Studio on the machine, to a window and to an agent there',
 }
 
 /** Which rows each client is held to. A read-only embed is not asked to write. */

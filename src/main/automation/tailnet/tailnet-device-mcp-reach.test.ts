@@ -22,6 +22,8 @@ import { readBacklogItem } from '../../backlog-service'
 import type { ConversationLaunchRequest } from '../../conversation-launch-service'
 import { createWorktreePoolTools } from '../../worktree-pool/worktree-pool-tools'
 import { createAutomationTools, type AutomationBackends } from '../automation-tools'
+import { createWorkspaceTools, type WorkspaceToolsDeps } from '../../../server/workspaces/workspace-tools'
+import { createCliRuntimeTools } from '../../../server/core/cli-runtime-tools'
 import { createBrowserTools } from '../browser-tools'
 import { createCanvasTools } from '../canvas-tools'
 import { createConversationChatTools } from '../conversation-chat-tools'
@@ -207,6 +209,8 @@ function builtInTools(): McpToolRegistration[] {
   const unused = new Proxy({}, { get: () => () => undefined }) as never
   const factories: Array<(deps: never) => McpToolRegistration[]> = [
     createAutomationTools,
+    createWorkspaceTools,
+    createCliRuntimeTools,
     createEditorTools,
     createBrowserTools,
     createVisualTools,
@@ -329,6 +333,8 @@ async function startListener() {
         }),
       ),
       resolveAgentPermissionPreset: () => null,
+      deviceMayName: async (folder: string) => folder === project || folder.startsWith(`${project}/`),
+      studioDataDirs: () => [],
       createWorkspace: (input: { folderPath?: string }) => {
         created.push(input.folderPath)
         return {
@@ -343,7 +349,7 @@ async function startListener() {
       readBacklogItem,
     },
     { get: (target, key) => (key in target ? target[key as keyof typeof target] : undefined) },
-  ) as unknown as AutomationBackends
+  ) as unknown as AutomationBackends & WorkspaceToolsDeps
   // The in-app browser pane: anything a tool asks of it is recorded.
   const paneReached: string[] = []
   const pane = new Proxy(
@@ -359,6 +365,7 @@ async function startListener() {
   )
   const tools: McpToolRegistration[] = [
     ...createAutomationTools(backends),
+    ...createWorkspaceTools(backends),
     ...createBrowserTools({ manager: pane, control: pane, recorder: pane, hasWorkspace: () => true } as never),
     ...createConversationTools({
       launch: launchWhereItLives(clients, recordOf, async (request) => {
