@@ -130,7 +130,15 @@ test('WorkspaceSidebar.remoteRow', async () => {
     'conversation.list': () => ({ conversations: listed }),
     'workspaces.list': () => ({
       workspaces: [
-        { id: 'rw1', name: 'home-compute', mode: 'standard', folderPath: '/Users/dev/home-compute', repository: null },
+        {
+          id: 'rw1',
+          name: 'home-compute',
+          mode: 'standard',
+          folderPath: '/Users/dev/home-compute',
+          repository: null,
+          // Once settled there, its list says so, and the row stays gone.
+          settledAt: settles.length > 0 ? 1 : null,
+        },
         { id: 'rw2', name: 'multicode', mode: 'standard', folderPath: '/Users/dev/multicode', repository: null },
       ],
     }),
@@ -269,7 +277,7 @@ test('WorkspaceSidebar.remoteRow', async () => {
       })
       await settle()
       assert.deepEqual(settles, [{ connectionId: 'c1', workspaceId: 'rw1' }], 'the machine is asked to settle it')
-      assert.equal(rowOf('How is this project?'), undefined, 'and the row goes at once, as a local Settle moves one')
+      assert.ok(!rowOf('How is this project?'), 'and the row goes at once, as a local Settle moves one')
     } finally {
       act(() => {
         root.unmount()
