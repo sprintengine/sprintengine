@@ -31,7 +31,8 @@ import {
   type EnvironmentStatusKind,
 } from '../../../../../../packages/client-runtime/src/environments/environmentStatus'
 import { copy as appCopy } from '../../../../../shared/copy'
-import { remoteLastKnownOf, type RemoteLastKnown, type RemoteListFailure } from './remoteListFreshness'
+import { remoteLastKnownOf, type RemoteLastKnown } from './remoteListFreshness'
+import type { EnvironmentListFailure } from '../../../studio/environmentChatsFreshness'
 
 // The sidebar's Remote band (remote-sessions-in-the-sidebar): the sessions
 // that live on each paired machine, as rows a person can open here. DOM-free,
@@ -74,7 +75,7 @@ export type RemoteBrowseEntry = {
    * Why the newest read of its chats did not replace them, or null when it
    * did: the rows are then a last-known list (`remoteLastKnownOf`).
    */
-  listFailure?: RemoteListFailure | null
+  listFailure?: EnvironmentListFailure | null
 }
 
 /** No chat management from here: a machine before it, or a pairing that may only follow. */

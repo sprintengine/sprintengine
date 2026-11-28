@@ -7,12 +7,11 @@ import { test } from 'vitest'
 
 import { useRemoteSessions, type RemoteSessions } from './useRemoteSessions'
 
-// What a change push costs the band: a push from the machine
-// (`conversations.changed`) re-reads only what it names, a window nobody can
-// see re-reads nothing until it is shown, then once, and the machine reached
-// again after a drop is read whole.
+// The band reads nothing itself: each paired machine's rows are its chat
+// source's (`environmentChats.ts`, whose tests hold the reads, the pushes and
+// the clock), shaped here by pairing as the band draws them.
 
-test('useRemoteSessions re-reads what a push names, and holds pushes while the window is hidden', async () => {
+test('each paired machine’s rows come from its chat source, shaped by pairing', async () => {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'http://localhost/',
     pretendToBeVisual: true,
@@ -35,54 +34,34 @@ test('useRemoteSessions re-reads what a push names, and holds pushes while the w
     lastConnectedAt: null,
     pairedVia: 'link',
   }
-  const calls = { browse: 0, list: 0 }
-  let hiddenListener: ((hidden: boolean) => void) | null = null
   ;(dom.window as unknown as { api: unknown }).api = {
     onTailnetEvent: () => () => {},
     onMeshEvent: () => () => {},
-    onWindowHiddenChanged: (listener: (hidden: boolean) => void) => {
-      hiddenListener = listener
-      return () => {
-        hiddenListener = null
-      }
-    },
     tailnetGetStatus: async () => ({ enabled: true, running: true, tailnetAddress: '100.64.0.5', pairRequests: [] }),
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, attachments: [], requests: [], reachability: [] }),
   }
-  // That machine's Studio, as this window's own client of it reaches it: a
-  // browse is its project list, and its chats are its `conversation.list`.
   const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
   const studio = fakePairedStudios((dom.window as unknown as { api: object }).api, {
-    'workspaces.list': () => {
-      calls.browse += 1
-      return { workspaces: [] }
-    },
-    'conversation.list': () => {
-      calls.list += 1
-      return { conversations: [] }
-    },
+    'workspaces.list': () => ({ workspaces: [] }),
+    'conversation.list': () => ({
+      conversations: [{ workspaceId: 'rw1', agentId: 'ada', title: 'Ada', phase: 'idle', updatedAt: 2, lastSeq: 1 }],
+    }),
     'session.list': () => ({ ok: true, sessions: [] }),
   })
+  const lists = () => studio.calls.filter((call) => call.method === 'conversation.list').length
 
   let latest: RemoteSessions | null = null
   function Probe() {
-    latest = useRemoteSessions({ enabled: true })
+    latest = useRemoteSessions()
     return null
   }
-  const settle = async (ms = 300) => {
+  const settle = async (ms = 80) => {
     await act(async () => {
       await new Promise((resolve) => dom.window.setTimeout(resolve, ms))
     })
   }
-  // What that machine says moved, on its push topic.
-  const push = async (what: 'workspaces' | 'conversations') => {
-    await act(async () => {
-      studio.push('conversations.changed', { what })
-    })
-  }
-
   const container = dom.window.document.createElement('div')
   dom.window.document.body.appendChild(container)
   const root = createRoot(container)
@@ -90,42 +69,25 @@ test('useRemoteSessions re-reads what a push names, and holds pushes while the w
     await act(async () => {
       root.render(createElement(Probe))
     })
-    await settle(50)
-    assert.ok(latest, 'the probe rendered')
-    assert.deepEqual(calls, { browse: 1, list: 1 }, 'the first read is the whole machine')
+    await settle()
+    const entry = latest!.browses.get('c1')
+    assert.ok(entry, 'the paired machine has its entry')
+    assert.equal(entry.browse?.connectionId, 'c1')
+    assert.ok(entry.browse?.scopes.includes('conversation:operate'), 'its scopes as its grant says them now')
+    assert.equal(entry.conversations?.length, 1)
+    assert.equal(entry.lifecycle, true)
+    assert.equal(entry.manage?.rename, true)
+    assert.equal(entry.access, 'operate')
+    assert.equal(entry.listFailure, null)
+    assert.equal(lists(), 1, 'read once, by its source')
 
-    await push('conversations')
+    const before = latest!.browses
     await settle()
-    assert.deepEqual(calls, { browse: 1, list: 2 }, 'a conversation push lists the chats, and only them')
+    assert.equal(latest!.browses, before, 'nothing moved: the same entries')
 
-    await push('workspaces')
-    await push('workspaces')
+    await act(async () => latest!.refresh('c1'))
     await settle()
-    assert.deepEqual(calls, { browse: 2, list: 2 }, 'workspace pushes in one burst are one browse')
-
-    // Out of sight: pushes are remembered, not read.
-    await act(async () => {
-      hiddenListener!(true)
-    })
-    await push('conversations')
-    await push('workspaces')
-    await push('conversations')
-    await settle()
-    assert.deepEqual(calls, { browse: 2, list: 2 }, 'a hidden window reads nothing')
-
-    await act(async () => {
-      hiddenListener!(false)
-    })
-    await settle()
-    assert.deepEqual(calls, { browse: 3, list: 3 }, 'shown again, it reads what changed, once')
-
-    // The window's connection to it drops and comes back: it may have missed a push, so both are read.
-    await act(async () => studio.setState('c1', 'reconnecting'))
-    await settle()
-    assert.deepEqual(calls, { browse: 3, list: 3 }, 'nothing is asked of a machine while it is away')
-    await act(async () => studio.setState('c1', 'open'))
-    await settle()
-    assert.deepEqual(calls, { browse: 4, list: 4 }, 'reached again, it is read whole, once')
+    assert.equal(lists(), 2, 'Refresh reads the machine again')
   } finally {
     act(() => root.unmount())
   }

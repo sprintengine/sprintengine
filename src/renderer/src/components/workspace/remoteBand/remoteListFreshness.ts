@@ -2,6 +2,7 @@ import type { MeshMachineReachability } from '../../../../../shared/tailnet-mesh
 import type { EnvironmentStatusKind } from '../../../../../../packages/client-runtime/src/environments/environmentStatus'
 import { formatRelativeMs, formatRelativeMsAgo } from '../../../utils/relativeTime'
 import { copy } from '../../../../../shared/copy'
+import type { EnvironmentListFailure } from '../../../studio/environmentChatsFreshness'
 
 // Whether a paired machine's chats in the sidebar are what it holds now, or
 // what it held the last time this window could read them (a last-known list).
@@ -18,13 +19,6 @@ import { copy } from '../../../../../shared/copy'
 // under a machine and nothing for a scope the pairing lacks. A row says what
 // it is in a word or two, as a snoozed row says when it wakes.
 
-/** Why the newest read of a machine's chats did not replace them. */
-export type RemoteListFailure = {
-  /** `unauthorized`: the machine refused this pairing. `unavailable`: it did not answer, or the read broke off. */
-  kind: 'unauthorized' | 'unavailable'
-  message: string
-}
-
 /**
  * Why a machine's rows are a last-known list: it no longer takes this
  * pairing (`signed-out`), it does not answer (`not-answering`), its Studio and
@@ -39,33 +33,6 @@ export type RemoteLastKnown = {
   since: number | null
 }
 
-/** The codes a Studio refuses a pairing with: the machine no longer takes it. */
-const UNAUTHORIZED_CODES = new Set(['unauthorized', 'revoked', 'peer_mismatch'])
-
-/**
- * Refusals that are real answers about the chats rather than a failure to
- * read them: a pairing that may not read them, or a machine that does not
- * serve them, lists none, and that list is current.
- */
-const ANSWERED_CODES = new Set([
-  'conversations_unsupported',
-  'scope_required',
-  'owner_required',
-  'forbidden',
-  'outdated',
-  'unknown_method',
-])
-
-/**
- * What a failed `conversation.list` means for the rows: null for a refusal
- * that is itself the answer (the list is none, and current), else why the
- * rows the window holds are now a last-known list.
- */
-export function listFailureOf(code: string, message: string): RemoteListFailure | null {
-  if (ANSWERED_CODES.has(code)) return null
-  return { kind: UNAUTHORIZED_CODES.has(code) ? 'unauthorized' : 'unavailable', message }
-}
-
 /**
  * Whether a machine's rows are a last-known list, and why.
  *
@@ -76,7 +43,7 @@ export function listFailureOf(code: string, message: string): RemoteListFailure 
  * (`environmentStatus`) decides, as it did when these rows were dimmed.
  */
 export function remoteLastKnownOf(
-  entry: { listedAt?: number; listFailure?: RemoteListFailure | null } | undefined,
+  entry: { listedAt?: number; listFailure?: EnvironmentListFailure | null } | undefined,
   status: EnvironmentStatusKind | null,
   reach?: MeshMachineReachability,
 ): RemoteLastKnown | null {
@@ -89,49 +56,6 @@ export function remoteLastKnownOf(
   if (status === 'offline') return { reason: 'not-answering', since }
   if (status === 'incompatible') return { reason: 'outdated', since }
   return null
-}
-
-// ── When to read again ──────────────────────────────────────────────────────
-//
-// A change notice from the machine and its coming back are what re-read it
-// (`useRemoteSessions`), but a notice can be lost and a machine can drop this
-// pairing without anything arriving here. So a window that can be seen also
-// re-reads on a slow clock, and when a person comes back to it. Neither may
-// turn into a stream of requests: one read per machine at a time, a few
-// minutes apart while they answer, further apart each time one fails, and a
-// window coming back to the front no more than once in a while per machine.
-
-/** How often a window someone can see re-reads a machine that answers. */
-export const REMOTE_REREAD_MS = 3 * 60_000
-/** The longest a machine that keeps failing waits between reads on the clock. */
-export const REMOTE_REREAD_MAX_MS = 30 * 60_000
-/** A window brought to the front re-reads a machine no more often than this. */
-export const REMOTE_FOCUS_REREAD_GAP_MS = 30_000
-/** How long a read may go unanswered before its rows say the machine is not answering. */
-export const REMOTE_ANSWER_GRACE_MS = 20_000
-
-/** How long after a read the clock reads a machine again: the interval, doubled for each failure in a row. */
-export function remoteRereadDelayMs(failures: number): number {
-  if (failures <= 0) return REMOTE_REREAD_MS
-  return Math.min(REMOTE_REREAD_MS * 2 ** failures, REMOTE_REREAD_MAX_MS)
-}
-
-/** One machine's read history, as the hook keeps it. */
-export type RemoteReadHistory = { askedAt: number; failures: number }
-
-/**
- * Whether a machine is due a read: on the clock, once its delay since the
- * last ask has passed; when the window comes back, once the focus gap has.
- * A machine never asked is always due.
- */
-export function remoteReadDue(
-  history: RemoteReadHistory | undefined,
-  trigger: 'clock' | 'focus',
-  now: number,
-): boolean {
-  if (!history) return true
-  const wait = trigger === 'clock' ? remoteRereadDelayMs(history.failures) : REMOTE_FOCUS_REREAD_GAP_MS
-  return now - history.askedAt >= wait
 }
 
 // ── What the row says ───────────────────────────────────────────────────────

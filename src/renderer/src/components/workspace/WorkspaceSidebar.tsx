@@ -1472,7 +1472,7 @@ function WorkspaceSidebar({
   // Read HERE, above the grouping, because the grouping depends on it: whether
   // this device is on the tailnet decides which rows exist at all (below), and
   // the browse decides how many lines each open remote row draws.
-  const remoteSessions = useRemoteSessions({ enabled: !contextRailActive })
+  const remoteSessions = useRemoteSessions()
   // How each machine stands (design-environments), for whether its rows are a last read.
   const environments = useEnvironments()
   const { presence: remotePresence, browses: remoteBrowses, link: remoteLink, refresh: refreshRemote } = remoteSessions
