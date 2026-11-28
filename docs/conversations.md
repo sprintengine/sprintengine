@@ -1085,9 +1085,10 @@ The state is a read on `conversation:read`; the other four need
 ### Following from another desktop
 
 A Studio desktop paired to this one follows its conversations with the same
-pairing and grant a phone uses. The sidebar's
-Remote band lists each chat on the paired machine as its own row, with the
-presence its phase says: running, needs approval, or done. Opening one makes a
+pairing and grant a phone uses. The sidebar lists each chat on the paired
+machine as a row of its project, by its address, as it does every followed SSH
+machine's and WSL distribution's, with the presence its phase says: running,
+needs approval, or done. Opening one this desktop does not hold yet makes a
 solo workspace whose pane is the regular chat view, following the conversation
 over the tailnet, with the machine on the tab and above the transcript.
 New chat starts one there too: with Chat agent picked, the machine dropdown
@@ -1404,8 +1405,8 @@ chat beneath stays mounted and hidden, since a queued message lives in its view.
    without a reset), and verify an offline send appears once after
    acknowledgement. Narrow the device to read-only in Settings and confirm the
    next command is refused.
-7. Pair a second Studio desktop with conversation access. Open a chat from its
-   Remote band, send, approve and stop from there; switch its model between
+7. Pair a second Studio desktop with conversation access. Open one of its chats
+   from its row in the sidebar, send, approve and stop from there; switch its model between
    turns and mid-reply (the notice says the switch applies from the next
    turn), and confirm the host's own chip follows; drop Wi-Fi mid-reply and
    rejoin (no reset, no repeated text); quit and relaunch it (the transcript is
