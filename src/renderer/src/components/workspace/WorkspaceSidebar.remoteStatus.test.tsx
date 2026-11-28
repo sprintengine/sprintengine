@@ -162,6 +162,8 @@ test('a chat opened here from a paired machine wears the marks its machine lists
   const { act } = React
   const { createRoot } = await import('react-dom/client')
   const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+  // This computer's chats are the rows its own Studio lists.
+  const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
   const { useWorkspaceStore } = await import('../../store/workspaceStore')
   useWorkspaceStore.setState({ chatListView: 'projects', recordWorkspaceVisit: () => undefined } as never)
 
@@ -242,6 +244,7 @@ test('a chat opened here from a paired machine wears the marks its machine lists
   }
   const render = async (): Promise<void> => {
     act(() => {
+      serveWindowChats(window.api, props.workspaces)
       root.render(React.createElement(WorkspaceSidebar, props))
     })
     await settle()
@@ -320,6 +323,7 @@ test('a chat opened here from a paired machine wears the marks its machine lists
     // The chat in front is sorted with the rest, and not lost in a closed fold.
     const front = { ...props, activeWorkspaceId: 'w-working' } as SidebarProps
     act(() => {
+      serveWindowChats(window.api, front.workspaces)
       root.render(React.createElement(WorkspaceSidebar, front))
     })
     await settle()

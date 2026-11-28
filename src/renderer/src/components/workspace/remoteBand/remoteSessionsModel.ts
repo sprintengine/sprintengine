@@ -1,5 +1,5 @@
 import type { RepositoryIdentity } from '../../../../../shared/repository-identity'
-import type { StudioLocalServer } from '../../../../../../packages/studio-protocol/src/public'
+import type { StudioChatSeen, StudioLocalServer } from '../../../../../../packages/studio-protocol/src/public'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
 import {
   meshConversationPresence,
@@ -194,6 +194,8 @@ export type RemoteSessionRow = {
   recencyAt: number
   /** When a person last wrote to the chat, from any device, as its machine records it; null if never. */
   lastUserMessageAt: number | null
+  /** When anything last happened in the chat, as its machine records it, which a Settle or Snooze sends back (`chat-rest-seen`); null when it does not say. */
+  activityAt: number | null
   /** When the chat's agent last finished a turn, and a person last had it on screen, on any device. */
   lastTurnEndedAt: number | null
   lastVisitedAt: number | null
@@ -281,6 +283,8 @@ export type RemoteConversation = {
   recencyAt: number
   /** When a person last wrote to it, its agent last finished a turn, and a person last had it on screen. */
   lastUserMessageAt: number | null
+  /** When anything last happened in the chat, as its machine records it, which a Settle or Snooze sends back (`chat-rest-seen`); null when it does not say. */
+  activityAt: number | null
   lastTurnEndedAt: number | null
   lastVisitedAt: number | null
   /** The schedule whose run started the chat over there; null for any other chat. */
@@ -453,6 +457,7 @@ function remoteChatRowOf(
         : conversation.updatedAt,
     recencyAt: conversation.recencyAt ?? conversation.lastUserMessageAt ?? conversation.updatedAt,
     lastUserMessageAt: conversation.lastUserMessageAt ?? null,
+    activityAt: conversation.activityAt ?? null,
     lastTurnEndedAt: conversation.lastTurnEndedAt ?? null,
     lastVisitedAt: conversation.lastVisitedAt ?? null,
     scheduledAgentId: conversation.scheduledAgentId ?? null,
@@ -635,6 +640,7 @@ function chatOf(
       row?.createdAt ??
       0,
     lastUserMessageAt: row ? (row.lastUserMessageAt ?? null) : latestOf(agents.map((a) => a.lastUserMessageAt)),
+    activityAt: row ? (row.activityAt ?? null) : latestOf(agents.map((a) => a.activityAt)),
     lastTurnEndedAt: row ? (row.lastTurnEndedAt ?? null) : latestOf(agents.map((a) => a.lastTurnEndedAt)),
     lastVisitedAt: row ? (row.lastVisitedAt ?? null) : (lead?.lastVisitedAt ?? null),
     scheduledAgentId: row
@@ -975,50 +981,17 @@ export function remoteLinkStateOf(status: { tailnetAddress: string | null } | nu
 //
 // Its star, colour, sleep and Auto-settle are kept by the environment it runs
 // on (`chat-lifecycle`), and read back off its list. A change asked from here
-// is drawn at once, as a local Star flips at once, and held until a list read
-// after the environment took it says the same thing for itself.
+// is drawn at once, and held until a list read after the environment took it
+// says the same thing for itself (`pendingChatChanges.ts`).
 
 /** The marks a chat's row wears from its environment's list. */
-export type RemoteChatMarks = Pick<RemoteConversation, 'highlight' | 'snoozedUntil' | 'autoSettle'>
+export type RemoteChatMarks = Pick<
+  RemoteConversation,
+  'highlight' | 'snoozedUntil' | 'autoSettle' | 'activityAt' | 'settledAt'
+>
 
 /** What a change asked of an environment draws at once: its marks, its name, or its Auto compact switch. */
 export type RemoteChatPending = Partial<RemoteChatMarks & { title: string; autoCompactOn: boolean }>
-
-/** A change asked of an environment and not yet read back off its list, held by the chat's key. */
-export type PendingRemoteMarks = {
-  /** The route the environment is followed by, whose next list says it. */
-  route: string
-  marks: RemoteChatPending
-  /** When the environment said it took them; null while it has not answered. */
-  takenAt: number | null
-}
-
-/** Each row, wearing the marks asked of its environment that its list does not say yet. */
-export function withPendingRemoteMarks(
-  conversations: readonly RemoteConversation[],
-  pending: ReadonlyMap<string, PendingRemoteMarks>,
-): readonly RemoteConversation[] {
-  if (pending.size === 0) return conversations
-  return conversations.map((conversation) => {
-    const asked = pending.get(conversation.key)?.marks
-    if (!asked) return conversation
-    const { autoCompactOn, ...marks } = asked
-    return {
-      ...conversation,
-      ...marks,
-      ...(autoCompactOn !== undefined && conversation.autoCompact
-        ? { autoCompact: { ...conversation.autoCompact, on: autoCompactOn } }
-        : {}),
-    }
-  })
-}
-
-/** Whether a list read since the environment took the change has come in, so the list says it now. */
-export function pendingRemoteMarksRead(pending: PendingRemoteMarks, readAt: (route: string) => number | null): boolean {
-  if (pending.takenAt === null) return false
-  const at = readAt(pending.route)
-  return at !== null && at > pending.takenAt
-}
 
 /** The highlight a chat would have after a Star or colour change: none when neither is left. */
 export function remoteHighlightAfter(
@@ -1070,3 +1043,16 @@ export function canMarkRemoteConversationUnread(
 
 /** Where a paired machine's chat opens when its menu moves it: a window of its own, or the main one. */
 export type RemoteWindowPlace = 'new-window' | 'main-window'
+
+/**
+ * The chat as its row drew it, which a Settle or Snooze from the row sends
+ * back (`chat-rest-seen`) so its machine refuses one asked on a chat that has
+ * moved on since; null for a row whose machine does not say when it was last
+ * active, which is decided on the chat as it stands there.
+ */
+export function remoteChatSeen(
+  chat: Pick<RemoteConversation, 'activityAt' | 'snoozedUntil' | 'settledAt'>,
+): StudioChatSeen | null {
+  if (chat.activityAt === null) return null
+  return { settledAt: chat.settledAt ?? null, snoozedUntil: chat.snoozedUntil, activityAt: chat.activityAt }
+}

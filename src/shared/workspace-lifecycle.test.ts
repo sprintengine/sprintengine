@@ -3,9 +3,9 @@ import { test } from 'vitest'
 
 import type { Workspace } from './workspace'
 import {
+  chatRestSeen,
+  chatRestSeenIsStale,
   lifecycleSnapshotIsStale,
-  parseWorkspaceLifecycleRequest,
-  parseWorkspaceLifecycleSnapshot,
   workspaceLifecycleSnapshot,
 } from './workspace-lifecycle'
 
@@ -30,18 +30,20 @@ test('a snapshot is stale once the rest, the sleep or the activity has moved pas
   assert.equal(lifecycleSnapshotIsStale(chat({ ...before, settledAt: null }), snapshot), false)
 })
 
-test('a snapshot and a request from across a process boundary are parsed, and junk refused', () => {
-  const snapshot = workspaceLifecycleSnapshot(chat({ snoozedUntil: NOW + HOUR }))
-  assert.deepEqual(parseWorkspaceLifecycleSnapshot(snapshot), snapshot)
-  assert.equal(parseWorkspaceLifecycleSnapshot({ ...snapshot, activityAt: 'soon' }), null)
-  assert.equal(parseWorkspaceLifecycleSnapshot({ ...snapshot, settledOverride: 'maybe' }), null)
-  assert.equal(parseWorkspaceLifecycleSnapshot(null), null)
-  assert.deepEqual(parseWorkspaceLifecycleRequest({ workspaceId: ' w ', intent: { kind: 'wake' }, snapshot }), {
-    workspaceId: 'w',
-    intent: { kind: 'wake' },
-    snapshot,
-  })
-  assert.equal(parseWorkspaceLifecycleRequest({ workspaceId: 'w', intent: { kind: 'snooze' }, snapshot }), null)
-  assert.equal(parseWorkspaceLifecycleRequest({ workspaceId: 'w', intent: { kind: 'delete' }, snapshot }), null)
-  assert.equal(parseWorkspaceLifecycleRequest({ workspaceId: '', intent: { kind: 'wake' }, snapshot }), null)
+test('a row reading is stale once the rest, the sleep or the activity has moved past it', () => {
+  const before = chat({ lastTurnEndedAt: NOW - HOUR, snoozedUntil: NOW + HOUR })
+  const seen = chatRestSeen(before, NOW)
+  assert.deepEqual(seen, { settledAt: null, snoozedUntil: NOW + HOUR, activityAt: NOW - HOUR })
+  assert.equal(chatRestSeenIsStale(before, seen, NOW), false, 'the chat it was drawn from')
+  assert.equal(chatRestSeenIsStale(chat({ ...before, settledAt: NOW }), seen, NOW), true, 'settled since')
+  assert.equal(chatRestSeenIsStale(chat({ ...before, snoozedUntil: null }), seen, NOW), true, 'woken since')
+  assert.equal(chatRestSeenIsStale(chat({ ...before, lastUserMessageAt: NOW }), seen, NOW), true, 'a message')
+  assert.equal(chatRestSeenIsStale(chat({ ...before, lastTerminalActivityAt: NOW }), seen, NOW), true, 'a keystroke')
+  // What a row cannot see is not asked of it: a hand override, a snooze kept under a settle or run out.
+  assert.equal(chatRestSeenIsStale(chat({ ...before, settledOverride: 'active' }), seen, NOW), false)
+  const resting = chat({ settledAt: NOW - HOUR, snoozedUntil: NOW + HOUR })
+  assert.equal(chatRestSeen(resting, NOW).snoozedUntil, null)
+  assert.equal(chatRestSeen(chat({ snoozedUntil: NOW - 1 }), NOW).snoozedUntil, null)
+  // A reading ahead of the record (a window that knows a keystroke first) is current.
+  assert.equal(chatRestSeenIsStale(before, { ...seen, activityAt: NOW }, NOW), false)
 })

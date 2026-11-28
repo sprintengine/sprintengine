@@ -11,7 +11,6 @@ import type { LifecycleState } from '../../../shared/lifecycle-state'
 import type { WorkspaceBackupPayload, WorkspaceBackupReadResult } from '../../../shared/ipc/workspace-backup'
 import type { WorkspaceBackupWriteResult } from '../../../shared/ipc/app'
 import type { WorkspaceRegistryHydrateResult } from '../../../shared/ipc/terminal'
-import type { WorkspaceLifecycleRequest, WorkspaceLifecycleResult } from '../../../shared/workspace-lifecycle'
 import type { SettledChatsSettings } from '../../../shared/workspace-settlement'
 import type {
   WorkspaceMarkUnreadResult,
@@ -44,7 +43,6 @@ export type WorkspaceSyncApi = {
    * numbers its changes from the start again. Returns the unsubscriber.
    */
   onWorkspaceSyncEvent(cb: (event: WorkspaceSyncEvent) => void, onReopen?: () => void): () => void
-  workspaceLifecycle(request: WorkspaceLifecycleRequest): Promise<WorkspaceLifecycleResult>
   workspaceMarkUnread(workspaceId: string): Promise<WorkspaceMarkUnreadResult>
   setSettledChatsSettings(settings: SettledChatsSettings): Promise<void>
   setModuleRunStates(states: Record<string, LifecycleState | null>): Promise<void>
@@ -117,10 +115,6 @@ export const workspaceSyncApi: WorkspaceSyncApi = {
       onPayload: (event) => cb(event as unknown as WorkspaceSyncEvent),
       ...(onReopen ? { onReopen } : {}),
     }),
-  workspaceLifecycle: async (request) =>
-    (await act('workspaceSync.lifecycle', {
-      request: request as unknown as Record<string, unknown>,
-    })) as unknown as WorkspaceLifecycleResult,
   workspaceMarkUnread: async (workspaceId) => {
     try {
       const marked = await act('conversation.markUnread', { workspaceId }, STUDIO_CHAT_LIFECYCLE_CAPABILITY)

@@ -12,7 +12,6 @@ import {
   interleaveChats,
   isEnvironmentRecord,
   openSpecOfConversation,
-  pendingRemoteMarksRead,
   remoteConversationTitle,
   remoteHighlightAfter,
   remoteLinkStateOf,
@@ -21,7 +20,6 @@ import {
   remoteRowActivity,
   remoteRowFinishUnseen,
   remoteWorkspaceName,
-  withPendingRemoteMarks,
   type EnvironmentChatSourceView,
   type RemoteBrowseEntry,
 } from './remoteSessionsModel'
@@ -300,29 +298,6 @@ test('an environment followed by two routes is drawn once, from its best route',
       [`${MINI_ID}:rw1`, 'ssh:mac-mini'],
       [`${MINI_ID}:rw2`, 'ssh:mac-mini'],
     ],
-  )
-})
-
-test('a mark asked for here is worn at once, and the list stands in for it once a read after the change lands', () => {
-  const [row] = rows([source('ssh:build-box', 'build-box', { conversations: [chat('sw1')] })])
-  const pending = new Map([
-    [row!.key, { route: 'ssh:build-box', marks: { highlight: { starred: true, color: null } }, takenAt: null }],
-  ])
-  assert.deepEqual(withPendingRemoteMarks([row!], pending)[0]!.highlight, { starred: true, color: null })
-  const asked = pending.get(row!.key)!
-  assert.equal(
-    pendingRemoteMarksRead(asked, () => 10),
-    false,
-    'not taken yet',
-  )
-  assert.equal(
-    pendingRemoteMarksRead({ ...asked, takenAt: 5 }, () => 4),
-    false,
-    'no read since',
-  )
-  assert.equal(
-    pendingRemoteMarksRead({ ...asked, takenAt: 5 }, () => 6),
-    true,
   )
 })
 

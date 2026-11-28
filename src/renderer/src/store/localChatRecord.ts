@@ -1,0 +1,93 @@
+import type { MeshConversationChange } from '../../../shared/tailnet-mesh'
+import type { Workspace } from '../../../shared/workspace'
+import type { WorkspaceLifecycleIntent } from '../../../shared/workspace-lifecycle'
+import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
+import type { RemoteChatPending } from '../components/workspace/remoteBand/remoteSessionsModel'
+import type { ChatRestAsked } from '../studio/environmentChatRecords'
+import { environmentRouteAvailable, WINDOW_STUDIO_ROUTE, type EnvironmentTarget } from '../studio/environmentStudio'
+import { askChatChange, askChatRest } from '../studio/pendingChatChanges'
+
+// A chat of this computer is changed as any other environment's chat is: by
+// its Studio's `conversation.*` methods, over the window's own client
+// (`environmentStudio.ts`'s `local` route). Its rest (Settle, Snooze), its
+// marks (Star, colour, Auto-settle) and its name are the chat's record there;
+// what the window draws of them comes back on the rows its own Studio lists
+// (`environmentChats.ts`) and on the registry the window mirrors. Each row
+// wears the change at once, until its list says it (`pendingChatChanges.ts`).
+//
+// A record the window still keeps of an SSH machine's or WSL distribution's
+// chat (a copy, until copies go) is that machine's chat: asked there, by its
+// route, as its row's menu asks it.
+
+/** The window's own Studio, as its chats' changes are asked of it. */
+const WINDOW_STUDIO: EnvironmentTarget = { route: WINDOW_STUDIO_ROUTE, name: 'This computer' }
+
+/** What the window's own Studio said to a change: done, or why not. `unavailable` is a page with no Studio to ask. */
+export type LocalChatAnswer = { ok: true } | { ok: false; code: string; message: string }
+
+const NO_STUDIO: LocalChatAnswer = { ok: false, code: 'unavailable', message: 'This window has no Studio to ask.' }
+
+/** Where a chat the window keeps a record of is changed: its machine's Studio for a copy, else the window's own. */
+function studioOf(record: Pick<Workspace, 'environment'>): EnvironmentTarget {
+  return environmentTargetOf(record.environment) ?? WINDOW_STUDIO
+}
+
+const refusalOf = (error: unknown): LocalChatAnswer => ({
+  ok: false,
+  code: 'unreachable',
+  message: error instanceof Error ? error.message : String(error),
+})
+
+/** What a change asked of a chat draws on its row until its list says it. */
+function drawnOf(change: MeshConversationChange): RemoteChatPending | undefined {
+  switch (change.kind) {
+    case 'highlight': {
+      const starred = change.starred === true
+      const color = change.color ?? null
+      return { highlight: starred || color ? { starred, color } : null }
+    }
+    case 'snooze':
+      return { snoozedUntil: change.until }
+    case 'auto-settle':
+      return { autoSettle: change.enabled }
+    case 'rename':
+      return { title: change.name }
+    default:
+      return undefined
+  }
+}
+
+/** Ask a change to a chat the window keeps a record of, of its Studio: a mark, a name, or a snooze. */
+export async function changeLocalChat(
+  record: Pick<Workspace, 'id' | 'environment'>,
+  change: MeshConversationChange,
+): Promise<LocalChatAnswer> {
+  const studio = studioOf(record)
+  if (!environmentRouteAvailable(studio.route)) return NO_STUDIO
+  try {
+    const answer = await askChatChange(studio, record.id, change, drawnOf(change))
+    return answer.ok ? { ok: true } : { ok: false, code: answer.code, message: answer.message }
+  } catch (error) {
+    return refusalOf(error)
+  }
+}
+
+/** Ask a gesture on a chat's rest of its Studio: Settle, Un-settle, Snooze or Wake, on the row it was asked from. */
+export async function restLocalChat(
+  record: Pick<Workspace, 'id' | 'environment'>,
+  intent: WorkspaceLifecycleIntent,
+  asked: ChatRestAsked = {},
+): Promise<LocalChatAnswer> {
+  const seen = asked.seen ?? undefined
+  if (intent.kind === 'snooze') return changeLocalChat(record, { kind: 'snooze', until: intent.until, seen })
+  if (intent.kind === 'wake') return changeLocalChat(record, { kind: 'snooze', until: null, seen })
+  const studio = studioOf(record)
+  if (!environmentRouteAvailable(studio.route)) return NO_STUDIO
+  try {
+    const settled = intent.kind === 'settle'
+    const answer = await askChatRest(studio, record.id, settled, asked, { settledAt: settled ? Date.now() : undefined })
+    return answer.ok ? { ok: true } : { ok: false, code: answer.code, message: answer.message }
+  } catch (error) {
+    return refusalOf(error)
+  }
+}

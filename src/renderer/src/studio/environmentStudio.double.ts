@@ -79,6 +79,19 @@ export type PairedStudiosDouble = {
   frame(frame: ConversationFollowFrame | { type: 'error'; message: string }, agentId?: string): void
   /** Move a machine's connection, as a drop (`reconnecting`) and its return (`open`) do. */
   setState(connectionId: string, state: StudioClientState): void
+  /**
+   * One connection's own Studio, served instead of the shared answers and
+   * capabilities (the window's own Studio, `windowStudioChats.double.ts`).
+   */
+  served: Map<string, { answers: Record<string, Answer>; capabilities: ReadonlySet<string> }>
+}
+
+/** The double installed last, which a stand-in for the window's own Studio joins (`windowStudioChats.double.ts`). */
+let installed: { api: object; double: PairedStudiosDouble } | null = null
+
+/** The paired double installed on `api`, if any. */
+export function pairedStudiosOf(api: object): PairedStudiosDouble | null {
+  return installed?.api === api ? installed.double : null
 }
 
 /** The methods that only read, which `writes` leaves out. */
@@ -174,6 +187,7 @@ export function fakePairedStudios(
     conversationCapabilities: new Set(options.conversationCapabilities ?? []),
     scopes: options.scopes ?? ALL_SCOPES,
     refuse: () => null,
+    served: new Map(),
     writes: () =>
       double.calls
         .filter((call) => !READS.has(call.method))
@@ -193,15 +207,17 @@ export function fakePairedStudios(
       const connectionId = parsed?.kind === 'tailnet' ? parsed.connection : route
       const refused = double.refuse(connectionId)
       if (refused) throw refused
+      const own = () => double.served.get(connectionId)
+      const capabilities = () => own()?.capabilities ?? double.capabilities
       const ask = async (method: string, params: Record<string, unknown> = {}) => {
         double.calls.push({ connectionId, method, params })
-        const answer = double.answers[method]
+        const answer = (own()?.answers ?? double.answers)[method]
         if (!answer) throw new StudioError('unknown_method', `This Studio does not serve ${method}.`)
         return answer(params, connectionId)
       }
       const sayWelcome = () => ({
         environment: { id: `env-${connectionId}` },
-        capabilities: [...double.capabilities],
+        capabilities: [...capabilities()],
         conversation: { protocolVersion: 1, minProtocolVersion: 1, capabilities: [...double.conversationCapabilities] },
         grant: {
           clientId: 'tailnet:double',
@@ -213,7 +229,7 @@ export function fakePairedStudios(
       })
       let said: { as: string; welcome: ReturnType<typeof sayWelcome> } | null = null
       const welcome = (): ReturnType<typeof sayWelcome> => {
-        const as = JSON.stringify([[...double.capabilities], [...double.conversationCapabilities], double.scopes])
+        const as = JSON.stringify([[...capabilities()], [...double.conversationCapabilities], double.scopes])
         if (said?.as !== as) said = { as, welcome: sayWelcome() }
         return said.welcome
       }
@@ -235,7 +251,7 @@ export function fakePairedStudios(
         get welcome() {
           return welcome()
         },
-        supports: (capability: string) => double.capabilities.has(capability),
+        supports: (capability: string) => capabilities().has(capability),
         // A topic followed here hears what the test pushes (`push`).
         subscribe: (topic: string, params: unknown, handlers: { onPayload?: (payload: unknown) => void }) => {
           const follower = { params, listener: (payload: unknown) => handlers.onPayload?.(payload) }
@@ -287,5 +303,6 @@ export function fakePairedStudios(
       return client as unknown as StudioClient
     },
   })
+  installed = { api, double }
   return double
 }

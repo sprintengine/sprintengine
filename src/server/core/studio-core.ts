@@ -1215,7 +1215,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       workspaceSyncService.renameWorkspace(workspaceId, name, true, actor, Date.now()),
     isWorking: chatWorking,
     // A window's own Settle and Snooze: an agent at work, not one waiting on the person.
-    isBusy: (workspaceId) => settlement.isBusy(workspaceId),
     onlyTurnOf: onlyOwnTurn,
     messageWaiting: messageWaitingIn,
     log: (message) => {

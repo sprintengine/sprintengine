@@ -74,6 +74,8 @@ test('WorkspaceSidebar.identityIcon', async () => {
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     const { useWorkspaceStore } = await import('../../store/workspaceStore')
     // This suite walks the per-project tree, which is not the rail's default shape.
     useWorkspaceStore.setState({ chatListView: 'projects' })
@@ -127,7 +129,12 @@ test('WorkspaceSidebar.identityIcon', async () => {
     const root = createRoot(container)
 
     act(() => {
+      serveWindowChats(window.api, props.workspaces)
       root.render(React.createElement(WorkspaceSidebar, props))
+    })
+    // The rows are the window's own Studio's list, read a moment after mount.
+    await act(async () => {
+      for (let i = 0; i < 6; i += 1) await new Promise((resolve) => dom.window.setTimeout(resolve, 0))
     })
     // Detection is asynchronous, so drain the microtasks it settles over outside
     // `act`, then re-enter to commit the resulting store update.

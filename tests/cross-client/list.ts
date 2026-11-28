@@ -1,4 +1,8 @@
-import { STUDIO_CHAT_ROWS_CAPABILITY } from '../../packages/studio-protocol/src/handshake'
+import {
+  STUDIO_CHAT_REST_SEEN_CAPABILITY,
+  STUDIO_CHAT_ROWS_CAPABILITY,
+} from '../../packages/studio-protocol/src/handshake'
+import type { StudioChatSeen } from '../../packages/studio-protocol/src/chat-lifecycle'
 import { answered, type DesktopAgent } from './agent-by-address'
 import type { StudioClient } from '../../packages/client-runtime/src/public'
 import type { StudioWorkspace } from '../../packages/studio-protocol/src/workspaces'
@@ -6,7 +10,9 @@ import type { StudioWorkspace } from '../../packages/studio-protocol/src/workspa
 // The `list` row: a chat is listed by the Studio it runs on, at its address
 // (that Studio's environment id and the chat's id), with what a sidebar row
 // draws (`chat-rows`), and a mark or a settle asked by one client reads back
-// in every client's list. Each client reaches the chat's Studio its own way.
+// in every client's list. A settle asked on a row the chat has moved on from
+// (`chat-rest-seen`) is refused, whoever asks. Each client reaches the chat's
+// Studio its own way.
 
 /** One client's way to ask the Studio the chat runs on. */
 export type ListReach = { who: string; ask<T>(work: (client: StudioClient) => Promise<T>): Promise<T> }
@@ -69,10 +75,51 @@ export async function markReadsBack(from: ListReach, reaches: readonly ListReach
   await everyList(reaches, chatId, (row) => row.highlight?.starred === true, 'it is starred')
 }
 
-/** A settle asked by `from` reads back in every client's list. */
+/** The chat as `from`'s list draws it now, which a settle from its row sends back. */
+async function seenBy(from: ListReach, chatId: string): Promise<StudioChatSeen> {
+  const { row } = await listedBy(from, chatId)
+  const supported = await from.ask(async (client) =>
+    (client.welcome.capabilities as readonly string[]).includes(STUDIO_CHAT_REST_SEEN_CAPABILITY),
+  )
+  if (!supported) throw new Error(`${from.who}: the Studio does not serve ${STUDIO_CHAT_REST_SEEN_CAPABILITY}`)
+  if (!row || typeof row.activityAt !== 'number')
+    throw new Error(`${from.who}: its row says no activityAt (${JSON.stringify(row)})`)
+  return { settledAt: row.settledAt ?? null, snoozedUntil: row.snoozedUntil ?? null, activityAt: row.activityAt }
+}
+
+/**
+ * A settle `from` asks on a reading older than the chat (activity it did not
+ * see) is refused `conflict`, and the chat stays in every list.
+ */
+export async function staleSettleRefused(
+  from: ListReach,
+  reaches: readonly ListReach[],
+  chatId: string,
+): Promise<void> {
+  const seen = await seenBy(from, chatId)
+  const refused = await from.ask(async (client) => {
+    try {
+      await client.request('conversation.settle', {
+        workspaceId: chatId,
+        commandId: `list-stale-settle-${from.who}`,
+        seen: { ...seen, activityAt: seen.activityAt - 1 },
+      })
+      return null
+    } catch (error) {
+      return error as { code?: string; message?: string }
+    }
+  })
+  if (!refused) throw new Error(`${from.who}: a settle on a stale row was carried out`)
+  if (refused.code !== 'conflict')
+    throw new Error(`${from.who}: a stale settle was refused ${refused.code}, not conflict`)
+  await everyList(reaches, chatId, (row) => row.settledAt == null, 'it is still in the list')
+}
+
+/** A settle asked by `from` on the row its list draws now reads back in every client's list. */
 export async function settleReadsBack(from: ListReach, reaches: readonly ListReach[], chatId: string): Promise<void> {
+  const seen = await seenBy(from, chatId)
   await from.ask((client) =>
-    client.request('conversation.settle', { workspaceId: chatId, commandId: `list-settle-${from.who}` }),
+    client.request('conversation.settle', { workspaceId: chatId, commandId: `list-settle-${from.who}`, seen }),
   )
   await everyList(reaches, chatId, (row) => typeof row.settledAt === 'number', 'it is settled')
 }

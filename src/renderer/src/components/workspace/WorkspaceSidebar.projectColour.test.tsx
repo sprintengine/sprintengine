@@ -153,6 +153,8 @@ test('WorkspaceSidebar.projectColour', async () => {
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     const { useWorkspaceStore } = await import('../../store/workspaceStore')
     // This suite walks the per-project tree, which is not the rail's default shape.
     useWorkspaceStore.setState({ chatListView: 'projects' })
@@ -233,6 +235,7 @@ test('WorkspaceSidebar.projectColour', async () => {
       dom.window.document.body.appendChild(container)
       const root = createRoot(container)
       act(() => {
+        serveWindowChats(window.api, mountProps.workspaces)
         root.render(React.createElement(WorkspaceSidebar, mountProps))
       })
       await settle()

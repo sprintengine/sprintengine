@@ -16,6 +16,7 @@ import {
 } from '../../../../packages/studio-protocol/src/environment'
 import type { ElectronApi } from '../../../shared/electron-api'
 import type { EnvironmentEntry } from '../../../shared/environments'
+import { watchWindowStudio, windowHasStudio, windowStudioClient, windowStudioState } from './windowStudioClient'
 
 // This window's own client of each other environment's Studio
 // (design-lane-on-protocol D1, design-wsl-ssh-direct PR 1d): the protocol every
@@ -37,9 +38,17 @@ import type { EnvironmentEntry } from '../../../shared/environments'
 // client; a parked credential is closed here, not kept. A route the
 // environment list no longer holds (a pairing forgotten, an SSH machine
 // removed) closes it too, the moment the list says so.
+//
+// The window's own Studio is an environment like any other, by the `local`
+// route: asked and held here as every other is, over the client the window
+// already has to it (`windowStudioClient`), which needs no ticket and which
+// nothing here closes.
 
 type EnvironmentApi = Pick<ElectronApi, 'environmentsTicket'> &
-  Partial<Pick<ElectronApi, 'environmentsList' | 'onEnvironmentsChanged'>>
+  Partial<Pick<ElectronApi, 'environmentsList' | 'onEnvironmentsChanged' | 'studioWindowTicket'>>
+
+/** The window's own Studio's route: the client the window already holds to it. */
+export const WINDOW_STUDIO_ROUTE = 'local'
 
 /** An environment as the window asks it: the route it is reached by, and what it is called in words. */
 export type EnvironmentTarget = { route: string; name: string }
@@ -78,6 +87,21 @@ export function environmentStudioAvailable(): boolean {
   return typeof window.api.environmentsTicket === 'function' || setups.get(window.api)?.connect !== undefined
 }
 
+/**
+ * Whether this page reaches a route's Studio: the window's own wherever the
+ * page has one (a desktop window, a web tab), every other only where
+ * `environmentStudioAvailable` says.
+ */
+export function environmentRouteAvailable(route: string): boolean {
+  if (route === WINDOW_STUDIO_ROUTE && (windowHasStudio() || environmentStudioAvailable())) return true
+  return environmentStudioAvailable()
+}
+
+/** Whether this page follows any environment's chats: its own Studio's at least, wherever it has one. */
+export function chatSourcesAvailable(): boolean {
+  return environmentRouteAvailable(WINDOW_STUDIO_ROUTE)
+}
+
 /** How long a route's connection is kept with nothing asked of it. */
 const IDLE_CLOSE_MS = 5 * 60_000
 /** How long one ask waits for an answer, unless it says otherwise. */
@@ -91,6 +115,8 @@ type Held = {
   holds: number
   /** Who hears the connection's state as it moves. */
   states: Set<(state: StudioClientState) => void>
+  /** Let the connection go: closed, or, for the window's own, only no longer heard. */
+  end: () => void
 }
 
 type Registry = {
@@ -133,10 +159,7 @@ function close(api: EnvironmentApi, route: string): void {
   if (!registry || !entry) return
   registry.held.delete(route)
   if (entry.idle) clearTimeout(entry.idle)
-  entry.opening.then(
-    (client) => client.close(),
-    () => undefined,
-  )
+  entry.end()
 }
 
 /** Close a route's connection from this window, if one is open. */
@@ -198,30 +221,54 @@ function open(api: EnvironmentApi, route: string): Held {
   const tell = (state: StudioClientState): void => {
     for (const listener of [...states]) listener(state)
   }
+  // The window's own Studio: the client the window holds, its state heard as it moves.
+  let unwatchWindow: (() => void) | null = null
+  const ownStudio = (): Promise<StudioClient> => {
+    const windowApi = api as Pick<ElectronApi, 'studioWindowTicket'>
+    unwatchWindow = watchWindowStudio(windowApi, () => {
+      const state = windowStudioState(windowApi)
+      if (state !== 'connecting') tell(state === 'unavailable' ? 'closed' : state)
+    })
+    return windowStudioClient(windowApi)
+  }
   const opening = setup.connect
     ? setup.connect(route, tell)
-    : connect({
-        client: { name: 'Studio window' },
-        transport: webSocketTransport({
-          // Asked afresh for every connection and handed straight to it.
-          ticket: async () => {
-            const ticket = await api.environmentsTicket(route)
-            if (!ticket.ok) throw new StudioError(ticket.code, ticket.message)
-            return { url: ticket.url, token: ticket.token }
+    : route === WINDOW_STUDIO_ROUTE
+      ? ownStudio()
+      : connect({
+          client: { name: 'Studio window' },
+          transport: webSocketTransport({
+            // Asked afresh for every connection and handed straight to it.
+            ticket: async () => {
+              const ticket = await api.environmentsTicket(route)
+              if (!ticket.ok) throw new StudioError(ticket.code, ticket.message)
+              return { url: ticket.url, token: ticket.token }
+            },
+            ...(WebSocket ? { WebSocket } : {}),
+          }),
+          reconnect: { initialDelayMs: 500, maxDelayMs: 30_000 },
+          // Another machine: this one being offline does say it cannot be reached.
+          parkWhenOffline: true,
+          onStateChange: (state, error) => {
+            tell(state)
+            // Parked on its credential: the route is gone there. Nothing to wait for.
+            if (state === 'parked' && error && error.code !== 'offline' && registry.held.get(route) === entry)
+              close(api, route)
           },
-          ...(WebSocket ? { WebSocket } : {}),
-        }),
-        reconnect: { initialDelayMs: 500, maxDelayMs: 30_000 },
-        // Another machine: this one being offline does say it cannot be reached.
-        parkWhenOffline: true,
-        onStateChange: (state, error) => {
-          tell(state)
-          // Parked on its credential: the route is gone there. Nothing to wait for.
-          if (state === 'parked' && error && error.code !== 'offline' && registry.held.get(route) === entry)
-            close(api, route)
-        },
-      })
-  const entry: Held = { opening, idle: null, asking: 0, holds: 0, states }
+        })
+  const end = (): void => {
+    if (unwatchWindow) {
+      // The window's own client is the window's, kept while the window lives.
+      unwatchWindow()
+      unwatchWindow = null
+      return
+    }
+    opening.then(
+      (client) => client.close(),
+      () => undefined,
+    )
+  }
+  const entry: Held = { opening, idle: null, asking: 0, holds: 0, states, end }
   registry.held.set(route, entry)
   const forget = () => {
     if (registry.held.get(route) === entry) close(api, route)

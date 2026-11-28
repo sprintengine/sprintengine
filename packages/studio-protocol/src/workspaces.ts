@@ -53,6 +53,8 @@ export type StudioWorkspace = {
   recencyAt?: number
   /** When a person last wrote to it, from any device. */
   lastUserMessageAt?: number
+  /** When anything last happened in it, which a settle or snooze sends back as `seen` (`chat-rest-seen`). */
+  activityAt?: number
   /** When its agent last finished a turn. */
   lastTurnEndedAt?: number
   /** When a person last had it on screen, on any device. */

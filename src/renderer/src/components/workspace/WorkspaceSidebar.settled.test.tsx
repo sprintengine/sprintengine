@@ -105,6 +105,8 @@ test('WorkspaceSidebar.settled', async () => {
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     type SidebarProps = Parameters<typeof WorkspaceSidebar>[0]
     type Workspace = SidebarProps['workspaces'][number]
 
@@ -188,6 +190,7 @@ test('WorkspaceSidebar.settled', async () => {
 
     const render = async (next: SidebarProps): Promise<void> => {
       act(() => {
+        serveWindowChats(window.api, next.workspaces)
         root.render(React.createElement(WorkspaceSidebar, next))
       })
       await settle()

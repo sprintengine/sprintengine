@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
 import type { Workspace } from '../../../../../shared/workspace'
-import { autoCompactSwitchOf, WorkspaceContextMenu, type ContextMenuAction } from './contextMenus'
+import { autoCompactSwitchOf, EnvironmentChatContextMenu, type EnvironmentChatMenuAction } from './contextMenus'
 
 // The chat menu's Auto compact switch, beside Auto-settle: on by the chat's
 // own choice or the app-wide default, off and saying why for a chat that is
@@ -50,15 +50,23 @@ test('the switch follows the chat’s own choice, else the default, and knows a 
   expect(autoCompactSwitchOf(remote, true)).toBeNull()
 })
 
-function open(autoCompact: { on: boolean; claude: boolean }, picked: ContextMenuAction[]) {
+function open(autoCompact: { on: boolean; claude: boolean }, picked: EnvironmentChatMenuAction[]) {
   act(() =>
     root.render(
-      <WorkspaceContextMenu
+      <EnvironmentChatContextMenu
         x={0}
         y={0}
-        workspace={chat('claude-agent')}
+        title="Chat"
+        machineName="This computer"
+        canSettle
+        marks
+        canMarkUnread={false}
+        starred={false}
+        color={null}
+        snoozedUntil={null}
+        autoSettle={false}
+        local={{ workspace: chat('claude-agent'), moduleOverrides: {}, schedule: null, canDelete: false }}
         chatLink={null}
-        moduleOverrides={{}}
         isDetachedWindow={false}
         now={0}
         working={false}
@@ -75,7 +83,7 @@ function open(autoCompact: { on: boolean; claude: boolean }, picked: ContextMenu
 }
 
 test('Auto compact sits right after Auto-settle and flips for a Claude chat', () => {
-  const picked: ContextMenuAction[] = []
+  const picked: EnvironmentChatMenuAction[] = []
   const item = open({ on: true, claude: true }, picked)
   expect(item?.getAttribute('aria-checked')).toBe('true')
   expect(item?.getAttribute('data-menu-tooltip')).toBe('true')
@@ -87,7 +95,7 @@ test('Auto compact sits right after Auto-settle and flips for a Claude chat', ()
 })
 
 test('a chat that is not Claude’s is offered it switched off, and says why', () => {
-  const picked: ContextMenuAction[] = []
+  const picked: EnvironmentChatMenuAction[] = []
   const item = open({ on: false, claude: false }, picked)
   expect(item?.disabled).toBe(true)
   expect(item?.textContent).toContain('Claude only')

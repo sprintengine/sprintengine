@@ -1,4 +1,5 @@
 import type { StudioClient } from "../../../packages/client-runtime/src/public";
+import { STUDIO_CHAT_REST_SEEN_CAPABILITY, type StudioChatSeen } from "../../../packages/studio-protocol/src/public";
 import { desktopStudio, studioFailure, type DesktopStudioOptions } from "./desktopStudio";
 import type { ApiResult } from "./types";
 
@@ -15,7 +16,9 @@ import type { ApiResult } from "./types";
 // Each change carries a command id, so one retried after the connection
 // dropped is carried out once: a settle retried after an Undo does not settle
 // the chat again. A visit is a stamp the desktop only moves forward, so it
-// carries none.
+// carries none. A settle or snooze from a row carries the chat as the row drew
+// it (`seen`), to a desktop that reads it (`chat-rest-seen`), which refuses
+// one asked on a chat that has moved on since.
 
 /** A settle waits on the desktop writing the chat's state; a visit is a stamp and no more. */
 export const CONVERSATION_SETTLE_TIMEOUT_MS = 10_000;
@@ -47,7 +50,7 @@ export interface MarkedUnreadConversation {
 
 /** What the chat surfaces need from the desktop; a harness may supply a fake of the same shape. */
 export interface ChatLifecycleApi {
-  settle(workspaceId: string, settled?: boolean): Promise<ApiResult<SettledConversation>>;
+  settle(workspaceId: string, settled?: boolean, seen?: StudioChatSeen | null): Promise<ApiResult<SettledConversation>>;
   /** No instant is sent: the desktop stamps its own clock, the one its turn ends are on. */
   visit(workspaceId: string): Promise<ApiResult<VisitedConversation>>;
   /** Refused when no agent in the chat has finished anything, in the desktop's words. */
@@ -56,7 +59,12 @@ export interface ChatLifecycleApi {
    * `until` is a time still ahead; null wakes the chat now. Refused while an
    * agent in it works and for a settled chat, in the desktop's words.
    */
-  snooze(workspaceId: string, until: number | null): Promise<ApiResult<SnoozedConversation>>;
+  snooze(workspaceId: string, until: number | null, seen?: StudioChatSeen | null): Promise<ApiResult<SnoozedConversation>>;
+}
+
+/** `seen`, for a desktop that reads it; nothing for one that does not, or a row that cannot say. */
+function seenFor(client: StudioClient, seen: StudioChatSeen | null | undefined): { seen?: StudioChatSeen } {
+  return seen && client.supports(STUDIO_CHAT_REST_SEEN_CAPABILITY) ? { seen } : {};
 }
 
 /** `conversation.snooze`'s instant: a whole millisecond to wake at, or null to wake now. */
@@ -95,10 +103,16 @@ export function createChatLifecycleApi(
     return done.ok ? { ok: true, data: { workspaceId, ...shape(done.data as T) } } : { ok: false, errorCode: done.errorCode, message: done.message };
   }
   return {
-    async settle(workspaceId, settled = true) {
+    async settle(workspaceId, settled = true, seen) {
       const commandId = newCommandId();
       const done = await ask(
-        (client) => client.rpc["conversation.settle"]({ workspaceId, commandId, ...(settled ? {} : { settled: false }) }),
+        (client) =>
+          client.rpc["conversation.settle"]({
+            workspaceId,
+            commandId,
+            ...(settled ? {} : { settled: false }),
+            ...seenFor(client, seen),
+          }),
         CONVERSATION_SETTLE_TIMEOUT_MS,
       );
       return about(workspaceId, done, (data) => ({ settledAt: data.settledAt }));
@@ -115,10 +129,16 @@ export function createChatLifecycleApi(
       );
       return about(workspaceId, done, (data) => ({ lastVisitedAt: data.lastVisitedAt }));
     },
-    async snooze(workspaceId, until) {
+    async snooze(workspaceId, until, seen) {
       const commandId = newCommandId();
       const done = await ask(
-        (client) => client.rpc["conversation.snooze"]({ workspaceId, commandId, until: snoozeInstant(until) }),
+        (client) =>
+          client.rpc["conversation.snooze"]({
+            workspaceId,
+            commandId,
+            until: snoozeInstant(until),
+            ...seenFor(client, seen),
+          }),
         CONVERSATION_SETTLE_TIMEOUT_MS,
       );
       return about(workspaceId, done, (data) => ({ snoozedUntil: data.snoozedUntil }));

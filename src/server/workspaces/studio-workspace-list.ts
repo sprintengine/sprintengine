@@ -6,7 +6,7 @@ import { projectFrecency, projectUsageKey, type ProjectUsageMap } from '../../sh
 import { projectColorKey, projectHue } from '../../shared/project-hue'
 import type { RepositoryIdentity } from '../../shared/repository-identity'
 import type { Workspace } from '../../shared/workspace'
-import { isSettledWorkspace, workspaceLastUserMessageAt } from '../../shared/workspace-lifecycle'
+import { chatRestSeen, isSettledWorkspace, workspaceLastUserMessageAt } from '../../shared/workspace-lifecycle'
 import type { WorkspaceSyncSnapshot, WorkspaceSyncState } from '../../shared/workspace-sync'
 
 // The chats this Studio holds, as a list: what `workspaces.list` answers on
@@ -84,10 +84,12 @@ function chatRowOf(workspace: Workspace, at: number): Partial<StudioWorkspace> {
   const highlight = parseConversationWireHighlight(workspace.highlight)
   const scheduledAgentId = workspace.scheduledAgentId?.trim()
   const recencyAt = workspaceLastUserMessageAt(workspace)
+  const { activityAt } = chatRestSeen(workspace, at)
   return {
     ...(epoch(workspace.createdAt) ? { createdAt: Math.trunc(workspace.createdAt) } : {}),
     ...(epoch(recencyAt) ? { recencyAt: Math.trunc(recencyAt) } : {}),
     ...(epoch(workspace.lastUserMessageAt) ? { lastUserMessageAt: Math.trunc(workspace.lastUserMessageAt) } : {}),
+    ...(epoch(activityAt) ? { activityAt } : {}),
     ...(epoch(workspace.lastTurnEndedAt) ? { lastTurnEndedAt: Math.trunc(workspace.lastTurnEndedAt) } : {}),
     ...(epoch(workspace.lastVisitedAt) ? { lastVisitedAt: Math.trunc(workspace.lastVisitedAt) } : {}),
     ...(epoch(workspace.visitRewoundAt) ? { visitRewoundAt: Math.trunc(workspace.visitRewoundAt) } : {}),

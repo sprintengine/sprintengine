@@ -91,6 +91,24 @@ export function isChatSnoozed(thread: Pick<ConversationThread, "snoozedUntil">, 
 }
 
 /**
+ * The chat as its row was drawn, which a Settle or Snooze from the row sends
+ * back (`chat-rest-seen`): a listed row is never settled, its snooze counts
+ * only while still ahead, and `activityAt` is the desktop's own clock of it.
+ * Null for a desktop that does not list `activityAt`.
+ */
+export function chatRowSeen(
+  thread: Pick<ConversationThread, "snoozedUntil" | "activityAt">,
+  now: number,
+): { settledAt: null; snoozedUntil: number | null; activityAt: number } | null {
+  if (typeof thread.activityAt !== "number") return null;
+  return {
+    settledAt: null,
+    snoozedUntil: isChatSnoozed(thread, now) ? thread.snoozedUntil! : null,
+    activityAt: thread.activityAt,
+  };
+}
+
+/**
  * The countdown a sleeping row wears: "42m", "2h", "3d". Minutes round up, so
  * a row still asleep never reads "0m".
  */

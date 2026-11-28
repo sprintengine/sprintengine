@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
 import type {
-  StudioWorkspaceLifecycleResult,
   StudioWorkspaceSyncCommandResult,
   StudioWorkspaceSyncEvent,
   StudioWorkspaceSyncSnapshot,
@@ -164,8 +163,6 @@ export type EnvironmentReplicas = {
    * and is made there first; null when it is this desktop's own to make.
    */
   dispatch(command: Record<string, unknown>): Promise<StudioWorkspaceSyncCommandResult | null>
-  /** A window's Settle, Un-settle, Snooze or Wake: the machine's for a copy; null for this desktop's own chat. */
-  lifecycle(request: Record<string, unknown>): Promise<StudioWorkspaceLifecycleResult | null>
   close(): void
 }
 
@@ -512,37 +509,10 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
     })
   }
 
-  async function lifecycle(request: Record<string, unknown>): Promise<StudioWorkspaceLifecycleResult | null> {
-    const id = typeof request.workspaceId === 'string' ? request.workspaceId : null
-    const route = id ? environmentRouteOfRecord(recordOf(id)) : null
-    if (!route) return null
-    return serial(route, async (): Promise<StudioWorkspaceLifecycleResult> => {
-      const reached = await reach(route)
-      if (!reached.ok)
-        return { ok: false, code: 'environment_unreachable', message: notConnected(route, reached.message) }
-      try {
-        const answer = (await reached.client.request('workspaceSync.lifecycle', {
-          commandId: `replica-${randomUUID()}`,
-          request,
-        })) as StudioWorkspaceLifecycleResult
-        const after = (await reached.client.request('workspaceSync.snapshot', {})) as StudioWorkspaceSyncSnapshot
-        reconcile(route, reached.name, after, followed.has(route))
-        return answer
-      } catch (error) {
-        return {
-          ok: false,
-          code: 'environment_unreachable',
-          message: `${reached.name}: ${error instanceof Error ? error.message : String(error)}`,
-        }
-      }
-    })
-  }
-
   return {
     follow,
     refresh,
     dispatch,
-    lifecycle,
     close() {
       closed = true
       for (const each of followed.values()) each.stop()

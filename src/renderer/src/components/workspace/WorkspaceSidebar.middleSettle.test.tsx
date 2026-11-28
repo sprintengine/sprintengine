@@ -61,6 +61,8 @@ async function mount() {
   const { act } = React
   const { createRoot } = await import('react-dom/client')
   const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+  // This computer's chats are the rows its own Studio lists.
+  const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
   const { useWorkspaceStore } = await import('../../store/workspaceStore')
   // The record's half of a Settle is the store's; heard here rather than
   // written, so the rows stay the props'.
@@ -126,6 +128,7 @@ async function mount() {
     }
   }
   act(() => {
+    serveWindowChats(window.api, props.workspaces)
     root.render(React.createElement(WorkspaceSidebar, props))
   })
   await settle()

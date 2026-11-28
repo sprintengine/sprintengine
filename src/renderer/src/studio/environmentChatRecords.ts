@@ -3,11 +3,13 @@ import { isConversationHighlightColor } from '../../../../packages/conversation-
 import {
   STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+  STUDIO_CHAT_REST_SEEN_CAPABILITY,
   STUDIO_CONVERSATIONS_CAPABILITY,
   studioGrantAllows,
   STUDIO_CHAT_SEARCH_MAX_CHARS,
   STUDIO_CHAT_SEARCH_MIN_CHARS,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
+  type StudioChatSeen,
 } from '../../../../packages/studio-protocol/src/public'
 import type { SettledChatWorktreePlan } from '../../../shared/ipc/settled-chats'
 import type {
@@ -83,11 +85,28 @@ export async function listEnvironmentChatsThrough(
   }
 }
 
-/** Settle a chat there, or bring it back with `settled: false`. */
+/**
+ * What a Settle or Snooze was asked on (`chat-rest-seen`): the chat as its row
+ * drew it, and for a Settle of this computer's chat the person's last
+ * keystroke in it. Sent only to a Studio that says it reads them; one before
+ * decides on the chat as it stands there.
+ */
+export type ChatRestAsked = { seen?: StudioChatSeen | null; lastInputAt?: number | null }
+
+function restAsked(client: StudioClient, asked: ChatRestAsked | undefined, settling: boolean) {
+  if (!asked || !client.supports(STUDIO_CHAT_REST_SEEN_CAPABILITY)) return {}
+  return {
+    ...(asked.seen ? { seen: asked.seen } : {}),
+    ...(settling && typeof asked.lastInputAt === 'number' ? { lastInputAt: Math.trunc(asked.lastInputAt) } : {}),
+  }
+}
+
+/** Settle a chat there, or bring it back with `settled: false`, on the row it was asked from. */
 export async function settleEnvironmentChat(
   target: EnvironmentTarget,
   workspaceId: string,
   settled = true,
+  asked?: ChatRestAsked,
 ): Promise<MeshSettleConversationResult> {
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRemoteChat }
   const answer = await askEnvironment(
@@ -99,6 +118,7 @@ export async function settleEnvironmentChat(
         workspaceId,
         commandId: environmentCommandId(),
         ...(settled ? {} : { settled: false }),
+        ...restAsked(client, asked, settled),
       }),
   )
   return answer.ok ? { ok: true, workspaceId, settledAt: answer.value.settledAt } : answer
@@ -278,7 +298,12 @@ function chatChangeOf(change: unknown): ChatChange | null {
       if (value.until !== null && !(typeof value.until === 'number' && Number.isFinite(value.until))) return null
       const until = value.until === null ? null : Math.trunc(value.until as number)
       return {
-        send: (client, chat) => client.rpc['conversation.snooze']({ ...chat, until }),
+        send: (client, chat) =>
+          client.rpc['conversation.snooze']({
+            ...chat,
+            until,
+            ...restAsked(client, { seen: (value.seen as StudioChatSeen | undefined) ?? null }, false),
+          }),
         ask: until === null ? 'wake its chats' : 'snooze its chats',
       }
     }

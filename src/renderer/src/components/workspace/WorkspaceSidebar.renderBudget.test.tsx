@@ -136,6 +136,8 @@ async function mountSidebar() {
   const { createRoot } = await import('react-dom/client')
   const { useShallow } = await import('zustand/react/shallow')
   const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+  // This computer's chats are the rows its own Studio lists.
+  const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
   const { useWorkspaceStore } = await import('../../store/workspaceStore')
   const { selectWorkspaceManagerWorkspaces } = await import('./manager/workspaceSelector')
   const { useConversationSessions, groupConversationSessionsByWorkspace } =
@@ -270,6 +272,7 @@ async function mountSidebar() {
       })
     }
   }
+  serveWindowChats(window.api, useWorkspaceStore.getState().workspaces)
   await act(async () =>
     root.render(
       createElement(
