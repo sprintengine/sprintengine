@@ -1434,14 +1434,17 @@ function WorkspaceSidebar({
   // once, as a local Star flips at once, until a list read after the
   // environment took them stands in for them (`withPendingRemoteMarks`).
   const [pendingRemoteMarks, setPendingRemoteMarks] = useState<ReadonlyMap<string, PendingRemoteMarks>>(() => new Map())
-  // The records here of other environments' chats, by address: what opening a row focuses.
+  // The records here of other environments' chats, by address: what opening a
+  // row focuses. A route's environment id is the one its rows are keyed by:
+  // its own Studio's, else the list's.
   const idOfRoute = useMemo(() => {
     const ids = new Map<string, string>()
     for (const entry of environments)
       if (entry.environmentId)
         for (const route of entry.routes) ids.set(formatEnvironmentRoute(route), entry.environmentId)
+    for (const source of environmentSources) if (source.environmentId) ids.set(source.route, source.environmentId)
     return (route: string) => ids.get(route) ?? null
-  }, [environments])
+  }, [environments, environmentSources])
   const chatRecords = useMemo(() => chatRecordsByAddress(workspaces, idOfRoute), [workspaces, idOfRoute])
   const environmentRows = useMemo(
     () =>

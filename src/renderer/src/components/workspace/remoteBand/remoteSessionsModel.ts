@@ -22,7 +22,7 @@ import type { Workspace, WorkspaceHighlight, WorkspaceRemoteOrigin } from '../..
 import { workspaceLastUserMessageAt } from '../../../utils/workspaceRecency'
 import { finishedUnseen } from '../../../../../shared/workspace-lifecycle'
 import type { Tone } from '../../ui'
-import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
+import { environmentOfRoute, environmentRouteOf, type EnvironmentEntry } from '../../../../../shared/environments'
 import type { MachineRef } from '../../../../../shared/machine-identity'
 import {
   formatChatAddress,
@@ -681,15 +681,30 @@ export function environmentChatRows(input: {
   reachedOverTailnet?: (route: string) => boolean
 }): RemoteConversation[] {
   const { environments, records, hiddenMode, onTailnet = true, reachedOverTailnet } = input
-  const lists: RemoteConversation[][] = []
-  for (const followed of input.sources) {
-    if (!onTailnet && reachedOverTailnet?.(followed.route)) continue
+  const reachable = input.sources.filter((followed) => onTailnet || !reachedOverTailnet?.(followed.route))
+  const resolved = reachable.map((followed) => {
     const route = parseEnvironmentRoute(followed.route)
     const environment = route ? environmentOfRoute(environments, route) : null
     // Its id as the list says it, until its own Studio has: its rows are keyed by address either way.
     const source = followed.environmentId
       ? followed
       : { ...followed, environmentId: environment?.environmentId ?? null }
+    return { source, environment }
+  })
+  // One environment followed by two routes (a machine both paired and saved
+  // over SSH, whose copy here names the other route) lists the same chats
+  // twice, at the same addresses: they are drawn once, from its best route
+  // that can be reached now.
+  const drawnBy = new Map<string, string>()
+  for (const { source, environment } of resolved) {
+    const id = source.environmentId
+    if (!id) continue
+    const best = environment ? environmentRouteOf(environment) : null
+    if (!drawnBy.has(id) || source.route === best) drawnBy.set(id, source.route)
+  }
+  const lists: RemoteConversation[][] = []
+  for (const { source, environment } of resolved) {
+    if (source.environmentId && drawnBy.get(source.environmentId) !== source.route) continue
     const { entry } = source
     const browse = entry.browse
     const status = environment ? environmentStatus(environment).kind : null

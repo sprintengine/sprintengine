@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import type { MeshBrowse, MeshConversation, MeshWorkspace } from '../../../../../shared/tailnet-mesh'
+import type { EnvironmentEntry } from '../../../../../shared/environments'
 import type { Workspace } from '../../../../../shared/workspace'
 import {
   canMarkRemoteConversationUnread,
@@ -256,6 +257,49 @@ test('a record here of another environment’s chat is not a row; opening the ch
   assert.deepEqual(
     { route: spec.route, connectionId: spec.connectionId, chatId: spec.chatId, agent: spec.agent?.agentId },
     { route: 'ssh:build-box', connectionId: null, chatId: 'sw2', agent: 'agent-2' },
+  )
+})
+
+test('an environment followed by two routes is drawn once, from its best route', () => {
+  // The Mini is paired and saved over SSH; a copy here names the SSH route, so
+  // the window follows both, and both list the same chats.
+  const mini: EnvironmentEntry = {
+    environmentId: MINI_ID as EnvironmentEntry['environmentId'],
+    displayName: 'mac-mini',
+    routes: [
+      { kind: 'tailnet', connection: 'c1' },
+      { kind: 'ssh', machine: 'mac-mini' },
+    ],
+    machine: { kind: 'paired', name: 'mac-mini' },
+    descriptor: null,
+    connection: { state: 'up', detail: null, lastReachedAt: null },
+    compatibility: 'compatible',
+  }
+  const listed = { conversations: [chat('rw1'), chat('rw2', { agentId: 'agent-2' })] }
+  const both = [
+    // The copy's route first, as the window may have followed it first.
+    source('ssh:mac-mini', 'mac-mini', listed, { environmentId: MINI_ID }),
+    source('tailnet:c1', 'mac-mini', listed),
+  ]
+  const drawn = rows(both, { environments: [mini] })
+  assert.deepEqual(
+    drawn.map((row) => [row.key, row.route]),
+    [
+      [`${MINI_ID}:rw1`, 'tailnet:c1'],
+      [`${MINI_ID}:rw2`, 'tailnet:c1'],
+    ],
+  )
+  // Off the tailnet its pairing is gone, and its SSH route draws them.
+  assert.deepEqual(
+    rows(both, {
+      environments: [mini],
+      onTailnet: false,
+      reachedOverTailnet: (route) => route.startsWith('tailnet:'),
+    }).map((row) => [row.key, row.route]),
+    [
+      [`${MINI_ID}:rw1`, 'ssh:mac-mini'],
+      [`${MINI_ID}:rw2`, 'ssh:mac-mini'],
+    ],
   )
 })
 
