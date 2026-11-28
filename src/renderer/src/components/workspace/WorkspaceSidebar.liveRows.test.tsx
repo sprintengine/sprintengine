@@ -95,6 +95,8 @@ test('WorkspaceSidebar.liveRows', async () => {
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar, rowHasOpenTerminals, rowOpenTerminals } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     type SidebarProps = Parameters<typeof WorkspaceSidebar>[0]
     type Workspace = SidebarProps['workspaces'][number]
 
@@ -201,6 +203,7 @@ test('WorkspaceSidebar.liveRows', async () => {
     dom.window.document.body.appendChild(container)
     const root = createRoot(container)
     act(() => {
+      serveWindowChats(window.api, props.workspaces)
       root.render(React.createElement(WorkspaceSidebar, props))
     })
     try {

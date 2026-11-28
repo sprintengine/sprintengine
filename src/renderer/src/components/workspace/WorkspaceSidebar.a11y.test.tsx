@@ -115,8 +115,14 @@ test('WorkspaceSidebar.a11y', async () => {
     const container = dom.window.document.createElement('div')
     dom.window.document.body.appendChild(container)
     const root = createRoot(container)
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
+    serveWindowChats(domWindow.api as object, props.workspaces)
     act(() => {
       root.render(React.createElement(WorkspaceSidebar, props))
+    })
+    await act(async () => {
+      for (let i = 0; i < 6; i += 1) await new Promise((resolve) => dom.window.setTimeout(resolve, 0))
     })
 
     const tree = container.querySelector('nav[role="tree"]')

@@ -981,8 +981,8 @@ export function remoteLinkStateOf(status: { tailnetAddress: string | null } | nu
 //
 // Its star, colour, sleep and Auto-settle are kept by the environment it runs
 // on (`chat-lifecycle`), and read back off its list. A change asked from here
-// is drawn at once, as a local Star flips at once, and held until a list read
-// after the environment took it says the same thing for itself.
+// is drawn at once, and held until a list read after the environment took it
+// says the same thing for itself (`pendingChatChanges.ts`).
 
 /** The marks a chat's row wears from its environment's list. */
 export type RemoteChatMarks = Pick<
@@ -992,42 +992,6 @@ export type RemoteChatMarks = Pick<
 
 /** What a change asked of an environment draws at once: its marks, its name, or its Auto compact switch. */
 export type RemoteChatPending = Partial<RemoteChatMarks & { title: string; autoCompactOn: boolean }>
-
-/** A change asked of an environment and not yet read back off its list, held by the chat's key. */
-export type PendingRemoteMarks = {
-  /** The route the environment is followed by, whose next list says it. */
-  route: string
-  marks: RemoteChatPending
-  /** When the environment said it took them; null while it has not answered. */
-  takenAt: number | null
-}
-
-/** Each row, wearing the marks asked of its environment that its list does not say yet. */
-export function withPendingRemoteMarks(
-  conversations: readonly RemoteConversation[],
-  pending: ReadonlyMap<string, PendingRemoteMarks>,
-): readonly RemoteConversation[] {
-  if (pending.size === 0) return conversations
-  return conversations.map((conversation) => {
-    const asked = pending.get(conversation.key)?.marks
-    if (!asked) return conversation
-    const { autoCompactOn, ...marks } = asked
-    return {
-      ...conversation,
-      ...marks,
-      ...(autoCompactOn !== undefined && conversation.autoCompact
-        ? { autoCompact: { ...conversation.autoCompact, on: autoCompactOn } }
-        : {}),
-    }
-  })
-}
-
-/** Whether a list read since the environment took the change has come in, so the list says it now. */
-export function pendingRemoteMarksRead(pending: PendingRemoteMarks, readAt: (route: string) => number | null): boolean {
-  if (pending.takenAt === null) return false
-  const at = readAt(pending.route)
-  return at !== null && at > pending.takenAt
-}
 
 /** The highlight a chat would have after a Star or colour change: none when neither is left. */
 export function remoteHighlightAfter(

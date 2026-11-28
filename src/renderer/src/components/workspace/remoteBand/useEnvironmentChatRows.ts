@@ -4,6 +4,7 @@ import type { ModuleEnablementOverrides } from '../../../../../shared/modules/ma
 import type { Workspace, WorkspaceMode } from '../../../../../shared/workspace'
 import { useEnvironments } from '../../../hooks/useEnvironments'
 import { reachedOverTailnet, WINDOW_STUDIO_ROUTE } from '../../../studio/environmentStudio'
+import { usePendingChatChanges, withPendingChatChanges } from '../../../studio/pendingChatChanges'
 import { isHiddenFromRail } from '../../../utils/workspaceVisibility'
 import { environmentIdOfRoute } from './environmentChatsNow'
 import { chatRecordsByAddress, environmentChatRows, type RemoteConversation } from './remoteSessionsModel'
@@ -15,6 +16,8 @@ import { useRemoteSessions } from './useRemoteSessions'
  * environments, the same hidden kinds, none of a paired desktop's while this
  * device is off the tailnet), for a list that shows them beside it (the
  * palette), or the chats each has settled (Settings ▸ Settled chats).
+ * Each wears the changes asked of it that its list does not say yet
+ * (`pendingChatChanges.ts`).
  */
 export function useEnvironmentChatRows(
   workspaces: readonly Pick<Workspace, 'id' | 'environment' | 'remoteOrigin'>[],
@@ -34,7 +37,8 @@ export function useEnvironmentChatRows(
     [followed, own],
   )
   const environments = useEnvironments()
-  return useMemo(
+  const pending = usePendingChatChanges()
+  const rows = useMemo(
     () =>
       environmentChatRows({
         sources,
@@ -47,4 +51,5 @@ export function useEnvironmentChatRows(
       }),
     [sources, environments, workspaces, moduleOverrides, link, settled],
   )
+  return useMemo(() => withPendingChatChanges(rows, pending), [rows, pending])
 }

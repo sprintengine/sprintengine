@@ -88,6 +88,8 @@ test('WorkspaceSidebar.worktreeGroup', async () => {
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     const { useWorkspaceStore } = await import('../../store/workspaceStore')
     // This suite walks the per-project tree, which is not the rail's default shape.
     useWorkspaceStore.setState({ chatListView: 'projects' })
@@ -166,6 +168,7 @@ test('WorkspaceSidebar.worktreeGroup', async () => {
       const root = createRoot(container)
       const props = { ...baseProps, workspaces } as unknown as SidebarProps
       act(() => {
+        serveWindowChats(window.api, props.workspaces)
         root.render(React.createElement(WorkspaceSidebar, props))
       })
       for (let i = 0; i < 12; i += 1) await Promise.resolve()

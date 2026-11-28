@@ -2,15 +2,18 @@ import type { MeshConversationChange } from '../../../shared/tailnet-mesh'
 import type { Workspace } from '../../../shared/workspace'
 import type { WorkspaceLifecycleIntent } from '../../../shared/workspace-lifecycle'
 import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
-import { changeEnvironmentChat, settleEnvironmentChat, type ChatRestAsked } from '../studio/environmentChatRecords'
+import type { RemoteChatPending } from '../components/workspace/remoteBand/remoteSessionsModel'
+import type { ChatRestAsked } from '../studio/environmentChatRecords'
 import { environmentRouteAvailable, WINDOW_STUDIO_ROUTE, type EnvironmentTarget } from '../studio/environmentStudio'
+import { askChatChange, askChatRest } from '../studio/pendingChatChanges'
 
 // A chat of this computer is changed as any other environment's chat is: by
 // its Studio's `conversation.*` methods, over the window's own client
 // (`environmentStudio.ts`'s `local` route). Its rest (Settle, Snooze), its
 // marks (Star, colour, Auto-settle) and its name are the chat's record there;
 // what the window draws of them comes back on the rows its own Studio lists
-// (`environmentChats.ts`) and on the registry the window mirrors.
+// (`environmentChats.ts`) and on the registry the window mirrors. Each row
+// wears the change at once, until its list says it (`pendingChatChanges.ts`).
 //
 // A record the window still keeps of an SSH machine's or WSL distribution's
 // chat (a copy, until copies go) is that machine's chat: asked there, by its
@@ -35,6 +38,25 @@ const refusalOf = (error: unknown): LocalChatAnswer => ({
   message: error instanceof Error ? error.message : String(error),
 })
 
+/** What a change asked of a chat draws on its row until its list says it. */
+function drawnOf(change: MeshConversationChange): RemoteChatPending | undefined {
+  switch (change.kind) {
+    case 'highlight': {
+      const starred = change.starred === true
+      const color = change.color ?? null
+      return { highlight: starred || color ? { starred, color } : null }
+    }
+    case 'snooze':
+      return { snoozedUntil: change.until }
+    case 'auto-settle':
+      return { autoSettle: change.enabled }
+    case 'rename':
+      return { title: change.name }
+    default:
+      return undefined
+  }
+}
+
 /** Ask a change to a chat the window keeps a record of, of its Studio: a mark, a name, or a snooze. */
 export async function changeLocalChat(
   record: Pick<Workspace, 'id' | 'environment'>,
@@ -43,7 +65,7 @@ export async function changeLocalChat(
   const studio = studioOf(record)
   if (!environmentRouteAvailable(studio.route)) return NO_STUDIO
   try {
-    const answer = await changeEnvironmentChat(studio, record.id, change)
+    const answer = await askChatChange(studio, record.id, change, drawnOf(change))
     return answer.ok ? { ok: true } : { ok: false, code: answer.code, message: answer.message }
   } catch (error) {
     return refusalOf(error)
@@ -62,7 +84,8 @@ export async function restLocalChat(
   const studio = studioOf(record)
   if (!environmentRouteAvailable(studio.route)) return NO_STUDIO
   try {
-    const answer = await settleEnvironmentChat(studio, record.id, intent.kind === 'settle', asked)
+    const settled = intent.kind === 'settle'
+    const answer = await askChatRest(studio, record.id, settled, asked, { settledAt: settled ? Date.now() : undefined })
     return answer.ok ? { ok: true } : { ok: false, code: answer.code, message: answer.message }
   } catch (error) {
     return refusalOf(error)

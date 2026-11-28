@@ -146,6 +146,8 @@ test('WorkspaceSidebar.remoteManage', async () => {
   const { act } = React
   const { createRoot } = await import('react-dom/client')
   const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+  // This computer's chats are the rows its own Studio lists.
+  const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
   const { useWorkspaceStore } = await import('../../store/workspaceStore')
   useWorkspaceStore.setState({ chatListView: 'projects' })
 
@@ -260,6 +262,7 @@ test('WorkspaceSidebar.remoteManage', async () => {
   }
   try {
     act(() => {
+      serveWindowChats(window.api, props.workspaces)
       root.render(React.createElement(WorkspaceSidebar, props))
     })
     await settle()

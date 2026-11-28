@@ -148,6 +148,8 @@ test('WorkspaceSidebar.remoteRow', async () => {
     const { act } = React
     const { createRoot } = await import('react-dom/client')
     const { default: WorkspaceSidebar } = await import('./WorkspaceSidebar')
+    // This computer's chats are the rows its own Studio lists.
+    const { serveWindowChats } = await import('../../studio/windowStudioChats.double')
     const { useWorkspaceStore } = await import('../../store/workspaceStore')
     // The flat stream first, the rail's default shape and the one where the
     // row's clock and actions ride the project line instead of the agent's.
@@ -200,6 +202,7 @@ test('WorkspaceSidebar.remoteRow', async () => {
     // left mounted after a failed assertion would hang the run.
     try {
       act(() => {
+        serveWindowChats(window.api, props.workspaces)
         root.render(React.createElement(WorkspaceSidebar, props))
       })
       await settle()

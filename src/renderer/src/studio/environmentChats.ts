@@ -107,6 +107,11 @@ export type EnvironmentRows = {
   chatRecord?: { lifecycle: boolean; unwatchPullRequest: boolean }
   /** Epoch ms of the newest read that listed its chats (or got a refusal that is the answer); absent before one. */
   listedAt?: number
+  /**
+   * Epoch ms that read was asked at: a change its Studio took before then is
+   * in the list it brought back (`pendingChatChanges.ts`).
+   */
+  listAskedAt?: number
   /** Why the newest read of its chats did not replace them, or null when it did: they are then a last-known list. */
   listFailure?: EnvironmentListFailure | null
 }
@@ -377,7 +382,8 @@ export function createEnvironmentChatSource(
     if (wantBrowse) publishRows((rows) => ({ ...rows, loading: true }))
     // The clock and its backoff are about the chats: a browse on its own (a
     // workspace push) leaves them alone.
-    if (wantList) history = { askedAt: Date.now(), failures: history?.failures ?? 0 }
+    const askedAt = Date.now()
+    if (wantList) history = { askedAt, failures: history?.failures ?? 0 }
     // A read that hangs is an environment not answering, said once the grace
     // has passed; the read landing later replaces it either way.
     let landed = false
@@ -425,6 +431,7 @@ export function createEnvironmentChatSource(
         if (answered) {
           next.conversations = listed?.ok ? listed.conversations : []
           next.listedAt = Date.now()
+          next.listAskedAt = askedAt
         }
         if (listed?.ok) next.access = listed.access
         if (failure !== undefined) next.listFailure = failure
