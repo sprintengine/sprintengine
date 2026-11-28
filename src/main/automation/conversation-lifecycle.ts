@@ -9,9 +9,6 @@ import {
   settleWorkspacePatch,
   wakeSnoozedWorkspacePatch,
   wakeWorkspacePatch,
-  workspaceLifecycleSnapshot,
-  type WorkspaceLifecycleRequest,
-  type WorkspaceLifecycleResult,
   type WorkspaceLifecycleSnapshot,
 } from '../../shared/workspace-lifecycle'
 import { isSnoozeUnexpired } from '../../shared/workspace-snooze'
@@ -511,30 +508,6 @@ export function createConversationLifecycle(deps: ConversationLifecycleDeps) {
     write(workspaceId, { ...(waking ? wakeWorkspacePatch(null, record, now()) : {}), lastUserMessageAt: at }, actor)
   }
 
-  /**
-   * A window's Settle, Un-settle, Snooze or Wake now: the row menu's
-   * gestures, decided on the window's reading of the chat and held to the row
-   * menu's own rule for an agent at work. Accepted, the answer carries the
-   * chat as main wrote it, stamped with main's clock, so the window's next
-   * gesture is made on main's reading; refused, the chat as it stands, so the
-   * window puts its row back where main has it.
-   */
-  function fromWindow(request: WorkspaceLifecycleRequest): WorkspaceLifecycleResult {
-    const { workspaceId, intent } = request
-    const decided: LifecycleDecision = { snapshot: request.snapshot, refuseWhile: 'busy' }
-    const result =
-      intent.kind === 'settle'
-        ? settle(workspaceId, true, 'ui', null, { ...decided, lastInputAt: intent.lastInputAt })
-        : intent.kind === 'unsettle'
-          ? settle(workspaceId, false, 'ui', null, decided)
-          : snooze(workspaceId, intent.kind === 'snooze' ? intent.until : null, 'ui', decided)
-    const record = deps.getRecord(workspaceId)
-    const reading = record ? workspaceLifecycleSnapshot(record) : null
-    if (result.ok && reading) return { ok: true, workspaceId, committed: reading }
-    if (result.ok) return unknown(workspaceId)
-    return { ...result, ...(reading ? { current: reading } : {}) }
-  }
-
   function dropPending(workspaceId: string): void {
     pending.get(workspaceId)?.cancel?.()
     pending.delete(workspaceId)
@@ -584,7 +557,6 @@ export function createConversationLifecycle(deps: ConversationLifecycleDeps) {
   return {
     settle,
     applySweepDecision,
-    fromWindow,
     visit,
     markUnread,
     snooze,

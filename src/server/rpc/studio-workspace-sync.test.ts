@@ -49,7 +49,6 @@ function registry(options: { inDatabase?: boolean } = {}) {
   const sync = createStudioWorkspaceSync({
     workspaceSyncService,
     workspaceRegistry,
-    conversationLifecycle: { fromWindow: () => ({ ok: false, code: 'unknown', message: 'No such chat.' }) },
     settledChatsSettings: { set: (settings: unknown) => void told.settled.push(settings) },
     settlement: { setModuleRunStates: (states: unknown) => void told.runStates.push(states) },
     platform: { paths: { dataDir: () => dataDir } },

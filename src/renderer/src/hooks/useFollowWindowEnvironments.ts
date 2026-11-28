@@ -3,13 +3,14 @@ import { useEffect } from 'react'
 import { formatEnvironmentRoute } from '../../../../packages/studio-protocol/src/environment'
 import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
 import {
+  WINDOW_STUDIO_TARGET,
   environmentTargetsToFollow,
   followEnvironmentChats,
   knowEnvironments,
   withRecordedTargets,
   type FollowedEnvironment,
 } from '../studio/environmentChats'
-import { environmentStudioAvailable, type EnvironmentTarget } from '../studio/environmentStudio'
+import { chatSourcesAvailable, environmentStudioAvailable, type EnvironmentTarget } from '../studio/environmentStudio'
 import { useWorkspaceStore, workspaceRegistryReady } from '../store/workspaceStore'
 import { windowEnvironmentChatsCache } from '../studio/environmentChatsCache'
 import { seedEnvironmentChatsOnce } from '../studio/environmentChatsSeed'
@@ -30,7 +31,7 @@ const keyOf = (targets: readonly FollowedEnvironment[]) =>
   targets.map((target) => `${target.route}\u0000${target.name}\u0000${target.resting ? 1 : 0}`).join('\u0001')
 
 /**
- * Follow the chats of every environment the list holds (`environmentChats.ts`),
+ * Follow the chats of this window's own Studio and of every environment the list holds (`environmentChats.ts`),
  * for as long as it holds them, and of every environment this window still
  * keeps a copy of a chat of (until those copies go): their sessions join the
  * window's one list, and each draws its last-known rows until it answers; an
@@ -46,12 +47,15 @@ export function useFollowWindowEnvironments(): void {
   const environments = useEnvironments()
   const listed = keyOf(environmentTargetsToFollow(environments))
   useEffect(() => {
-    if (!environmentStudioAvailable()) return
+    if (!chatSourcesAvailable()) return
+    // A page that reaches no other environment (a web tab) follows its own Studio's chats.
     followEnvironmentChats(
-      withRecordedTargets(
-        environmentTargetsToFollow(currentEnvironments()),
-        windowEnvironmentTargets(useWorkspaceStore.getState().workspaces),
-      ),
+      environmentStudioAvailable()
+        ? withRecordedTargets(
+            environmentTargetsToFollow(currentEnvironments()),
+            windowEnvironmentTargets(useWorkspaceStore.getState().workspaces),
+          )
+        : [WINDOW_STUDIO_TARGET],
     )
   }, [recorded, listed])
   // Which environment each route is, for the rows the window last read of it:

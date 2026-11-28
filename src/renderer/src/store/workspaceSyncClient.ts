@@ -1,9 +1,4 @@
 import type {
-  WorkspaceLifecycleRequest,
-  WorkspaceLifecycleResult,
-  WorkspaceLifecycleSnapshot,
-} from '../../../shared/workspace-lifecycle'
-import type {
   WindowPlacement,
   WorkspaceFieldsPatch,
   WorkspaceSyncCommand,
@@ -45,8 +40,7 @@ const PRIMARY_WORKSPACE_WINDOW_ID: WorkspaceWindowId = 'primary'
 export type WorkspaceSyncClientApi = Pick<
   WorkspaceSyncApi,
   'workspaceSyncDispatch' | 'workspaceSyncGetSnapshot' | 'workspaceSyncGetEventsAfter' | 'onWorkspaceSyncEvent'
-> &
-  Partial<Pick<WorkspaceSyncApi, 'workspaceLifecycle'>>
+>
 
 // Local application of an active_changed event. `isCurrentWindow` is true only
 // for the renderer that owns `windowId`; remote windows update the targeted
@@ -180,8 +174,6 @@ export type WorkspaceSyncClientDependencies = {
    */
   applyRegistrySnapshot: (snapshot: WorkspaceSyncSnapshot) => void
   logDiagnostic?: (diagnostic: WorkspaceSyncDiagnostic) => void
-  /** How long a gesture on a chat's rest waits for main's answer; `LIFECYCLE_ANSWER_MS` when absent. */
-  lifecycleAnswerMs?: number
   /**
    * This window's own record of a workspace, as it stands now: a new chat
    * whose create is sent again goes as the window holds it, with what was
@@ -240,8 +232,6 @@ export type WorkspaceSyncClient = {
     agentId: AgentId,
     update: Omit<AgentTerminalLaunchStateApply, 'workspaceId' | 'agentId'>,
   ) => Promise<void>
-  /** Ask main to rename a workspace; stamped at the gesture for last-write-wins. */
-  dispatchRenameWorkspace: (workspaceId: WorkspaceId, name: string, titleLocked?: boolean) => Promise<void>
   /** Ask main to store a layout the window just computed (renderer-authored, main-persisted). */
   dispatchUpdateWorkspaceLayout: (workspaceId: WorkspaceId, layoutModel: Workspace['layoutModel']) => Promise<void>
   /** Ask main to change user-editable record fields (folder, memory, archive, highlight). */
@@ -260,18 +250,9 @@ export type WorkspaceSyncClient = {
    * started before: a crash then never leaves a conversation no chat lists.
    */
   whenCreated: (workspaceId: WorkspaceId) => Promise<WorkspaceCreateOutcome>
-  /**
-   * Ask main to settle, un-settle, snooze or wake a chat on this window's
-   * reading of it. Never throws: a window with no main to ask is answered
-   * `unavailable`, and one whose main could not be reached `unreachable`.
-   */
-  dispatchLifecycleIntent: (request: WorkspaceLifecycleRequest) => Promise<WorkspaceLifecycleResult>
   /** Stop listeners and reset sequence/diagnostic state (used by tests). */
   reset: () => void
 }
-
-/** How long a gesture on a chat's rest waits for main's answer before it is asked again. */
-const LIFECYCLE_ANSWER_MS = 4_000
 
 // A change main may not have, sent again until it answers. Main answers a
 // change only once it is on disk (studio-workspace-sync.ts), so one with no
@@ -332,36 +313,6 @@ function storedCreates(value: unknown): Array<Extract<WorkspaceSyncCommand, { ty
       (entry as { type?: unknown }).type === 'workspace.created' &&
       typeof (entry as { payload?: { workspace?: { id?: unknown } } }).payload?.workspace?.id === 'string',
   )
-}
-
-function withinMs<T>(answer: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`no answer in ${ms} ms`)), ms)
-    answer.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error: unknown) => {
-        clearTimeout(timer)
-        reject(error)
-      },
-    )
-  })
-}
-
-/** Whether a chat's rest as main has it is what the gesture asked for. */
-function intentStands(request: WorkspaceLifecycleRequest, rest: WorkspaceLifecycleSnapshot): boolean {
-  switch (request.intent.kind) {
-    case 'settle':
-      return rest.settledAt !== null && rest.settledOverride === 'settled'
-    case 'unsettle':
-      return rest.settledAt === null
-    case 'snooze':
-      return rest.snoozedUntil === request.intent.until
-    case 'wake':
-      return rest.snoozedUntil === null
-  }
 }
 
 export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies): WorkspaceSyncClient {
@@ -874,15 +825,6 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       payload: { workspaceId, agentId, ...update },
     })
 
-  // `editedAt` is stamped HERE, at the user gesture, not on arrival in main:
-  // a stamp assigned on arrival would make last-write-wins ordering depend on
-  // IPC latency, which is the bug the rule exists to prevent.
-  const dispatchRenameWorkspace = (workspaceId: WorkspaceId, name: string, titleLocked?: boolean): Promise<void> =>
-    dispatchCommand({
-      type: 'workspace.rename',
-      payload: { workspaceId, name, ...(titleLocked !== undefined ? { titleLocked } : {}), editedAt: Date.now() },
-    })
-
   const dispatchUpdateWorkspaceLayout = (
     workspaceId: WorkspaceId,
     layoutModel: Workspace['layoutModel'],
@@ -931,62 +873,6 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     })
   }
 
-  // A row-menu gesture on a chat's rest. The store has applied it already, as
-  // it does every hand edit; main decides it on the reading it was made on,
-  // and a refusal comes back with the chat as main has it, for the store to
-  // put the row back. The accepted change reaches every window, this one
-  // included, as a sync event.
-  //
-  // A call that throws reached nobody (out of process, the server may be
-  // restarting under the window), and one with no answer within
-  // `LIFECYCLE_ANSWER_MS` is taken as one that did: it is asked once more, and
-  // then answered `unreachable`, which is a no, never `unavailable`, which is
-  // a window with no main to ask at all. Without the limit, a call that never
-  // answers would hold every later gesture on the chat behind it.
-  //
-  // The second ask carries the first's reading, so if the first did land and
-  // only its answer was lost, main calls the second stale. A stale answer
-  // whose chat already stands as the gesture asked is that lost yes.
-  const dispatchLifecycleIntent = async (request: WorkspaceLifecycleRequest): Promise<WorkspaceLifecycleResult> => {
-    const api = deps.getApi()
-    if (!api?.workspaceLifecycle) {
-      log({
-        phase: 'dispatch',
-        reason: 'api_unavailable',
-        message: copy.store.workspaceSyncClient.workspaceSyncAPIIsUnavailable4(request.intent.kind),
-      })
-      return { ok: false, code: 'unavailable', message: copy.store.workspaceSyncClient.thisWindowHasNoMain }
-    }
-    const answerMs = deps.lifecycleAnswerMs ?? LIFECYCLE_ANSWER_MS
-    let lastError: unknown = null
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const result = await withinMs(api.workspaceLifecycle(request), answerMs)
-        if (!result.ok && attempt > 0 && result.code === 'stale' && result.current)
-          if (intentStands(request, result.current))
-            return { ok: true, workspaceId: request.workspaceId, committed: result.current }
-        if (!result.ok)
-          log({
-            phase: 'dispatch',
-            reason: result.code,
-            message: copy.store.workspaceSyncClient.mainRefusedA(request.intent.kind, result.code, result.message),
-          })
-        return result
-      } catch (error) {
-        lastError = error
-      }
-    }
-    log({
-      phase: 'dispatch',
-      reason: 'dispatch_threw',
-      message: copy.store.workspaceSyncClient.aGotNoAnswer(
-        request.intent.kind,
-        lastError instanceof Error ? lastError.message : copy.store.workspaceSyncClient.unknownError,
-      ),
-    })
-    return { ok: false, code: 'unreachable', message: copy.store.workspaceSyncClient.couldnTReachStudioTry }
-  }
-
   const reset = (): void => {
     stop()
     lastAppliedSequence = 0
@@ -1005,13 +891,11 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     dispatchCreateWorkspace,
     dispatchAssignTerminalSession,
     dispatchUpdateTerminalLaunchState,
-    dispatchRenameWorkspace,
     dispatchUpdateWorkspaceLayout,
     dispatchUpdateWorkspaceFields,
     dispatchUpdateWorkspaceAgent,
     dispatchRemoveWorkspace,
     whenCreated,
-    dispatchLifecycleIntent,
     reset,
   }
 }

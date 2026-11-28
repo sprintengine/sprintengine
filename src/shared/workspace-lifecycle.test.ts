@@ -4,7 +4,6 @@ import { test } from 'vitest'
 import type { Workspace } from './workspace'
 import {
   lifecycleSnapshotIsStale,
-  parseWorkspaceLifecycleRequest,
   parseWorkspaceLifecycleSnapshot,
   workspaceLifecycleSnapshot,
 } from './workspace-lifecycle'
@@ -30,18 +29,10 @@ test('a snapshot is stale once the rest, the sleep or the activity has moved pas
   assert.equal(lifecycleSnapshotIsStale(chat({ ...before, settledAt: null }), snapshot), false)
 })
 
-test('a snapshot and a request from across a process boundary are parsed, and junk refused', () => {
+test('a snapshot from across a process boundary is parsed, and junk refused', () => {
   const snapshot = workspaceLifecycleSnapshot(chat({ snoozedUntil: NOW + HOUR }))
   assert.deepEqual(parseWorkspaceLifecycleSnapshot(snapshot), snapshot)
   assert.equal(parseWorkspaceLifecycleSnapshot({ ...snapshot, activityAt: 'soon' }), null)
   assert.equal(parseWorkspaceLifecycleSnapshot({ ...snapshot, settledOverride: 'maybe' }), null)
   assert.equal(parseWorkspaceLifecycleSnapshot(null), null)
-  assert.deepEqual(parseWorkspaceLifecycleRequest({ workspaceId: ' w ', intent: { kind: 'wake' }, snapshot }), {
-    workspaceId: 'w',
-    intent: { kind: 'wake' },
-    snapshot,
-  })
-  assert.equal(parseWorkspaceLifecycleRequest({ workspaceId: 'w', intent: { kind: 'snooze' }, snapshot }), null)
-  assert.equal(parseWorkspaceLifecycleRequest({ workspaceId: 'w', intent: { kind: 'delete' }, snapshot }), null)
-  assert.equal(parseWorkspaceLifecycleRequest({ workspaceId: '', intent: { kind: 'wake' }, snapshot }), null)
 })

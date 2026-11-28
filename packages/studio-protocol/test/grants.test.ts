@@ -240,7 +240,6 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'workspaceSync.snapshot',
   'workspaceSync.eventsAfter',
   'workspaceSync.dispatch',
-  'workspaceSync.lifecycle',
   'workspaceSync.setSettledChatsSettings',
   'workspaceSync.setModuleRunStates',
   'workspaceRegistry.needsHydration',

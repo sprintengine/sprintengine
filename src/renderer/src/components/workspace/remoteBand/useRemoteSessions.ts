@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { environmentStudioAvailable } from '../../../studio/environmentStudio'
+import { chatSourcesAvailable } from '../../../studio/environmentStudio'
 import { followedEnvironmentChats, onFollowedEnvironmentChats } from '../../../studio/environmentChats'
 import { useTailnetPresence, type TailnetPresence } from '../topbar/useTailnetPresence'
 import { environmentChatSourceViews } from './environmentChatsNow'
@@ -15,7 +15,7 @@ import { remoteLinkStateOf, type EnvironmentChatSourceView, type RemoteLinkState
 
 export type RemoteSessions = {
   presence: TailnetPresence
-  /** Each followed environment's rows, in the order the window follows them. */
+  /** Each followed environment's rows, in the order the window follows them, the window's own Studio's included. */
   sources: readonly EnvironmentChatSourceView[]
   /**
    * Whether this device is on the tailnet at all — up, down, or not yet known.
@@ -36,9 +36,9 @@ export function useRemoteSessions(): RemoteSessions {
   useEffect(() => {
     // A host without the bridge (partial test harnesses, narrower preloads)
     // draws nothing of other environments and asks nothing.
-    if (!environmentStudioAvailable()) return
+    if (!chatSourcesAvailable()) return
     const sync = () => {
-      const next = environmentChatSourceViews()
+      const next = environmentChatSourceViews({ own: true })
       setSources((current) =>
         current.length === next.length && next.every((view, index) => current[index] === view) ? current : next,
       )
@@ -48,7 +48,7 @@ export function useRemoteSessions(): RemoteSessions {
   }, [])
 
   const refresh = useCallback((route: string) => {
-    if (!environmentStudioAvailable()) return
+    if (!chatSourcesAvailable()) return
     followedEnvironmentChats()
       .find((source) => source.route === route)
       ?.refresh()

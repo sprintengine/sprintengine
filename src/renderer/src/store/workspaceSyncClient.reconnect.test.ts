@@ -216,22 +216,3 @@ test('a new chat a reload cut off is sent again when the window starts, and one 
   assert.deepEqual(adopted, [['ws-b', 'ws-a']])
   assert.deepEqual(stored, [], 'nothing left to send at the next start')
 })
-
-test('a rename whose answer a restart took is sent again, and the name stands after the restart', async () => {
-  const studio = restartingStudio()
-  studio.has.add('ws-1')
-  studio.names.set('ws-1', 'Old name')
-  const { client } = windowClient(studio)
-  client.start()
-  await settle()
-  studio.answers.push('lost')
-  await client.dispatchRenameWorkspace('ws-1', 'New name')
-  studio.reopen()
-  await settle()
-  await settle()
-  assert.equal(studio.names.get('ws-1'), 'New name')
-  assert.deepEqual(
-    studio.sent.filter((each) => each.type === 'workspace.rename').map((each) => each.name),
-    ['New name', 'New name'],
-  )
-})

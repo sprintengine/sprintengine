@@ -28,6 +28,7 @@ import { browseEnvironmentThrough, type EnvironmentBrowse } from './environmentD
 import {
   environmentRefusal,
   holdEnvironmentStudio,
+  WINDOW_STUDIO_ROUTE,
   type EnvironmentAsk,
   type EnvironmentHold,
   type EnvironmentRefusal,
@@ -49,7 +50,10 @@ import {
 //   the slow clock and focus of `environmentChatsFreshness.ts`.
 //
 // Nothing here knows what kind of machine the route reaches: an SSH machine's
-// server, a paired desktop, a WSL distribution are each a route and a client.
+// server, a paired desktop, a WSL distribution, and the window's own Studio
+// (`local`) are each a route and a client. The window's own sessions are
+// already the window's one list (`windowChatServices`), so its source reads
+// only its rows, and hears each lifecycle event once.
 // While the client is away (reconnecting, parked, the machine asleep) the
 // source keeps the last lists it read and says they are stale, so the rows
 // they feed stay where they are, dimmed, rather than vanish; nothing is asked
@@ -201,6 +205,8 @@ export function createEnvironmentChatSource(
   const settleMs = options.settleMs ?? REFRESH_SETTLE_MS
   const activity = options.activity ?? windowActivity()
   const cache = options.cache === undefined ? windowEnvironmentChatsCache() : options.cache
+  // The window's own sessions are the window's list already; its source reads its rows.
+  const readsSessions = target.route !== WINDOW_STUDIO_ROUTE
   const listeners = new Set<() => void>()
   const openListeners = new Set<() => void>()
   let closed = false
@@ -291,7 +297,7 @@ export function createEnvironmentChatSource(
   let reading = false
   let again = false
   const read = (): void => {
-    if (closed) return
+    if (closed || !readsSessions) return
     if (reading) {
       again = true
       return
@@ -526,10 +532,12 @@ export function createEnvironmentChatSource(
   let following: (() => void) | null = null
   const follow = (): void => {
     if (following || closed) return
-    const stopSessions = services.sessions.onLifecycleEvent(
-      () => schedule(),
-      () => read(),
-    )
+    const stopSessions = readsSessions
+      ? services.sessions.onLifecycleEvent(
+          () => schedule(),
+          () => read(),
+        )
+      : () => undefined
     const stopChanges =
       services.followPush?.({
         topic: 'conversations.changed',
@@ -631,23 +639,33 @@ function restsUntilRunning(entry: Pick<EnvironmentEntry, 'routes' | 'connection'
   return entry.routes[0]?.kind === 'wsl' && entry.connection.state !== 'up'
 }
 
+/** The window's own Studio, as it is followed before the environment list has named it. */
+export const WINDOW_STUDIO_TARGET: FollowedEnvironment = Object.freeze({
+  route: WINDOW_STUDIO_ROUTE,
+  name: 'This computer',
+})
+
 /**
- * Every environment the list holds other than this window's own Studio, each
- * once, by its best route: every paired desktop, saved SSH machine and WSL
- * distribution, whether or not the window holds a chat of it. Its rows are
- * read in the background and drawn from its last-known list until it answers,
- * so one that does not answer slows nothing; a WSL distribution that is not
- * running rests (`restsUntilRunning`). The window's own Studio is not one of
- * them: the window already mirrors its chats (`workspaceSync`) and lists its
- * sessions, and reading them again would hold a second copy of the same facts.
+ * Every environment the list holds, each once, by its best route: this
+ * window's own Studio first, then every paired desktop, saved SSH machine and
+ * WSL distribution, whether or not the window holds a chat of it. Its rows
+ * are read in the background and drawn from its last-known list until it
+ * answers, so one that does not answer slows nothing; a WSL distribution that
+ * is not running rests (`restsUntilRunning`). The window's own Studio is
+ * followed even before the list names it (a web tab has no list): its chats
+ * are rows like any other environment's.
  */
 export function environmentTargetsToFollow(
   entries: readonly Pick<EnvironmentEntry, 'routes' | 'displayName' | 'connection'>[],
 ): FollowedEnvironment[] {
-  const targets = new Map<string, FollowedEnvironment>()
+  const targets = new Map<string, FollowedEnvironment>([[WINDOW_STUDIO_ROUTE, WINDOW_STUDIO_TARGET]])
   for (const entry of entries) {
     const best = entry.routes[0]
-    if (!best || best.kind === 'local' || !isEnvironmentRoute(best)) continue
+    if (!best || !isEnvironmentRoute(best)) continue
+    if (best.kind === 'local') {
+      targets.set(WINDOW_STUDIO_ROUTE, { route: WINDOW_STUDIO_ROUTE, name: entry.displayName })
+      continue
+    }
     const formatted = formatEnvironmentRoute(best)
     if (targets.has(formatted)) continue
     targets.set(formatted, {

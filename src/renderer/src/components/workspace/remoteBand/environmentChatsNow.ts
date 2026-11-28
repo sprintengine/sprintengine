@@ -9,7 +9,7 @@ import {
   followedEnvironmentTargets,
   type EnvironmentChatsSnapshot,
 } from '../../../studio/environmentChats'
-import { environmentStudioAvailable, pairedConnectionOf } from '../../../studio/environmentStudio'
+import { chatSourcesAvailable, pairedConnectionOf, WINDOW_STUDIO_ROUTE } from '../../../studio/environmentStudio'
 import { publishRemoteConversationList } from './remoteConversationFacts'
 import {
   chatManageOf,
@@ -60,13 +60,18 @@ function browseEntryOf(snapshot: EnvironmentChatsSnapshot): RemoteBrowseEntry {
 // moved nothing hands the rows the same view, and the tabs the same list.
 const made = new WeakMap<EnvironmentChatsSnapshot, EnvironmentChatSourceView>()
 
-/** Each followed environment's rows now, in the order the window follows them. */
-export function environmentChatSourceViews(): EnvironmentChatSourceView[] {
+/**
+ * Each followed environment's rows now, in the order the window follows them:
+ * every other environment's, and with `own` the window's own Studio's too.
+ * The palette, links and Settled chats still list this computer's chats from
+ * the window's records, so they ask for the others only.
+ */
+export function environmentChatSourceViews(options: { own?: boolean } = {}): EnvironmentChatSourceView[] {
   // A host without the bridge (partial test harnesses, narrower preloads)
-  // follows no other environment.
-  if (!environmentStudioAvailable()) return []
+  // follows no environment.
+  if (!chatSourcesAvailable()) return []
   const targets = followedEnvironmentTargets()
-  return followedEnvironmentChats().map((source, index) => {
+  const views = followedEnvironmentChats().map((source, index) => {
     const snapshot = source.snapshot()
     const live = !environmentResting(source.route)
     let view = made.get(snapshot)
@@ -87,6 +92,7 @@ export function environmentChatSourceViews(): EnvironmentChatSourceView[] {
     }
     return view
   })
+  return options.own ? views : views.filter((view) => view.route !== WINDOW_STUDIO_ROUTE)
 }
 
 /**

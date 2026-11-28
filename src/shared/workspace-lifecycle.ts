@@ -177,34 +177,6 @@ export type WorkspaceLifecycleResult =
   | { ok: true; workspaceId: string; committed: WorkspaceLifecycleSnapshot }
   | { ok: false; code: string; message: string; current?: WorkspaceLifecycleSnapshot }
 
-/** A request from across the process boundary, or null when it is not one. */
-export function parseWorkspaceLifecycleRequest(value: unknown): WorkspaceLifecycleRequest | null {
-  if (typeof value !== 'object' || value === null) return null
-  const raw = value as Record<string, unknown>
-  const workspaceId = typeof raw.workspaceId === 'string' ? raw.workspaceId.trim() : ''
-  const snapshot = parseWorkspaceLifecycleSnapshot(raw.snapshot)
-  const intent = parseIntent(raw.intent)
-  return workspaceId && snapshot && intent ? { workspaceId, intent, snapshot } : null
-}
-
-function parseIntent(value: unknown): WorkspaceLifecycleIntent | null {
-  if (typeof value !== 'object' || value === null) return null
-  const raw = value as Record<string, unknown>
-  switch (raw.kind) {
-    case 'settle':
-      return stamp(raw.lastInputAt) === null
-        ? { kind: 'settle' }
-        : { kind: 'settle', lastInputAt: raw.lastInputAt as number }
-    case 'unsettle':
-    case 'wake':
-      return { kind: raw.kind }
-    case 'snooze':
-      return stamp(raw.until) === null ? null : { kind: 'snooze', until: raw.until as number }
-    default:
-      return null
-  }
-}
-
 function snoozeStillAhead(workspace: Pick<Workspace, 'snoozedUntil'>, now: number): boolean {
   return (
     typeof workspace.snoozedUntil === 'number' &&
