@@ -5025,13 +5025,8 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
   // rows already stored under the old `${agentName} · ${chatName}` rule, so
   // the fix reaches chats that exist rather than only the next one opened.
   const rowTitle = remoteConversationTitle(workspace)
-  // The conversation this row is, over on its machine — present only for a
-  // remote-born row whose machine has answered a browse.
-  // A remote chat with agents standing in it is live whatever this window is
-  // holding: `rowHasOpenTerminals` asks about panes HERE, and a person who
-  // closed the pane did not stop the chat. The browse saying the agents are
-  // there is the better answer, and without this the row went silent the
-  // moment its pane closed even though the machine was still working.
+  // Live while a terminal, a chat agent or a pane from another machine stands
+  // in it. A chat on another environment is never this row: its address row is.
   const rowIsLive = liveSessions.length > 0 || conversationSessions.length > 0 || meshPanesOf(workspace).length > 0
   // A sleeping row is the one-liner by construction: it is waiting on a
   // clock, and a checkout's branch and ±lines are not facts about that.
@@ -5070,8 +5065,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
     hasLiveLines: rowLines.lines.length > 0,
     conversation: rowConversationPullRequests,
   })
-  // Settle waits while an agent in the chat works (`settleWorkspaceById`), here
-  // or, for a chat born on a paired machine, over there.
+  // Settle waits while an agent in the chat works (`settleWorkspaceById`).
   const settleBlocked = workspaceIsWorking(activity, conversationSessions, liveSessions)
   // The seat's tick and a middle press on the row: the one way a row is put
   // away. A row already resting has nothing more to do.
